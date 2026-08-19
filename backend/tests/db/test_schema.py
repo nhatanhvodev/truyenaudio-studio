@@ -5,6 +5,8 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.autogenerate import compare_metadata
+from alembic.migration import MigrationContext
 import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import StatementError
@@ -764,6 +766,23 @@ def test_all_canonical_hash_fields_have_nullable_aware_checks(migrated_engine) -
                 assert f"{column_name} IS NULL OR" in create_sql
                 assert f"length({column_name}) = 64" in create_sql
                 assert f"{column_name} NOT GLOB '*[^0-9a-f]*'" in create_sql
+
+
+def test_frozen_migration_matches_orm_metadata_server_defaults(migrated_engine) -> None:
+    from app.db import models  # noqa: F401
+    from app.db.base import Base
+
+    with migrated_engine.connect() as connection:
+        context = MigrationContext.configure(
+            connection,
+            opts={
+                "compare_server_default": True,
+                "target_metadata": Base.metadata,
+            },
+        )
+        diffs = compare_metadata(context, Base.metadata)
+
+    assert diffs == []
 
 
 def test_translation_runs_created_by_has_database_default(migrated_engine) -> None:
