@@ -11,6 +11,8 @@ from app.modules.jobs.retry import RetryDecision, RetryDisposition, classify_ret
 from app.modules.jobs.runner import (
     HEARTBEAT_INTERVAL_SECONDS,
     LEASE_SECONDS,
+    InvalidJobTransition,
+    LeaseLost,
     RECOVERY_THRESHOLD_SECONDS,
     ErrorRecord,
     JobRunner,
@@ -71,6 +73,14 @@ def _attempt_rows(engine: Engine, job_id: str) -> list[tuple[int, str | None, st
     return [(row.attempt_no, row.finished_at, row.outcome, row.provider_request_id) for row in rows]
 
 
+def _open_attempt_count(engine: Engine, job_id: str) -> int:
+    with engine.connect() as connection:
+        return connection.execute(
+            text("SELECT COUNT(*) FROM job_attempts WHERE job_id = :job_id AND finished_at IS NULL"),
+            {"job_id": job_id},
+        ).scalar_one()
+
+
 def _insert_artifact(engine: Engine, artifact_id: str) -> None:
     with engine.begin() as connection:
         connection.execute(
@@ -91,7 +101,7 @@ def _insert_artifact(engine: Engine, artifact_id: str) -> None:
                 "status": ArtifactStatus.READY.value,
                 "relative_path": f"reports/{artifact_id}.json",
                 "sha256": "a" * 64,
-                "input_hash": "b" * 64,
+                "input_hash": f"{int(artifact_id[-12:], 16):064x}",
                 "settings_hash": "c" * 64,
                 "now": NOW.isoformat(),
             },
@@ -175,18 +185,30 @@ def test_heartbeat_only_extends_matching_owner_lease(runner: JobRunner) -> None:
     assert HEARTBEAT_INTERVAL_SECONDS == 15
 
 
+def test_heartbeat_does_not_revive_already_expired_lease(runner: JobRunner) -> None:
+    job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "heartbeat-expired")
+    runner.claim("worker-a", NOW)
+
+    assert runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=LEASE_SECONDS + 1)) is None
+    expired = runner.get(job.id)
+    assert expired.lease_owner == "worker-a"
+    assert expired.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
+
+
 def test_request_cancel_marks_only_nonterminal_eligible_jobs(runner: JobRunner) -> None:
-    running = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "cancel-running")
-    queued = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "cancel-queued")
-    succeeded = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, "cancel-succeeded")
+    succeeded = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, "cancel-succeeded", priority=1)
+    running = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "cancel-running", priority=5)
+    queued = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "cancel-queued", priority=10)
     artifact_id = "018f0000-0000-7000-8000-000000000777"
     _insert_artifact(runner.engine, artifact_id)
-    runner.claim("worker-a", NOW)
-    runner.complete(succeeded.id, artifact_id)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    runner.complete(succeeded.id, artifact_id, lease.worker_id, lease.attempt_id, NOW + timedelta(seconds=1))
+    assert runner.claim("worker-a", NOW + timedelta(seconds=2)).job_id == running.id
 
-    assert runner.request_cancel(running.id, NOW + timedelta(seconds=1)).status is JobStatus.CANCEL_REQUESTED
-    assert runner.request_cancel(queued.id, NOW + timedelta(seconds=1)).status is JobStatus.CANCEL_REQUESTED
-    assert runner.request_cancel(succeeded.id, NOW + timedelta(seconds=1)) is None
+    assert runner.request_cancel(running.id, NOW + timedelta(seconds=3)).status is JobStatus.CANCEL_REQUESTED
+    assert runner.request_cancel(queued.id, NOW + timedelta(seconds=3)).status is JobStatus.CANCEL_REQUESTED
+    assert runner.request_cancel(succeeded.id, NOW + timedelta(seconds=3)) is None
     assert runner.get(succeeded.id).status is JobStatus.SUCCEEDED
 
 
@@ -194,13 +216,23 @@ def test_complete_and_fail_terminal_paths_clear_lease_and_close_attempt(runner: 
     succeeded = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "complete")
     artifact_id = "018f0000-0000-7000-8000-000000000778"
     _insert_artifact(migrated_engine, artifact_id)
-    runner.claim("worker-a", NOW)
-    completed = runner.complete(succeeded.id, artifact_id)
+    success_lease = runner.claim("worker-a", NOW)
+    assert success_lease is not None
+    completed = runner.complete(
+        succeeded.id,
+        artifact_id,
+        success_lease.worker_id,
+        success_lease.attempt_id,
+        NOW + timedelta(seconds=1),
+    )
     failed = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "fail")
-    runner.claim("worker-a", NOW)
+    fail_lease = runner.claim("worker-a", NOW)
+    assert fail_lease is not None
     terminal = runner.fail(
         failed.id,
         ErrorRecord(code="INPUT_INVALID", summary="Bad chapter map", retryable=False),
+        fail_lease.worker_id,
+        fail_lease.attempt_id,
         now=NOW + timedelta(seconds=1),
     )
 
@@ -216,6 +248,148 @@ def test_complete_and_fail_terminal_paths_clear_lease_and_close_attempt(runner: 
     assert _attempt_rows(migrated_engine, failed.id)[-1][2] == "FAILED"
 
 
+def test_complete_requires_a_current_live_lease_and_preserves_unclaimed_job(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, "complete-unclaimed")
+    artifact_id = "018f0000-0000-7000-8000-000000000779"
+    _insert_artifact(migrated_engine, artifact_id)
+
+    with pytest.raises(InvalidJobTransition, match="RUNNING"):
+        runner.complete(job.id, artifact_id, "worker-a", "missing-attempt", NOW)
+
+    view = runner.get(job.id)
+    assert view.status is JobStatus.QUEUED
+    assert view.result_artifact_id is None
+    assert _attempt_rows(migrated_engine, job.id) == []
+
+
+def test_complete_rejects_cross_worker_wrong_attempt_and_expired_lease_without_mutation(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, "complete-stale-lease")
+    artifact_id = "018f0000-0000-7000-8000-000000000780"
+    _insert_artifact(migrated_engine, artifact_id)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+
+    with pytest.raises(LeaseLost, match="worker"):
+        runner.complete(job.id, artifact_id, "worker-b", lease.attempt_id, NOW + timedelta(seconds=1))
+    with pytest.raises(LeaseLost, match="attempt"):
+        runner.complete(job.id, artifact_id, lease.worker_id, "wrong-attempt", NOW + timedelta(seconds=1))
+    with pytest.raises(LeaseLost, match="expired"):
+        runner.complete(job.id, artifact_id, lease.worker_id, lease.attempt_id, NOW + timedelta(seconds=LEASE_SECONDS + 1))
+
+    view = runner.get(job.id)
+    assert view.status is JobStatus.RUNNING
+    assert view.lease_owner == "worker-a"
+    assert view.result_artifact_id is None
+    assert _attempt_rows(migrated_engine, job.id) == [(1, None, None, None)]
+
+
+@pytest.mark.parametrize("terminal_status", [JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.BILLING_UNKNOWN])
+def test_complete_cannot_overwrite_terminal_or_billing_unknown_jobs(
+    runner: JobRunner,
+    migrated_engine: Engine,
+    terminal_status: JobStatus,
+) -> None:
+    job = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, f"complete-terminal-{terminal_status.value}")
+    first_artifact_id = f"018f0000-0000-7000-8000-0000000008{len(terminal_status.value):02d}"
+    replacement_artifact_id = f"018f0000-0000-7000-8000-0000000009{len(terminal_status.value):02d}"
+    _insert_artifact(migrated_engine, first_artifact_id)
+    _insert_artifact(migrated_engine, replacement_artifact_id)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    if terminal_status is JobStatus.SUCCEEDED:
+        runner.complete(job.id, first_artifact_id, lease.worker_id, lease.attempt_id, NOW + timedelta(seconds=1))
+    elif terminal_status is JobStatus.BILLING_UNKNOWN:
+        runner.mark_provider_sent(job.id, "provider-request-1")
+        runner.fail(
+            job.id,
+            ErrorRecord(code="PROVIDER_NETWORK", summary="timeout", retryable=True),
+            lease.worker_id,
+            lease.attempt_id,
+            now=NOW + timedelta(seconds=1),
+        )
+    else:
+        runner.fail(
+            job.id,
+            ErrorRecord(code="INPUT_INVALID", summary="bad input", retryable=False),
+            lease.worker_id,
+            lease.attempt_id,
+            now=NOW + timedelta(seconds=1),
+        )
+
+    with pytest.raises(InvalidJobTransition):
+        runner.complete(job.id, replacement_artifact_id, lease.worker_id, lease.attempt_id, NOW + timedelta(seconds=2))
+
+    view = runner.get(job.id)
+    assert view.status is terminal_status
+    assert view.result_artifact_id == (first_artifact_id if terminal_status is JobStatus.SUCCEEDED else None)
+
+
+def test_fail_requires_current_live_lease_and_preserves_wrong_worker_attempts(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "fail-stale-lease")
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    error = ErrorRecord(code="INPUT_INVALID", summary="bad input", retryable=False)
+
+    with pytest.raises(LeaseLost, match="worker"):
+        runner.fail(job.id, error, "worker-b", lease.attempt_id, now=NOW + timedelta(seconds=1))
+    with pytest.raises(LeaseLost, match="attempt"):
+        runner.fail(job.id, error, lease.worker_id, "wrong-attempt", now=NOW + timedelta(seconds=1))
+    with pytest.raises(LeaseLost, match="expired"):
+        runner.fail(job.id, error, lease.worker_id, lease.attempt_id, now=NOW + timedelta(seconds=LEASE_SECONDS + 1))
+
+    view = runner.get(job.id)
+    assert view.status is JobStatus.RUNNING
+    assert view.error_code is None
+    assert _attempt_rows(migrated_engine, job.id) == [(1, None, None, None)]
+
+
+def test_cancel_requested_jobs_reject_terminal_worker_callbacks_without_closing_attempt(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    complete_job = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, "cancel-before-complete", priority=1)
+    fail_job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "cancel-before-fail", priority=2)
+    artifact_id = "018f0000-0000-7000-8000-000000000781"
+    _insert_artifact(migrated_engine, artifact_id)
+    complete_lease = runner.claim("worker-a", NOW)
+    assert complete_lease is not None
+    fail_lease = runner.claim("worker-b", NOW)
+    assert fail_lease is not None
+    runner.request_cancel(complete_job.id, NOW + timedelta(seconds=1))
+    runner.request_cancel(fail_job.id, NOW + timedelta(seconds=1))
+
+    with pytest.raises(InvalidJobTransition, match="RUNNING"):
+        runner.complete(
+            complete_job.id,
+            artifact_id,
+            complete_lease.worker_id,
+            complete_lease.attempt_id,
+            NOW + timedelta(seconds=2),
+        )
+    with pytest.raises(InvalidJobTransition, match="RUNNING"):
+        runner.fail(
+            fail_job.id,
+            ErrorRecord(code="INPUT_INVALID", summary="bad input", retryable=False),
+            fail_lease.worker_id,
+            fail_lease.attempt_id,
+            now=NOW + timedelta(seconds=2),
+        )
+
+    assert runner.get(complete_job.id).status is JobStatus.CANCEL_REQUESTED
+    assert runner.get(fail_job.id).status is JobStatus.CANCEL_REQUESTED
+    assert _open_attempt_count(migrated_engine, complete_job.id) == 1
+    assert _open_attempt_count(migrated_engine, fail_job.id) == 1
+
+
 @pytest.mark.parametrize(
     ("code", "attempt_no", "retry_after", "expected"),
     [
@@ -223,6 +397,9 @@ def test_complete_and_fail_terminal_paths_clear_lease_and_close_attempt(runner: 
         ("PROVIDER_5XX", 2, None, RetryDecision(RetryDisposition.RETRY, 10)),
         ("DB_BUSY", 3, None, RetryDecision(RetryDisposition.RETRY, 30)),
         ("PROVIDER_RATE_LIMIT", 1, 900, RetryDecision(RetryDisposition.RETRY, 600)),
+        ("PROVIDER_RATE_LIMIT", 1, 30, RetryDecision(RetryDisposition.RETRY, 30)),
+        ("PROVIDER_RATE_LIMIT", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("PROVIDER_RATE_LIMIT", 1, -1, RetryDecision(RetryDisposition.FAIL, None)),
         ("PROVIDER_AUTH", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
         ("PROVIDER_QUOTA", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
         ("BUDGET_LIMIT_EXCEEDED", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
@@ -244,11 +421,14 @@ def test_retry_policy_is_deterministic_and_exhausts_attempts(
 
 def test_fail_requeues_definitely_unsent_local_retryable_error(runner: JobRunner) -> None:
     job = runner.enqueue(JobKind.MASTER, PROJECT_ID, CHAPTER_ID, "local-retry")
-    runner.claim("worker-a", NOW)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
 
     view = runner.fail(
         job.id,
         ErrorRecord(code="DB_BUSY", summary="database is locked", retryable=True, provider_request_sent=False),
+        lease.worker_id,
+        lease.attempt_id,
         now=NOW + timedelta(seconds=1),
     )
 
@@ -262,15 +442,77 @@ def test_fail_requeues_definitely_unsent_local_retryable_error(runner: JobRunner
 
 def test_expired_local_retryable_attempt_requeues_without_new_attempt_until_claim(runner: JobRunner) -> None:
     job = runner.enqueue(JobKind.MASTER, PROJECT_ID, CHAPTER_ID, "expired-local")
-    runner.claim("worker-a", NOW)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
     recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
 
     recovered = runner.recover_expired(recovery_now)
 
     assert recovered == [job.id]
     assert runner.get(job.id).status is JobStatus.QUEUED
+    assert runner.get(job.id).next_run_at == recovery_now + timedelta(seconds=2)
     assert _attempt_rows(runner.engine, job.id)[-1][2] == "EXPIRED_RETRY"
-    assert runner.claim("worker-b", recovery_now).attempt_no == 2
+    assert runner.claim("worker-b", recovery_now) is None
+    assert runner.claim("worker-b", recovery_now + timedelta(seconds=2)).attempt_no == 2
+
+
+@pytest.mark.parametrize(
+    ("attempt_count", "delay_seconds"),
+    [(1, 2), (2, 10), (3, 30)],
+)
+def test_expired_local_recovery_uses_attempt_numbered_retry_schedule(
+    runner: JobRunner,
+    attempt_count: int,
+    delay_seconds: int,
+) -> None:
+    job = runner.enqueue(JobKind.MASTER, PROJECT_ID, CHAPTER_ID, f"expired-local-{attempt_count}")
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    for attempt_no in range(1, attempt_count):
+        failed = runner.fail(
+            job.id,
+            ErrorRecord(code="DB_BUSY", summary=f"busy {attempt_no}", retryable=True),
+            lease.worker_id,
+            lease.attempt_id,
+            now=NOW + timedelta(seconds=attempt_no),
+        )
+        assert failed.status is JobStatus.QUEUED
+        next_lease = runner.claim("worker-a", failed.next_run_at)
+        assert next_lease is not None
+        lease = next_lease
+
+    recovery_now = lease.lease_expires_at + timedelta(seconds=RECOVERY_THRESHOLD_SECONDS + 1)
+    assert runner.recover_expired(recovery_now) == [job.id]
+
+    view = runner.get(job.id)
+    assert view.status is JobStatus.QUEUED
+    assert view.next_run_at == recovery_now + timedelta(seconds=delay_seconds)
+
+
+def test_expired_local_attempt_four_becomes_failed_without_attempt_five(runner: JobRunner) -> None:
+    job = runner.enqueue(JobKind.MASTER, PROJECT_ID, CHAPTER_ID, "expired-local-exhausted")
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    for attempt_no in range(1, 4):
+        retried = runner.fail(
+            job.id,
+            ErrorRecord(code="DB_BUSY", summary=f"busy {attempt_no}", retryable=True),
+            lease.worker_id,
+            lease.attempt_id,
+            now=NOW + timedelta(seconds=attempt_no),
+        )
+        lease = runner.claim("worker-a", retried.next_run_at)
+        assert lease is not None
+
+    recovery_now = lease.lease_expires_at + timedelta(seconds=RECOVERY_THRESHOLD_SECONDS + 1)
+    assert runner.recover_expired(recovery_now) == [job.id]
+
+    view = runner.get(job.id)
+    assert view.status is JobStatus.FAILED
+    assert view.next_run_at is None
+    assert runner.claim("worker-b", recovery_now + timedelta(seconds=30)) is None
+    assert _attempt_rows(runner.engine, job.id)[-1][2] == "FAILED"
+    assert len(_attempt_rows(runner.engine, job.id)) == 4
 
 
 def test_expired_cloud_sent_attempt_becomes_billing_unknown_and_never_auto_retries(
@@ -278,7 +520,8 @@ def test_expired_cloud_sent_attempt_becomes_billing_unknown_and_never_auto_retri
     migrated_engine: Engine,
 ) -> None:
     job = runner.enqueue(JobKind.SYNTHESIZE, PROJECT_ID, CHAPTER_ID, "expired-cloud")
-    runner.claim("worker-a", NOW)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
     runner.mark_provider_sent(job.id, "provider-request-1")
     recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
 
@@ -310,3 +553,13 @@ def test_runner_rejects_naive_now_values(runner: JobRunner) -> None:
         runner.request_cancel("missing", naive)
     with pytest.raises(ValueError, match="timezone-aware"):
         runner.recover_expired(naive)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        runner.complete("missing", "missing", "worker-a", "attempt-a", naive)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        runner.fail(
+            "missing",
+            ErrorRecord(code="INPUT_INVALID", summary="bad input", retryable=False),
+            "worker-a",
+            "attempt-a",
+            now=naive,
+        )

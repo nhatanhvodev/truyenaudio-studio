@@ -24,6 +24,18 @@ TERMINAL_STATUSES = {
 }
 
 
+class JobRunnerError(Exception):
+    """Base exception for durable queue transition failures."""
+
+
+class LeaseLost(JobRunnerError):
+    """Raised when a worker no longer owns the live attempt lease."""
+
+
+class InvalidJobTransition(JobRunnerError):
+    """Raised when a job state cannot accept the requested transition."""
+
+
 @dataclass(frozen=True)
 class ErrorRecord:
     code: str
@@ -211,6 +223,7 @@ class JobRunner:
                     WHERE id = :job_id
                       AND status = :running
                       AND lease_owner = :worker_id
+                      AND lease_expires_at >= :now
                     """
                 ),
                 {
@@ -263,42 +276,60 @@ class JobRunner:
             row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
         return _job_view(row)
 
-    def complete(self, job_id: str, result_artifact_id: str, now: datetime | None = None) -> JobView:
-        timestamp = now or datetime.now(UTC)
-        _require_aware(timestamp)
+    def complete(
+        self,
+        job_id: str,
+        result_artifact_id: str,
+        worker_id: str,
+        attempt_id: str,
+        now: datetime,
+    ) -> JobView:
+        _require_aware(now)
         with self.engine.begin() as connection:
-            self._close_open_attempt(connection, job_id, timestamp, "SUCCEEDED")
-            row = self._set_terminal(
+            self._require_live_lease(connection, job_id, worker_id, attempt_id, now)
+            self._close_attempt_by_id(connection, job_id, attempt_id, now, "SUCCEEDED")
+            row = self._set_terminal_for_lease(
                 connection,
                 job_id,
                 JobStatus.SUCCEEDED,
-                timestamp,
+                worker_id,
+                now,
                 result_artifact_id=result_artifact_id,
             )
         return _job_view(row)
 
-    def fail(self, job_id: str, error: ErrorRecord, now: datetime | None = None) -> JobView:
-        timestamp = now or datetime.now(UTC)
-        _require_aware(timestamp)
+    def fail(
+        self,
+        job_id: str,
+        error: ErrorRecord,
+        worker_id: str,
+        attempt_id: str,
+        *,
+        now: datetime,
+    ) -> JobView:
+        _require_aware(now)
         with self.engine.begin() as connection:
-            attempt_no = self._current_attempt_no(connection, job_id)
-            provider_request_id = self._current_provider_request_id(connection, job_id)
+            attempt = self._require_live_lease(connection, job_id, worker_id, attempt_id, now)
+            attempt_no = int(attempt["attempt_no"])
+            provider_request_id = attempt["provider_request_id"]
             provider_sent = error.provider_request_sent or provider_request_id is not None
 
             if provider_sent:
-                self._close_open_attempt(
+                self._close_attempt_by_id(
                     connection,
                     job_id,
-                    timestamp,
+                    attempt_id,
+                    now,
                     "BILLING_UNKNOWN",
                     provider_request_id=provider_request_id,
                     error=error,
                 )
-                row = self._set_terminal(
+                row = self._set_terminal_for_lease(
                     connection,
                     job_id,
                     JobStatus.BILLING_UNKNOWN,
-                    timestamp,
+                    worker_id,
+                    now,
                     error_code="BILLING_UNKNOWN",
                     error_summary=error.summary,
                 )
@@ -310,17 +341,18 @@ class JobRunner:
                 retry_after_seconds=error.retry_after_seconds,
             )
             if error.retryable and decision.disposition is RetryDisposition.RETRY:
-                next_run_at = timestamp + timedelta(seconds=decision.delay_seconds or 0)
-                self._close_open_attempt(connection, job_id, timestamp, "RETRY", error=error)
-                row = self._requeue(connection, job_id, timestamp, next_run_at, error)
+                next_run_at = now + timedelta(seconds=decision.delay_seconds or 0)
+                self._close_attempt_by_id(connection, job_id, attempt_id, now, "RETRY", error=error)
+                row = self._requeue_for_lease(connection, job_id, worker_id, now, next_run_at, error)
                 return _job_view(row)
 
-            self._close_open_attempt(connection, job_id, timestamp, "FAILED", error=error)
-            row = self._set_terminal(
+            self._close_attempt_by_id(connection, job_id, attempt_id, now, "FAILED", error=error)
+            row = self._set_terminal_for_lease(
                 connection,
                 job_id,
                 JobStatus.FAILED,
-                timestamp,
+                worker_id,
+                now,
                 error_code=error.code,
                 error_summary=error.summary,
             )
@@ -381,6 +413,7 @@ class JobRunner:
                 for row in rows:
                     job_id = row["id"]
                     provider_request_id = self._current_provider_request_id(connection, job_id)
+                    attempt_no = self._current_attempt_no(connection, job_id)
                     if provider_request_id is not None:
                         self._close_open_attempt(
                             connection,
@@ -398,14 +431,27 @@ class JobRunner:
                             error_summary="Provider request was sent before lease expired",
                         )
                     else:
-                        self._close_open_attempt(connection, job_id, now, "EXPIRED_RETRY")
-                        self._requeue(
-                            connection,
-                            job_id,
-                            now,
-                            now,
-                            ErrorRecord(code="DB_BUSY", summary="Lease expired", retryable=True),
-                        )
+                        error = ErrorRecord(code="DB_BUSY", summary="Lease expired", retryable=True)
+                        decision = classify_retry(error.code, attempt_no=attempt_no)
+                        if decision.disposition is RetryDisposition.RETRY:
+                            self._close_open_attempt(connection, job_id, now, "EXPIRED_RETRY")
+                            self._requeue(
+                                connection,
+                                job_id,
+                                now,
+                                now + timedelta(seconds=decision.delay_seconds or 0),
+                                error,
+                            )
+                        else:
+                            self._close_open_attempt(connection, job_id, now, "FAILED", error=error)
+                            self._set_terminal(
+                                connection,
+                                job_id,
+                                JobStatus.FAILED,
+                                now,
+                                error_code=error.code,
+                                error_summary=error.summary,
+                            )
                     recovered.append(job_id)
 
                 connection.commit()
@@ -434,6 +480,92 @@ class JobRunner:
             ),
             {"job_id": job_id},
         ).scalar_one_or_none()
+
+    def _require_live_lease(
+        self,
+        connection,
+        job_id: str,
+        worker_id: str,
+        attempt_id: str,
+        now: datetime,
+    ) -> RowMapping:
+        row = connection.execute(
+            text(
+                """
+                SELECT
+                    jobs.status,
+                    jobs.lease_owner,
+                    jobs.lease_expires_at,
+                    job_attempts.id AS attempt_id,
+                    job_attempts.attempt_no,
+                    job_attempts.provider_request_id
+                FROM jobs
+                LEFT JOIN job_attempts
+                  ON job_attempts.job_id = jobs.id
+                 AND job_attempts.finished_at IS NULL
+                 AND job_attempts.attempt_no = (
+                    SELECT MAX(open_attempts.attempt_no)
+                    FROM job_attempts AS open_attempts
+                    WHERE open_attempts.job_id = jobs.id
+                      AND open_attempts.finished_at IS NULL
+                 )
+                WHERE jobs.id = :job_id
+                """
+            ),
+            {"job_id": job_id},
+        ).mappings().one_or_none()
+        if row is None:
+            raise InvalidJobTransition(f"job {job_id} does not exist")
+        if row["status"] != JobStatus.RUNNING.value:
+            raise InvalidJobTransition(f"job {job_id} must be RUNNING for lease-scoped transition")
+        if row["lease_owner"] != worker_id:
+            raise LeaseLost(f"worker {worker_id} does not own job {job_id}")
+        lease_expires_at = _parse_dt(row["lease_expires_at"])
+        if lease_expires_at is None or lease_expires_at < now:
+            raise LeaseLost(f"lease expired for job {job_id}")
+        if row["attempt_id"] != attempt_id:
+            raise LeaseLost(f"attempt {attempt_id} is not the current open attempt for job {job_id}")
+        return row
+
+    def _close_attempt_by_id(
+        self,
+        connection,
+        job_id: str,
+        attempt_id: str,
+        now: datetime,
+        outcome: str,
+        *,
+        provider_request_id: str | None = None,
+        error: ErrorRecord | None = None,
+    ) -> None:
+        result = connection.execute(
+            text(
+                """
+                UPDATE job_attempts
+                SET finished_at = :now,
+                    heartbeat_at = COALESCE(heartbeat_at, :now),
+                    outcome = :outcome,
+                    provider_request_id = COALESCE(:provider_request_id, provider_request_id),
+                    error_class = :error_class,
+                    redacted_detail = :redacted_detail,
+                    updated_at = :now
+                WHERE id = :attempt_id
+                  AND job_id = :job_id
+                  AND finished_at IS NULL
+                """
+            ),
+            {
+                "attempt_id": attempt_id,
+                "job_id": job_id,
+                "now": now.isoformat(),
+                "outcome": outcome,
+                "provider_request_id": provider_request_id,
+                "error_class": error.code if error else None,
+                "redacted_detail": error.redacted_detail if error else None,
+            },
+        )
+        if result.rowcount != 1:
+            raise LeaseLost(f"attempt {attempt_id} is no longer open for job {job_id}")
 
     def _close_open_attempt(
         self,
@@ -508,6 +640,47 @@ class JobRunner:
         )
         return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
 
+    def _requeue_for_lease(
+        self,
+        connection,
+        job_id: str,
+        worker_id: str,
+        now: datetime,
+        next_run_at: datetime,
+        error: ErrorRecord,
+    ) -> RowMapping:
+        result = connection.execute(
+            text(
+                """
+                UPDATE jobs
+                SET status = :queued,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    next_run_at = :next_run_at,
+                    error_code = :error_code,
+                    error_summary = :error_summary,
+                    updated_at = :now
+                WHERE id = :job_id
+                  AND status = :running
+                  AND lease_owner = :worker_id
+                  AND lease_expires_at >= :now
+                """
+            ),
+            {
+                "queued": JobStatus.QUEUED.value,
+                "running": JobStatus.RUNNING.value,
+                "worker_id": worker_id,
+                "next_run_at": next_run_at.isoformat(),
+                "error_code": error.code,
+                "error_summary": error.summary,
+                "now": now.isoformat(),
+                "job_id": job_id,
+            },
+        )
+        if result.rowcount != 1:
+            raise LeaseLost(f"lease lost while requeueing job {job_id}")
+        return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+
     def _set_terminal(
         self,
         connection,
@@ -543,6 +716,51 @@ class JobRunner:
                 "job_id": job_id,
             },
         )
+        return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+
+    def _set_terminal_for_lease(
+        self,
+        connection,
+        job_id: str,
+        status: JobStatus,
+        worker_id: str,
+        now: datetime,
+        *,
+        result_artifact_id: str | None = None,
+        error_code: str | None = None,
+        error_summary: str | None = None,
+    ) -> RowMapping:
+        result = connection.execute(
+            text(
+                """
+                UPDATE jobs
+                SET status = :status,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    next_run_at = NULL,
+                    result_artifact_id = COALESCE(:result_artifact_id, result_artifact_id),
+                    error_code = :error_code,
+                    error_summary = :error_summary,
+                    updated_at = :now
+                WHERE id = :job_id
+                  AND status = :running
+                  AND lease_owner = :worker_id
+                  AND lease_expires_at >= :now
+                """
+            ),
+            {
+                "status": status.value,
+                "running": JobStatus.RUNNING.value,
+                "worker_id": worker_id,
+                "result_artifact_id": result_artifact_id,
+                "error_code": error_code,
+                "error_summary": error_summary,
+                "now": now.isoformat(),
+                "job_id": job_id,
+            },
+        )
+        if result.rowcount != 1:
+            raise LeaseLost(f"lease lost while closing job {job_id}")
         return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
 
 
