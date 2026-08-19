@@ -221,9 +221,15 @@ class JobRunner:
                     SET lease_expires_at = :lease_expires_at,
                         updated_at = :now
                     WHERE id = :job_id
-                      AND status = :running
+                      AND status IN (:running, :cancel_requested)
                       AND lease_owner = :worker_id
                       AND lease_expires_at >= :now
+                      AND EXISTS (
+                        SELECT 1
+                        FROM job_attempts
+                        WHERE job_attempts.job_id = jobs.id
+                          AND job_attempts.finished_at IS NULL
+                      )
                     """
                 ),
                 {
@@ -231,6 +237,7 @@ class JobRunner:
                     "now": now.isoformat(),
                     "job_id": job_id,
                     "running": JobStatus.RUNNING.value,
+                    "cancel_requested": JobStatus.CANCEL_REQUESTED.value,
                     "worker_id": worker_id,
                 },
             )
@@ -258,18 +265,24 @@ class JobRunner:
     def request_cancel(self, job_id: str, now: datetime) -> JobView | None:
         _require_aware(now)
         with self.engine.begin() as connection:
+            row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one_or_none()
+            if row is None or row["status"] in TERMINAL_STATUSES:
+                return None
+
+            status = JobStatus(row["status"])
+            next_status = JobStatus.CANCELED if status is JobStatus.QUEUED else JobStatus.CANCEL_REQUESTED
             result = connection.execute(
                 text(
                     """
                     UPDATE jobs
-                    SET status = :cancel_requested,
+                    SET status = :status,
                         cancel_requested_at = :now,
                         updated_at = :now
                     WHERE id = :job_id
                       AND status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELED', 'BLOCKED_BUDGET', 'BILLING_UNKNOWN')
                     """
                 ),
-                {"cancel_requested": JobStatus.CANCEL_REQUESTED.value, "now": now.isoformat(), "job_id": job_id},
+                {"status": next_status.value, "now": now.isoformat(), "job_id": job_id},
             )
             if result.rowcount != 1:
                 return None
@@ -409,19 +422,24 @@ class JobRunner:
                         """
                         SELECT *
                         FROM jobs
-                        WHERE status = :running
+                        WHERE status IN (:running, :cancel_requested)
                           AND lease_expires_at IS NOT NULL
                           AND lease_expires_at <= :expired_before
                         ORDER BY priority ASC, id ASC
                         """
                     ),
-                    {"running": JobStatus.RUNNING.value, "expired_before": expired_before.isoformat()},
+                    {
+                        "running": JobStatus.RUNNING.value,
+                        "cancel_requested": JobStatus.CANCEL_REQUESTED.value,
+                        "expired_before": expired_before.isoformat(),
+                    },
                 ).mappings().all()
 
                 for row in rows:
                     job_id = row["id"]
                     provider_request_id = self._current_provider_request_id(connection, job_id)
                     attempt_no = self._current_attempt_no(connection, job_id)
+                    status = JobStatus(row["status"])
                     if provider_request_id is not None:
                         self._close_open_attempt(
                             connection,
@@ -438,6 +456,9 @@ class JobRunner:
                             error_code="BILLING_UNKNOWN",
                             error_summary="Provider request was sent before lease expired",
                         )
+                    elif status is JobStatus.CANCEL_REQUESTED:
+                        self._close_open_attempt(connection, job_id, now, "CANCELED")
+                        self._set_terminal(connection, job_id, JobStatus.CANCELED, now)
                     else:
                         error = ErrorRecord(code="DB_BUSY", summary="Lease expired", retryable=True)
                         decision = classify_retry(error.code, attempt_no=attempt_no)

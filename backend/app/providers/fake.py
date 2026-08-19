@@ -128,6 +128,10 @@ class FakeAudioProcessor:
             raise ValueError("pause_after_ms must match ordered_segment_paths length")
         if any(pause_ms < 0 for pause_ms in request.pause_after_ms):
             raise ValueError("pause_after_ms values must be non-negative")
+        if any(not isinstance(pause_ms, int) for pause_ms in request.pause_after_ms):
+            raise ValueError("pause_after_ms values must be integer milliseconds")
+        if any((SAMPLE_RATE * pause_ms) % 1000 != 0 for pause_ms in request.pause_after_ms):
+            raise ValueError("pause_after_ms values must be aligned exactly to whole PCM frames")
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)

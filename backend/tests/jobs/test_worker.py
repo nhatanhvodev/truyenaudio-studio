@@ -142,6 +142,42 @@ async def test_cancel_requested_immediately_after_claim_is_acknowledged_before_d
 
 
 @pytest.mark.asyncio
+async def test_cancel_requested_during_long_handler_keeps_lease_heartbeating_until_acknowledged(
+    runner: JobRunner,
+) -> None:
+    job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "cancel-long-handler")
+    clock = ManualClock(NOW)
+    original_lease_expires_at: datetime | None = None
+
+    async def handle(lease: JobLease) -> None:
+        nonlocal original_lease_expires_at
+        original_lease_expires_at = lease.lease_expires_at
+        runner.request_cancel(lease.job_id, NOW + timedelta(seconds=5))
+        clock.value = NOW + timedelta(seconds=30)
+        while runner.get(lease.job_id).lease_expires_at == original_lease_expires_at:
+            await asyncio.sleep(0)
+        clock.value = NOW + timedelta(seconds=61)
+        return None
+
+    worker = Worker(
+        runner,
+        handlers={JobKind.TRANSLATE: handle},
+        worker_id="worker-a",
+        heartbeat_interval_seconds=0,
+        clock=clock,
+    )
+
+    assert await asyncio.wait_for(worker.run_once(), timeout=1) is True
+    assert original_lease_expires_at == NOW + timedelta(seconds=60)
+    view = runner.get(job.id)
+    assert view.status is JobStatus.CANCELED
+    assert view.lease_owner is None
+    assert view.lease_expires_at is None
+    assert _attempt_outcome(runner.engine, job.id) == "CANCELED"
+    assert _open_attempt_count(runner.engine, job.id) == 0
+
+
+@pytest.mark.asyncio
 async def test_handler_exception_is_redacted_and_closes_attempt(runner: JobRunner) -> None:
     job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "exception")
 

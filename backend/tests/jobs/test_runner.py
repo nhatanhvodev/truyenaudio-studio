@@ -195,6 +195,27 @@ def test_heartbeat_does_not_revive_already_expired_lease(runner: JobRunner) -> N
     assert expired.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
 
 
+def test_cancel_requested_lease_stays_heartbeatable_only_for_matching_owner_and_unexpired_lease(
+    runner: JobRunner,
+) -> None:
+    job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "heartbeat-cancel")
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    runner.request_cancel(job.id, NOW + timedelta(seconds=1))
+
+    assert runner.heartbeat(job.id, "worker-b", NOW + timedelta(seconds=15)) is None
+    still_owned = runner.get(job.id)
+    assert still_owned.status is JobStatus.CANCEL_REQUESTED
+    assert still_owned.lease_owner == "worker-a"
+    assert still_owned.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
+
+    updated = runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=15))
+    assert updated is not None
+    assert updated.heartbeat_at == NOW + timedelta(seconds=15)
+    assert runner.get(job.id).lease_expires_at == NOW + timedelta(seconds=15 + LEASE_SECONDS)
+    assert runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=15 + LEASE_SECONDS + 1)) is None
+
+
 def test_request_cancel_marks_only_nonterminal_eligible_jobs(runner: JobRunner) -> None:
     succeeded = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, "cancel-succeeded", priority=1)
     running = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "cancel-running", priority=5)
@@ -207,9 +228,23 @@ def test_request_cancel_marks_only_nonterminal_eligible_jobs(runner: JobRunner) 
     assert runner.claim("worker-a", NOW + timedelta(seconds=2)).job_id == running.id
 
     assert runner.request_cancel(running.id, NOW + timedelta(seconds=3)).status is JobStatus.CANCEL_REQUESTED
-    assert runner.request_cancel(queued.id, NOW + timedelta(seconds=3)).status is JobStatus.CANCEL_REQUESTED
+    assert runner.request_cancel(queued.id, NOW + timedelta(seconds=3)).status is JobStatus.CANCELED
     assert runner.request_cancel(succeeded.id, NOW + timedelta(seconds=3)) is None
     assert runner.get(succeeded.id).status is JobStatus.SUCCEEDED
+
+
+def test_request_cancel_terminally_cancels_never_started_queued_job(runner: JobRunner, migrated_engine: Engine) -> None:
+    queued = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "cancel-never-started")
+
+    canceled = runner.request_cancel(queued.id, NOW + timedelta(seconds=1))
+
+    assert canceled is not None
+    assert canceled.status is JobStatus.CANCELED
+    assert canceled.cancel_requested_at == NOW + timedelta(seconds=1)
+    assert canceled.lease_owner is None
+    assert canceled.lease_expires_at is None
+    assert runner.claim("worker-a", NOW + timedelta(seconds=2)) is None
+    assert _attempt_rows(migrated_engine, queued.id) == []
 
 
 def test_complete_and_fail_terminal_paths_clear_lease_and_close_attempt(runner: JobRunner, migrated_engine: Engine) -> None:
@@ -597,6 +632,54 @@ def test_expired_cloud_sent_attempt_becomes_billing_unknown_and_never_auto_retri
         recovery_now.isoformat(),
         "BILLING_UNKNOWN",
         "provider-request-1",
+    )
+
+
+def test_expired_cancel_requested_local_attempt_is_recovered_as_canceled(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "recover-cancel-local")
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    runner.request_cancel(job.id, NOW + timedelta(seconds=1))
+    recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
+
+    recovered = runner.recover_expired(recovery_now)
+
+    assert recovered == [job.id]
+    view = runner.get(job.id)
+    assert view.status is JobStatus.CANCELED
+    assert view.lease_owner is None
+    assert view.lease_expires_at is None
+    assert runner.claim("worker-b", recovery_now + timedelta(seconds=1)) is None
+    assert _attempt_rows(migrated_engine, job.id)[-1] == (1, recovery_now.isoformat(), "CANCELED", None)
+    assert _open_attempt_count(migrated_engine, job.id) == 0
+
+
+def test_expired_cancel_requested_provider_sent_attempt_becomes_billing_unknown(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.SYNTHESIZE, PROJECT_ID, CHAPTER_ID, "recover-cancel-provider")
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    runner.mark_provider_sent(job.id, "provider-request-2")
+    runner.request_cancel(job.id, NOW + timedelta(seconds=1))
+    recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
+
+    recovered = runner.recover_expired(recovery_now)
+
+    assert recovered == [job.id]
+    view = runner.get(job.id)
+    assert view.status is JobStatus.BILLING_UNKNOWN
+    assert view.lease_owner is None
+    assert view.lease_expires_at is None
+    assert _attempt_rows(migrated_engine, job.id)[-1] == (
+        1,
+        recovery_now.isoformat(),
+        "BILLING_UNKNOWN",
+        "provider-request-2",
     )
 
 
