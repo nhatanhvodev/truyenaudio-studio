@@ -1,0 +1,578 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Callable
+
+from sqlalchemy import Engine, RowMapping, text
+
+from app.contracts import JobKind, JobStatus, new_id
+from app.modules.jobs.retry import RetryDisposition, classify_retry
+
+
+LEASE_SECONDS = 60
+HEARTBEAT_INTERVAL_SECONDS = 15
+RECOVERY_THRESHOLD_SECONDS = 90
+
+
+TERMINAL_STATUSES = {
+    JobStatus.SUCCEEDED.value,
+    JobStatus.FAILED.value,
+    JobStatus.CANCELED.value,
+    JobStatus.BLOCKED_BUDGET.value,
+    JobStatus.BILLING_UNKNOWN.value,
+}
+
+
+@dataclass(frozen=True)
+class ErrorRecord:
+    code: str
+    summary: str
+    retryable: bool
+    provider_request_sent: bool = False
+    retry_after_seconds: int | None = None
+    redacted_detail: str | None = None
+
+
+@dataclass(frozen=True)
+class JobView:
+    id: str
+    kind: JobKind
+    status: JobStatus
+    project_id: str
+    chapter_id: str | None
+    idempotency_key: str
+    priority: int
+    progress_current: int
+    progress_total: int
+    cancel_requested_at: datetime | None
+    lease_owner: str | None
+    lease_expires_at: datetime | None
+    next_run_at: datetime | None
+    result_artifact_id: str | None
+    error_code: str | None
+    error_summary: str | None
+
+
+@dataclass(frozen=True)
+class JobLease:
+    job_id: str
+    kind: JobKind
+    worker_id: str
+    attempt_id: str
+    attempt_no: int
+    lease_expires_at: datetime
+    heartbeat_at: datetime
+
+
+@dataclass(frozen=True)
+class HeartbeatView:
+    job_id: str
+    worker_id: str
+    heartbeat_at: datetime
+    lease_expires_at: datetime
+
+
+class JobRunner:
+    def __init__(self, engine: Engine, *, id_factory: Callable[[], str] = new_id) -> None:
+        self.engine = engine
+        self._id_factory = id_factory
+
+    def enqueue(
+        self,
+        kind: JobKind,
+        project_id: str,
+        chapter_id: str | None,
+        idempotency_key: str,
+        priority: int = 100,
+    ) -> JobView:
+        now = datetime.now(UTC)
+        job_id = self._id_factory()
+        with self.engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT OR IGNORE INTO jobs
+                    (id, kind, status, project_id, chapter_id, idempotency_key, priority,
+                     progress_current, progress_total, created_at, updated_at)
+                    VALUES
+                    (:id, :kind, :status, :project_id, :chapter_id, :idempotency_key, :priority,
+                     0, 0, :now, :now)
+                    """
+                ),
+                {
+                    "id": job_id,
+                    "kind": kind.value,
+                    "status": JobStatus.QUEUED.value,
+                    "project_id": project_id,
+                    "chapter_id": chapter_id,
+                    "idempotency_key": idempotency_key,
+                    "priority": priority,
+                    "now": now.isoformat(),
+                },
+            )
+            row = connection.execute(
+                text("SELECT * FROM jobs WHERE idempotency_key = :idempotency_key"),
+                {"idempotency_key": idempotency_key},
+            ).mappings().one()
+        return _job_view(row)
+
+    def get(self, job_id: str) -> JobView:
+        with self.engine.connect() as connection:
+            row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+        return _job_view(row)
+
+    def claim(self, worker_id: str, now: datetime) -> JobLease | None:
+        _require_aware(now)
+        lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                job = connection.execute(
+                    text(
+                        """
+                        SELECT * FROM jobs
+                        WHERE status = :queued
+                          AND (next_run_at IS NULL OR next_run_at <= :now)
+                        ORDER BY priority ASC, id ASC
+                        LIMIT 1
+                        """
+                    ),
+                    {"queued": JobStatus.QUEUED.value, "now": now.isoformat()},
+                ).mappings().first()
+                if job is None:
+                    connection.commit()
+                    return None
+
+                attempt_no = (
+                    connection.execute(
+                        text("SELECT COALESCE(MAX(attempt_no), 0) + 1 FROM job_attempts WHERE job_id = :job_id"),
+                        {"job_id": job["id"]},
+                    ).scalar_one()
+                )
+                attempt_id = self._id_factory()
+                connection.execute(
+                    text(
+                        """
+                        UPDATE jobs
+                        SET status = :running,
+                            lease_owner = :worker_id,
+                            lease_expires_at = :lease_expires_at,
+                            next_run_at = NULL,
+                            error_code = NULL,
+                            error_summary = NULL,
+                            updated_at = :now
+                        WHERE id = :job_id
+                        """
+                    ),
+                    {
+                        "running": JobStatus.RUNNING.value,
+                        "worker_id": worker_id,
+                        "lease_expires_at": lease_expires_at.isoformat(),
+                        "now": now.isoformat(),
+                        "job_id": job["id"],
+                    },
+                )
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO job_attempts
+                        (id, job_id, attempt_no, started_at, heartbeat_at, created_at, updated_at)
+                        VALUES (:id, :job_id, :attempt_no, :now, :now, :now, :now)
+                        """
+                    ),
+                    {"id": attempt_id, "job_id": job["id"], "attempt_no": attempt_no, "now": now.isoformat()},
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+
+        return JobLease(
+            job_id=job["id"],
+            kind=JobKind(job["kind"]),
+            worker_id=worker_id,
+            attempt_id=attempt_id,
+            attempt_no=attempt_no,
+            lease_expires_at=lease_expires_at,
+            heartbeat_at=now,
+        )
+
+    def heartbeat(self, job_id: str, worker_id: str, now: datetime) -> HeartbeatView | None:
+        _require_aware(now)
+        lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
+        with self.engine.begin() as connection:
+            result = connection.execute(
+                text(
+                    """
+                    UPDATE jobs
+                    SET lease_expires_at = :lease_expires_at,
+                        updated_at = :now
+                    WHERE id = :job_id
+                      AND status = :running
+                      AND lease_owner = :worker_id
+                    """
+                ),
+                {
+                    "lease_expires_at": lease_expires_at.isoformat(),
+                    "now": now.isoformat(),
+                    "job_id": job_id,
+                    "running": JobStatus.RUNNING.value,
+                    "worker_id": worker_id,
+                },
+            )
+            if result.rowcount != 1:
+                return None
+            connection.execute(
+                text(
+                    """
+                    UPDATE job_attempts
+                    SET heartbeat_at = :now,
+                        updated_at = :now
+                    WHERE id = (
+                        SELECT id
+                        FROM job_attempts
+                        WHERE job_id = :job_id AND finished_at IS NULL
+                        ORDER BY attempt_no DESC
+                        LIMIT 1
+                    )
+                    """
+                ),
+                {"job_id": job_id, "now": now.isoformat()},
+            )
+        return HeartbeatView(job_id, worker_id, now, lease_expires_at)
+
+    def request_cancel(self, job_id: str, now: datetime) -> JobView | None:
+        _require_aware(now)
+        with self.engine.begin() as connection:
+            result = connection.execute(
+                text(
+                    """
+                    UPDATE jobs
+                    SET status = :cancel_requested,
+                        cancel_requested_at = :now,
+                        updated_at = :now
+                    WHERE id = :job_id
+                      AND status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELED', 'BLOCKED_BUDGET', 'BILLING_UNKNOWN')
+                    """
+                ),
+                {"cancel_requested": JobStatus.CANCEL_REQUESTED.value, "now": now.isoformat(), "job_id": job_id},
+            )
+            if result.rowcount != 1:
+                return None
+            row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+        return _job_view(row)
+
+    def complete(self, job_id: str, result_artifact_id: str, now: datetime | None = None) -> JobView:
+        timestamp = now or datetime.now(UTC)
+        _require_aware(timestamp)
+        with self.engine.begin() as connection:
+            self._close_open_attempt(connection, job_id, timestamp, "SUCCEEDED")
+            row = self._set_terminal(
+                connection,
+                job_id,
+                JobStatus.SUCCEEDED,
+                timestamp,
+                result_artifact_id=result_artifact_id,
+            )
+        return _job_view(row)
+
+    def fail(self, job_id: str, error: ErrorRecord, now: datetime | None = None) -> JobView:
+        timestamp = now or datetime.now(UTC)
+        _require_aware(timestamp)
+        with self.engine.begin() as connection:
+            attempt_no = self._current_attempt_no(connection, job_id)
+            provider_request_id = self._current_provider_request_id(connection, job_id)
+            provider_sent = error.provider_request_sent or provider_request_id is not None
+
+            if provider_sent:
+                self._close_open_attempt(
+                    connection,
+                    job_id,
+                    timestamp,
+                    "BILLING_UNKNOWN",
+                    provider_request_id=provider_request_id,
+                    error=error,
+                )
+                row = self._set_terminal(
+                    connection,
+                    job_id,
+                    JobStatus.BILLING_UNKNOWN,
+                    timestamp,
+                    error_code="BILLING_UNKNOWN",
+                    error_summary=error.summary,
+                )
+                return _job_view(row)
+
+            decision = classify_retry(
+                error.code,
+                attempt_no=attempt_no,
+                retry_after_seconds=error.retry_after_seconds,
+            )
+            if error.retryable and decision.disposition is RetryDisposition.RETRY:
+                next_run_at = timestamp + timedelta(seconds=decision.delay_seconds or 0)
+                self._close_open_attempt(connection, job_id, timestamp, "RETRY", error=error)
+                row = self._requeue(connection, job_id, timestamp, next_run_at, error)
+                return _job_view(row)
+
+            self._close_open_attempt(connection, job_id, timestamp, "FAILED", error=error)
+            row = self._set_terminal(
+                connection,
+                job_id,
+                JobStatus.FAILED,
+                timestamp,
+                error_code=error.code,
+                error_summary=error.summary,
+            )
+        return _job_view(row)
+
+    def defer(self, job_id: str, next_run_at: datetime) -> JobView:
+        _require_aware(next_run_at)
+        with self.engine.begin() as connection:
+            connection.execute(
+                text("UPDATE jobs SET next_run_at = :next_run_at, updated_at = :now WHERE id = :job_id"),
+                {"next_run_at": next_run_at.isoformat(), "now": datetime.now(UTC).isoformat(), "job_id": job_id},
+            )
+            row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+        return _job_view(row)
+
+    def mark_provider_sent(self, job_id: str, provider_request_id: str) -> None:
+        timestamp = datetime.now(UTC)
+        with self.engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    UPDATE job_attempts
+                    SET provider_request_id = :provider_request_id,
+                        updated_at = :now
+                    WHERE id = (
+                        SELECT id
+                        FROM job_attempts
+                        WHERE job_id = :job_id AND finished_at IS NULL
+                        ORDER BY attempt_no DESC
+                        LIMIT 1
+                    )
+                    """
+                ),
+                {"job_id": job_id, "provider_request_id": provider_request_id, "now": timestamp.isoformat()},
+            )
+
+    def recover_expired(self, now: datetime) -> list[str]:
+        _require_aware(now)
+        expired_before = now - timedelta(seconds=RECOVERY_THRESHOLD_SECONDS)
+        recovered: list[str] = []
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                rows = connection.execute(
+                    text(
+                        """
+                        SELECT *
+                        FROM jobs
+                        WHERE status = :running
+                          AND lease_expires_at IS NOT NULL
+                          AND lease_expires_at <= :expired_before
+                        ORDER BY priority ASC, id ASC
+                        """
+                    ),
+                    {"running": JobStatus.RUNNING.value, "expired_before": expired_before.isoformat()},
+                ).mappings().all()
+
+                for row in rows:
+                    job_id = row["id"]
+                    provider_request_id = self._current_provider_request_id(connection, job_id)
+                    if provider_request_id is not None:
+                        self._close_open_attempt(
+                            connection,
+                            job_id,
+                            now,
+                            "BILLING_UNKNOWN",
+                            provider_request_id=provider_request_id,
+                        )
+                        self._set_terminal(
+                            connection,
+                            job_id,
+                            JobStatus.BILLING_UNKNOWN,
+                            now,
+                            error_code="BILLING_UNKNOWN",
+                            error_summary="Provider request was sent before lease expired",
+                        )
+                    else:
+                        self._close_open_attempt(connection, job_id, now, "EXPIRED_RETRY")
+                        self._requeue(
+                            connection,
+                            job_id,
+                            now,
+                            now,
+                            ErrorRecord(code="DB_BUSY", summary="Lease expired", retryable=True),
+                        )
+                    recovered.append(job_id)
+
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return recovered
+
+    def _current_attempt_no(self, connection, job_id: str) -> int:
+        attempt_no = connection.execute(
+            text("SELECT COALESCE(MAX(attempt_no), 0) FROM job_attempts WHERE job_id = :job_id"),
+            {"job_id": job_id},
+        ).scalar_one()
+        return int(attempt_no)
+
+    def _current_provider_request_id(self, connection, job_id: str) -> str | None:
+        return connection.execute(
+            text(
+                """
+                SELECT provider_request_id
+                FROM job_attempts
+                WHERE job_id = :job_id AND finished_at IS NULL
+                ORDER BY attempt_no DESC
+                LIMIT 1
+                """
+            ),
+            {"job_id": job_id},
+        ).scalar_one_or_none()
+
+    def _close_open_attempt(
+        self,
+        connection,
+        job_id: str,
+        now: datetime,
+        outcome: str,
+        *,
+        provider_request_id: str | None = None,
+        error: ErrorRecord | None = None,
+    ) -> None:
+        connection.execute(
+            text(
+                """
+                UPDATE job_attempts
+                SET finished_at = :now,
+                    heartbeat_at = COALESCE(heartbeat_at, :now),
+                    outcome = :outcome,
+                    provider_request_id = COALESCE(:provider_request_id, provider_request_id),
+                    error_class = :error_class,
+                    redacted_detail = :redacted_detail,
+                    updated_at = :now
+                WHERE id = (
+                    SELECT id
+                    FROM job_attempts
+                    WHERE job_id = :job_id AND finished_at IS NULL
+                    ORDER BY attempt_no DESC
+                    LIMIT 1
+                )
+                """
+            ),
+            {
+                "job_id": job_id,
+                "now": now.isoformat(),
+                "outcome": outcome,
+                "provider_request_id": provider_request_id,
+                "error_class": error.code if error else None,
+                "redacted_detail": error.redacted_detail if error else None,
+            },
+        )
+
+    def _requeue(
+        self,
+        connection,
+        job_id: str,
+        now: datetime,
+        next_run_at: datetime,
+        error: ErrorRecord,
+    ) -> RowMapping:
+        connection.execute(
+            text(
+                """
+                UPDATE jobs
+                SET status = :queued,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    next_run_at = :next_run_at,
+                    error_code = :error_code,
+                    error_summary = :error_summary,
+                    updated_at = :now
+                WHERE id = :job_id
+                """
+            ),
+            {
+                "queued": JobStatus.QUEUED.value,
+                "next_run_at": next_run_at.isoformat(),
+                "error_code": error.code,
+                "error_summary": error.summary,
+                "now": now.isoformat(),
+                "job_id": job_id,
+            },
+        )
+        return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+
+    def _set_terminal(
+        self,
+        connection,
+        job_id: str,
+        status: JobStatus,
+        now: datetime,
+        *,
+        result_artifact_id: str | None = None,
+        error_code: str | None = None,
+        error_summary: str | None = None,
+    ) -> RowMapping:
+        connection.execute(
+            text(
+                """
+                UPDATE jobs
+                SET status = :status,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    next_run_at = NULL,
+                    result_artifact_id = COALESCE(:result_artifact_id, result_artifact_id),
+                    error_code = :error_code,
+                    error_summary = :error_summary,
+                    updated_at = :now
+                WHERE id = :job_id
+                """
+            ),
+            {
+                "status": status.value,
+                "result_artifact_id": result_artifact_id,
+                "error_code": error_code,
+                "error_summary": error_summary,
+                "now": now.isoformat(),
+                "job_id": job_id,
+            },
+        )
+        return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+
+
+def _job_view(row: RowMapping) -> JobView:
+    return JobView(
+        id=row["id"],
+        kind=JobKind(row["kind"]),
+        status=JobStatus(row["status"]),
+        project_id=row["project_id"],
+        chapter_id=row["chapter_id"],
+        idempotency_key=row["idempotency_key"],
+        priority=row["priority"],
+        progress_current=row["progress_current"],
+        progress_total=row["progress_total"],
+        cancel_requested_at=_parse_dt(row["cancel_requested_at"]),
+        lease_owner=row["lease_owner"],
+        lease_expires_at=_parse_dt(row["lease_expires_at"]),
+        next_run_at=_parse_dt(row["next_run_at"]),
+        result_artifact_id=row["result_artifact_id"],
+        error_code=row["error_code"],
+        error_summary=row["error_summary"],
+    )
+
+
+def _parse_dt(value: object) -> datetime | None:
+    if value is None or isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value))
+
+
+def _require_aware(value: datetime) -> None:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("datetime values must be timezone-aware")

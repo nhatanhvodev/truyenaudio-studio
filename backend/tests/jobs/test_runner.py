@@ -1,0 +1,312 @@
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import Engine, text
+
+from app.contracts import ArtifactKind, ArtifactStatus, JobKind, JobStatus, SourceType, RightsStatus
+from app.modules.jobs.retry import RetryDecision, RetryDisposition, classify_retry
+from app.modules.jobs.runner import (
+    HEARTBEAT_INTERVAL_SECONDS,
+    LEASE_SECONDS,
+    RECOVERY_THRESHOLD_SECONDS,
+    ErrorRecord,
+    JobRunner,
+)
+
+
+NOW = datetime(2026, 8, 19, 2, 0, 0, tzinfo=UTC)
+PROJECT_ID = "018f0000-0000-7000-8000-000000000101"
+CHAPTER_ID = "018f0000-0000-7000-8000-000000000102"
+
+
+@pytest.fixture
+def runner(migrated_engine: Engine, deterministic_uuid7_factory) -> JobRunner:
+    _insert_project(migrated_engine)
+    return JobRunner(migrated_engine, id_factory=deterministic_uuid7_factory)
+
+
+def _insert_project(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO projects (id, title, slug, source_type, rights_status, created_at, updated_at)
+                VALUES (:id, 'Queue Project', 'queue-project', :source_type, :rights_status, :now, :now)
+                """
+            ),
+            {
+                "id": PROJECT_ID,
+                "source_type": SourceType.SELF_AUTHORED.value,
+                "rights_status": RightsStatus.PRIVATE_ONLY.value,
+                "now": NOW.isoformat(),
+            },
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO chapters (id, project_id, ordinal, state, created_at, updated_at)
+                VALUES (:id, :project_id, 1, 'IMPORTED', :now, :now)
+                """
+            ),
+            {"id": CHAPTER_ID, "project_id": PROJECT_ID, "now": NOW.isoformat()},
+        )
+
+
+def _attempt_rows(engine: Engine, job_id: str) -> list[tuple[int, str | None, str | None, str | None]]:
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT attempt_no, finished_at, outcome, provider_request_id
+                FROM job_attempts
+                WHERE job_id = :job_id
+                ORDER BY attempt_no
+                """
+            ),
+            {"job_id": job_id},
+        ).all()
+    return [(row.attempt_no, row.finished_at, row.outcome, row.provider_request_id) for row in rows]
+
+
+def _insert_artifact(engine: Engine, artifact_id: str) -> None:
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO artifacts
+                (id, chapter_id, kind, status, relative_path, sha256, byte_size, mime_type,
+                 input_hash, settings_hash, created_at, updated_at)
+                VALUES
+                (:id, :chapter_id, :kind, :status, :relative_path, :sha256, 1, 'application/json',
+                 :input_hash, :settings_hash, :now, :now)
+                """
+            ),
+            {
+                "id": artifact_id,
+                "chapter_id": CHAPTER_ID,
+                "kind": ArtifactKind.REPORT.value,
+                "status": ArtifactStatus.READY.value,
+                "relative_path": f"reports/{artifact_id}.json",
+                "sha256": "a" * 64,
+                "input_hash": "b" * 64,
+                "settings_hash": "c" * 64,
+                "now": NOW.isoformat(),
+            },
+        )
+
+
+def test_enqueue_is_idempotent_and_returns_immutable_view(runner: JobRunner, migrated_engine: Engine) -> None:
+    first = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "translate-same", priority=10)
+    second = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "translate-same", priority=1)
+
+    assert second == first
+    assert first.kind is JobKind.TRANSLATE
+    assert first.status is JobStatus.QUEUED
+    with pytest.raises(Exception, match="cannot assign to field"):
+        first.priority = 99  # type: ignore[misc]
+
+    with migrated_engine.connect() as connection:
+        count = connection.execute(text("SELECT COUNT(*) FROM jobs WHERE idempotency_key = 'translate-same'")).scalar_one()
+    assert count == 1
+
+
+def test_claim_uses_stable_priority_then_id_order_and_creates_first_attempt(runner: JobRunner) -> None:
+    later_low_priority = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "priority-20", priority=20)
+    first_same_priority = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "priority-5a", priority=5)
+    runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "priority-5b", priority=5)
+
+    claim = runner.claim("worker-a", NOW)
+
+    assert claim is not None
+    assert claim.job_id == first_same_priority.id
+    assert claim.attempt_no == 1
+    assert claim.worker_id == "worker-a"
+    assert claim.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
+    assert runner.get(first_same_priority.id).status is JobStatus.RUNNING
+    assert runner.get(later_low_priority.id).status is JobStatus.QUEUED
+
+
+def test_two_independent_runners_racing_claim_exactly_one_job(
+    migrated_engine: Engine,
+    deterministic_uuid7_factory,
+) -> None:
+    _insert_project(migrated_engine)
+    owner = JobRunner(migrated_engine, id_factory=deterministic_uuid7_factory)
+    job = owner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "race-once")
+    runners = [
+        JobRunner(migrated_engine, id_factory=deterministic_uuid7_factory),
+        JobRunner(migrated_engine, id_factory=deterministic_uuid7_factory),
+    ]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        claims = list(pool.map(lambda args: args[0].claim(args[1], NOW), zip(runners, ["worker-a", "worker-b"])))
+
+    claimed = [claim for claim in claims if claim is not None]
+    assert len(claimed) == 1
+    assert claimed[0].job_id == job.id
+    assert _attempt_rows(migrated_engine, job.id) == [(1, None, None, None)]
+
+
+def test_claim_ignores_future_next_run_and_does_not_reclaim_fresh_lease(runner: JobRunner) -> None:
+    delayed = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "delayed")
+    ready = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "ready")
+    runner.defer(delayed.id, NOW + timedelta(seconds=2))
+
+    assert runner.claim("worker-a", NOW).job_id == ready.id
+    assert runner.claim("worker-c", NOW + timedelta(seconds=1)) is None
+
+
+def test_heartbeat_only_extends_matching_owner_lease(runner: JobRunner) -> None:
+    job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "heartbeat-owner")
+    runner.claim("worker-a", NOW)
+
+    assert runner.heartbeat(job.id, "worker-b", NOW + timedelta(seconds=15)) is None
+    still_owned = runner.get(job.id)
+    assert still_owned.lease_owner == "worker-a"
+    assert still_owned.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
+
+    updated = runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=15))
+    assert updated is not None
+    assert updated.heartbeat_at == NOW + timedelta(seconds=15)
+    assert runner.get(job.id).lease_expires_at == NOW + timedelta(seconds=15 + LEASE_SECONDS)
+    assert HEARTBEAT_INTERVAL_SECONDS == 15
+
+
+def test_request_cancel_marks_only_nonterminal_eligible_jobs(runner: JobRunner) -> None:
+    running = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "cancel-running")
+    queued = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "cancel-queued")
+    succeeded = runner.enqueue(JobKind.EXPORT, PROJECT_ID, CHAPTER_ID, "cancel-succeeded")
+    artifact_id = "018f0000-0000-7000-8000-000000000777"
+    _insert_artifact(runner.engine, artifact_id)
+    runner.claim("worker-a", NOW)
+    runner.complete(succeeded.id, artifact_id)
+
+    assert runner.request_cancel(running.id, NOW + timedelta(seconds=1)).status is JobStatus.CANCEL_REQUESTED
+    assert runner.request_cancel(queued.id, NOW + timedelta(seconds=1)).status is JobStatus.CANCEL_REQUESTED
+    assert runner.request_cancel(succeeded.id, NOW + timedelta(seconds=1)) is None
+    assert runner.get(succeeded.id).status is JobStatus.SUCCEEDED
+
+
+def test_complete_and_fail_terminal_paths_clear_lease_and_close_attempt(runner: JobRunner, migrated_engine: Engine) -> None:
+    succeeded = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "complete")
+    artifact_id = "018f0000-0000-7000-8000-000000000778"
+    _insert_artifact(migrated_engine, artifact_id)
+    runner.claim("worker-a", NOW)
+    completed = runner.complete(succeeded.id, artifact_id)
+    failed = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "fail")
+    runner.claim("worker-a", NOW)
+    terminal = runner.fail(
+        failed.id,
+        ErrorRecord(code="INPUT_INVALID", summary="Bad chapter map", retryable=False),
+        now=NOW + timedelta(seconds=1),
+    )
+
+    assert completed.status is JobStatus.SUCCEEDED
+    assert completed.result_artifact_id == artifact_id
+    assert completed.lease_owner is None
+    assert completed.lease_expires_at is None
+    assert terminal.status is JobStatus.FAILED
+    assert terminal.error_code == "INPUT_INVALID"
+    assert terminal.lease_owner is None
+    assert terminal.lease_expires_at is None
+    assert _attempt_rows(migrated_engine, succeeded.id)[-1][2] == "SUCCEEDED"
+    assert _attempt_rows(migrated_engine, failed.id)[-1][2] == "FAILED"
+
+
+@pytest.mark.parametrize(
+    ("code", "attempt_no", "retry_after", "expected"),
+    [
+        ("PROVIDER_NETWORK", 1, None, RetryDecision(RetryDisposition.RETRY, 2)),
+        ("PROVIDER_5XX", 2, None, RetryDecision(RetryDisposition.RETRY, 10)),
+        ("DB_BUSY", 3, None, RetryDecision(RetryDisposition.RETRY, 30)),
+        ("PROVIDER_RATE_LIMIT", 1, 900, RetryDecision(RetryDisposition.RETRY, 600)),
+        ("PROVIDER_AUTH", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("PROVIDER_QUOTA", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("BUDGET_LIMIT_EXCEEDED", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("MODEL_LICENSE_UNVERIFIED", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("INPUT_INVALID", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("PROVIDER_SCHEMA", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("DETERMINISTIC_QA_FAILED", 1, None, RetryDecision(RetryDisposition.FAIL, None)),
+        ("PROVIDER_NETWORK", 4, None, RetryDecision(RetryDisposition.FAIL, None)),
+    ],
+)
+def test_retry_policy_is_deterministic_and_exhausts_attempts(
+    code: str,
+    attempt_no: int,
+    retry_after: int | None,
+    expected: RetryDecision,
+) -> None:
+    assert classify_retry(code, attempt_no=attempt_no, retry_after_seconds=retry_after) == expected
+
+
+def test_fail_requeues_definitely_unsent_local_retryable_error(runner: JobRunner) -> None:
+    job = runner.enqueue(JobKind.MASTER, PROJECT_ID, CHAPTER_ID, "local-retry")
+    runner.claim("worker-a", NOW)
+
+    view = runner.fail(
+        job.id,
+        ErrorRecord(code="DB_BUSY", summary="database is locked", retryable=True, provider_request_sent=False),
+        now=NOW + timedelta(seconds=1),
+    )
+
+    assert view.status is JobStatus.QUEUED
+    assert view.next_run_at == NOW + timedelta(seconds=3)
+    assert view.lease_owner is None
+    assert view.lease_expires_at is None
+    assert runner.claim("worker-b", NOW + timedelta(seconds=2)) is None
+    assert runner.claim("worker-b", NOW + timedelta(seconds=3)).attempt_no == 2
+
+
+def test_expired_local_retryable_attempt_requeues_without_new_attempt_until_claim(runner: JobRunner) -> None:
+    job = runner.enqueue(JobKind.MASTER, PROJECT_ID, CHAPTER_ID, "expired-local")
+    runner.claim("worker-a", NOW)
+    recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
+
+    recovered = runner.recover_expired(recovery_now)
+
+    assert recovered == [job.id]
+    assert runner.get(job.id).status is JobStatus.QUEUED
+    assert _attempt_rows(runner.engine, job.id)[-1][2] == "EXPIRED_RETRY"
+    assert runner.claim("worker-b", recovery_now).attempt_no == 2
+
+
+def test_expired_cloud_sent_attempt_becomes_billing_unknown_and_never_auto_retries(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.SYNTHESIZE, PROJECT_ID, CHAPTER_ID, "expired-cloud")
+    runner.claim("worker-a", NOW)
+    runner.mark_provider_sent(job.id, "provider-request-1")
+    recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
+
+    recovered = runner.recover_expired(recovery_now)
+
+    assert recovered == [job.id]
+    view = runner.get(job.id)
+    assert view.status is JobStatus.BILLING_UNKNOWN
+    assert view.lease_owner is None
+    assert view.lease_expires_at is None
+    assert runner.claim("worker-b", recovery_now + timedelta(seconds=1)) is None
+    assert _attempt_rows(migrated_engine, job.id)[-1] == (
+        1,
+        recovery_now.isoformat(),
+        "BILLING_UNKNOWN",
+        "provider-request-1",
+    )
+
+
+def test_runner_rejects_naive_now_values(runner: JobRunner) -> None:
+    naive = datetime(2026, 8, 19, 2, 0, 0)
+    runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "naive-now")
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        runner.claim("worker-a", naive)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        runner.heartbeat("missing", "worker-a", naive)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        runner.request_cancel("missing", naive)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        runner.recover_expired(naive)
