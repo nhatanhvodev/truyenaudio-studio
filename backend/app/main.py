@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.health import create_health_router
+from app.api.poc import create_poc_router
 from app.settings.config import Settings
 from app.settings.startup_lock import StartupLock
 
@@ -20,13 +22,5 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-
-
-@app.get("/api/health/live")
-def health_live() -> dict[str, str]:
-    return {"status": "live"}
-
-
-@app.get("/api/health/ready")
-def health_ready() -> dict[str, str]:
-    return {"status": "ready"}
+app.include_router(create_health_router())
+app.include_router(create_poc_router())

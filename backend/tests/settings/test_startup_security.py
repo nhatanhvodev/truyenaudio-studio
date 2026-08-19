@@ -59,12 +59,12 @@ def test_health_live_returns_live_status():
         assert response.json() == {"status": "live"}
 
 
-def test_health_ready_returns_ready_status():
+def test_health_ready_fails_closed_without_runtime_prerequisites():
     with TestClient(app) as client:
         response = client.get("/api/health/ready")
 
-        assert response.status_code == 200
-        assert response.json() == {"status": "ready"}
+        assert response.status_code == 503
+        assert response.json()["status"] == "not_ready"
 
 
 def test_settings_uses_required_local_defaults(monkeypatch):

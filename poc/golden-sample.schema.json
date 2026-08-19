@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TruyenAudio Studio POC Report",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "provider", "sample", "translation", "tts", "gates"],
+  "properties": {
+    "schema_version": { "const": "truyenaudio-studio.poc-report.v1" },
+    "generated_at": { "type": "string" },
+    "provider": { "type": "string" },
+    "sample": {
+      "type": "object",
+      "required": ["content_policy", "segment_count", "duration_minutes", "source_hash"]
+    },
+    "translation": {
+      "type": "object",
+      "required": ["provider", "model", "provider_version", "model_snapshot_hash", "license_card_artifact", "rate_card_snapshot", "scores", "gate"]
+    },
+    "tts": {
+      "type": "object",
+      "required": ["provider", "model", "provider_version", "rate_card_snapshot", "voices", "score", "gate"]
+    },
+    "gates": {
+      "type": "object",
+      "required": ["translation", "tts", "overall"]
+    }
+  }
+}

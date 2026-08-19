@@ -5,6 +5,10 @@ import contextlib
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import json
+import os
+from pathlib import Path
+from uuid import uuid4
 
 from app.contracts import JobKind, JobStatus
 from app.db.base import create_engine_for
@@ -23,17 +27,21 @@ class Worker:
     worker_id: str = "studio-worker-1"
     heartbeat_interval_seconds: float = HEARTBEAT_INTERVAL_SECONDS
     clock: Callable[[], datetime] = field(default_factory=lambda: lambda: datetime.now(UTC))
+    process_heartbeat_path: Path | None = None
 
     async def run_once(self) -> bool:
         lease = self.runner.claim(self.worker_id, self.clock())
         if lease is None:
+            self.refresh_process_heartbeat("idle")
             return False
 
+        self.refresh_process_heartbeat("working", lease.kind)
         stop_heartbeats = asyncio.Event()
         heartbeat_task = asyncio.create_task(self._heartbeat_until_stopped(lease, stop_heartbeats))
         try:
             if self._cancel_requested(lease.job_id):
                 self.runner.acknowledge_cancel(lease.job_id, lease.worker_id, lease.attempt_id, self.clock())
+                self.refresh_process_heartbeat("idle")
                 return True
 
             handler = self.handlers.get(lease.kind)
@@ -49,6 +57,7 @@ class Worker:
                     lease.attempt_id,
                     now=self.clock(),
                 )
+                self.refresh_process_heartbeat("idle")
                 return True
 
             try:
@@ -61,13 +70,16 @@ class Worker:
                     lease.attempt_id,
                     now=self.clock(),
                 )
+                self.refresh_process_heartbeat("idle")
                 return True
 
             if self._cancel_requested(lease.job_id):
                 self.runner.acknowledge_cancel(lease.job_id, lease.worker_id, lease.attempt_id, self.clock())
+                self.refresh_process_heartbeat("idle")
                 return True
 
             self.runner.complete(lease.job_id, result_artifact_id, lease.worker_id, lease.attempt_id, self.clock())
+            self.refresh_process_heartbeat("idle")
             return True
         finally:
             stop_heartbeats.set()
@@ -85,6 +97,19 @@ class Worker:
 
     def _cancel_requested(self, job_id: str) -> bool:
         return self.runner.get(job_id).status is JobStatus.CANCEL_REQUESTED
+
+    def refresh_process_heartbeat(self, status: str, job_kind: JobKind | None = None) -> None:
+        if self.process_heartbeat_path is None:
+            return
+        payload = {
+            "schema_version": "truyenaudio-studio.worker-heartbeat.v1",
+            "worker_id": self.worker_id,
+            "status": status,
+            "updated_at": self.clock().isoformat(),
+        }
+        if job_kind is not None:
+            payload["job_kind"] = job_kind.value
+        _write_atomic_json(self.process_heartbeat_path, payload)
 
 
 def _redacted_error(error: Exception, kind: JobKind) -> ErrorRecord:
@@ -107,7 +132,12 @@ def build_default_worker(settings: Settings | None = None) -> Worker:
     settings = settings or Settings()
     engine = create_engine_for(settings.data_root / "studio.sqlite3")
     runner = JobRunner(engine)
-    return Worker(runner, handlers={}, worker_id="studio-worker-1")
+    return Worker(
+        runner,
+        handlers={},
+        worker_id="studio-worker-1",
+        process_heartbeat_path=settings.data_root / "worker-heartbeat.json",
+    )
 
 
 def main() -> int:
@@ -121,6 +151,21 @@ def main() -> int:
     except KeyboardInterrupt:
         return 0
     return 0
+
+
+def _write_atomic_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial_path = path.with_name(f".{path.name}.{uuid4().hex}.partial")
+    data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    fd = os.open(partial_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(data)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(partial_path, path)
+    finally:
+        partial_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
