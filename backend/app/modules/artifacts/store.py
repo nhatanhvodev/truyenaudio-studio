@@ -159,10 +159,13 @@ class ArtifactWriter:
         try:
             os.link(self.partial_path, self.final_path)
         except FileExistsError as exc:
-            self.partial_path.unlink(missing_ok=True)
+            self._cleanup_partial()
             raise ArtifactAlreadyExists(self.relative_path) from exc
+        except OSError:
+            self._cleanup_partial()
+            raise
 
-        self.partial_path.unlink(missing_ok=True)
+        self._cleanup_partial()
         self._committed_artifact = stored
         return stored
 
@@ -170,7 +173,13 @@ class ArtifactWriter:
         if not self.file.closed:
             self.file.close()
         if self._committed_artifact is None:
+            self._cleanup_partial()
+
+    def _cleanup_partial(self) -> None:
+        try:
             self.partial_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _validate_relative_path(relative_path: str) -> None:

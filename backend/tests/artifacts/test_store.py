@@ -138,6 +138,31 @@ def test_second_commit_to_same_relative_path_cannot_change_original_bytes(tmp_pa
     assert list(tmp_path.rglob("*.partial")) == []
 
 
+def test_failed_publish_cleans_partial_without_context_manager(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = ArtifactStore(tmp_path)
+    final_path = tmp_path / "projects/p/report.json"
+    writer = store.begin(artifact_write("projects/p/report.json"))
+    writer.file.write(b"payload")
+
+    def deny_link(source: Path, target: Path) -> None:
+        assert source == writer.partial_path
+        assert target == final_path
+        raise PermissionError("link denied")
+
+    monkeypatch.setattr("app.modules.artifacts.store.os.link", deny_link)
+
+    with pytest.raises(PermissionError, match="link denied"):
+        writer.commit()
+
+    assert not final_path.exists()
+    assert list(tmp_path.rglob("*.partial")) == []
+    with pytest.raises(ArtifactWriterClosed):
+        writer.commit()
+
+
 def test_verify_returns_false_without_deleting_missing_or_mismatched_artifacts(tmp_path: Path) -> None:
     store = ArtifactStore(tmp_path)
     expected_hash = hashlib.sha256(b"expected").hexdigest()
