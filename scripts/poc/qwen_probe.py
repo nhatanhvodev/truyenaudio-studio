@@ -91,72 +91,75 @@ def _validate_gate(
     operation_id: str,
     now: datetime,
 ) -> dict[str, Any]:
+    connection: sqlite3.Connection | None = None
     try:
         connection = sqlite3.connect(database_path)
         connection.row_factory = sqlite3.Row
+        with connection:
+            authorization = connection.execute(
+                """
+                SELECT status, expires_at, operation_id
+                FROM budget_authorizations
+                WHERE id = ?
+                """,
+                (authorization_id,),
+            ).fetchone()
+            if authorization is None or authorization["status"] != "HELD":
+                return {"ok": False, "reason": "authorization_missing_or_not_held"}
+            if authorization["operation_id"] != operation_id:
+                return {"ok": False, "reason": "authorization_operation_mismatch"}
+            try:
+                expires_at = datetime.fromisoformat(str(authorization["expires_at"]))
+            except ValueError:
+                return {"ok": False, "reason": "authorization_expiry_invalid"}
+            if expires_at.astimezone(UTC) <= now:
+                return {"ok": False, "reason": "authorization_expired"}
+
+            consent = connection.execute(
+                """
+                SELECT status, project_id, provider_profile_id, policy_snapshot_artifact_id, accepted_at, revoked_at
+                FROM cloud_processing_consents
+                WHERE id = ?
+                """,
+                (cloud_consent_id,),
+            ).fetchone()
+            if consent is None or consent["status"] != "GRANTED":
+                return {"ok": False, "reason": "consent_missing_or_not_granted"}
+            if consent["project_id"] != project_id or consent["provider_profile_id"] != provider_profile_id:
+                return {"ok": False, "reason": "consent_scope_mismatch"}
+            if consent["revoked_at"] is not None or consent["accepted_at"] is None:
+                return {"ok": False, "reason": "consent_not_active"}
+
+            profile = connection.execute(
+                """
+                SELECT adapter_name, model
+                FROM provider_profiles
+                WHERE id = ? AND enabled = 1
+                """,
+                (provider_profile_id,),
+            ).fetchone()
+            if profile is None or "qwen" not in str(profile["adapter_name"]).lower():
+                return {"ok": False, "reason": "provider_profile_mismatch"}
+
+            artifact = connection.execute(
+                """
+                SELECT status, relative_path, sha256
+                FROM artifacts
+                WHERE id = ?
+                """,
+                (consent["policy_snapshot_artifact_id"],),
+            ).fetchone()
+            if artifact is None or artifact["status"] != "READY":
+                return {"ok": False, "reason": "policy_snapshot_not_ready"}
+            if not _artifact_is_valid(data_root, str(artifact["relative_path"]), str(artifact["sha256"])):
+                return {"ok": False, "reason": "policy_snapshot_checksum_invalid"}
+
+            return {"ok": True, "model": profile["model"]}
     except sqlite3.Error:
         return {"ok": False, "reason": "database_unavailable"}
-
-    with connection:
-        authorization = connection.execute(
-            """
-            SELECT status, expires_at, operation_id
-            FROM budget_authorizations
-            WHERE id = ?
-            """,
-            (authorization_id,),
-        ).fetchone()
-        if authorization is None or authorization["status"] != "HELD":
-            return {"ok": False, "reason": "authorization_missing_or_not_held"}
-        if authorization["operation_id"] != operation_id:
-            return {"ok": False, "reason": "authorization_operation_mismatch"}
-        try:
-            expires_at = datetime.fromisoformat(str(authorization["expires_at"]))
-        except ValueError:
-            return {"ok": False, "reason": "authorization_expiry_invalid"}
-        if expires_at.astimezone(UTC) <= now:
-            return {"ok": False, "reason": "authorization_expired"}
-
-        consent = connection.execute(
-            """
-            SELECT status, project_id, provider_profile_id, policy_snapshot_artifact_id, accepted_at, revoked_at
-            FROM cloud_processing_consents
-            WHERE id = ?
-            """,
-            (cloud_consent_id,),
-        ).fetchone()
-        if consent is None or consent["status"] != "GRANTED":
-            return {"ok": False, "reason": "consent_missing_or_not_granted"}
-        if consent["project_id"] != project_id or consent["provider_profile_id"] != provider_profile_id:
-            return {"ok": False, "reason": "consent_scope_mismatch"}
-        if consent["revoked_at"] is not None or consent["accepted_at"] is None:
-            return {"ok": False, "reason": "consent_not_active"}
-
-        profile = connection.execute(
-            """
-            SELECT adapter_name, model
-            FROM provider_profiles
-            WHERE id = ? AND enabled = 1
-            """,
-            (provider_profile_id,),
-        ).fetchone()
-        if profile is None or "qwen" not in str(profile["adapter_name"]).lower():
-            return {"ok": False, "reason": "provider_profile_mismatch"}
-
-        artifact = connection.execute(
-            """
-            SELECT status, relative_path, sha256
-            FROM artifacts
-            WHERE id = ?
-            """,
-            (consent["policy_snapshot_artifact_id"],),
-        ).fetchone()
-        if artifact is None or artifact["status"] != "READY":
-            return {"ok": False, "reason": "policy_snapshot_not_ready"}
-        if not _artifact_is_valid(data_root, str(artifact["relative_path"]), str(artifact["sha256"])):
-            return {"ok": False, "reason": "policy_snapshot_checksum_invalid"}
-
-        return {"ok": True, "model": profile["model"]}
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 def _artifact_is_valid(data_root: Path, relative_path: str, expected_sha256: str) -> bool:

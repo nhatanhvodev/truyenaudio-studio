@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import importlib.util
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 from sqlalchemy import Engine, text
 
 from app.contracts import ArtifactKind, ArtifactStatus, CloudConsentStatus, ProviderKind, RightsStatus, SourceType
@@ -167,6 +169,52 @@ def test_qwen_probe_invalid_gate_returns_consent_required_before_http(migrated_e
     assert result["status"] == "blocked"
     assert result["error_code"] == "POC_CLOUD_CONSENT_REQUIRED"
     assert http.calls == []
+
+
+@pytest.mark.parametrize(
+    ("name", "payload", "setup_sql"),
+    [
+        ("empty", b"", None),
+        ("wrong_schema", None, "CREATE TABLE unrelated(id TEXT)"),
+        ("corrupt", b"not a sqlite database", None),
+        ("missing_tables", None, "CREATE TABLE projects(id TEXT PRIMARY KEY)"),
+    ],
+)
+def test_qwen_probe_database_failures_block_without_http_or_path_leak(
+    tmp_path: Path,
+    name: str,
+    payload: bytes | None,
+    setup_sql: str | None,
+) -> None:
+    database_path = tmp_path / f"{name}.sqlite3"
+    if payload is not None:
+        database_path.write_bytes(payload)
+    if setup_sql is not None:
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(setup_sql)
+    if payload is None and setup_sql is None:
+        database_path.touch()
+    module = _load_qwen_probe()
+    http = RecordingHttp()
+
+    result = module.run_probe(
+        database_path=database_path,
+        data_root=tmp_path,
+        project_id=PROJECT_ID,
+        provider_profile_id=PROFILE_ID,
+        authorization_id=AUTH_ID,
+        cloud_consent_id=CONSENT_ID,
+        operation_id="poc-qwen",
+        api_key="redacted",
+        http_client=http,
+        now=NOW,
+    )
+
+    assert result["status"] == "blocked"
+    assert result["error_code"] == "POC_CLOUD_CONSENT_REQUIRED"
+    assert result["reason"] == "database_unavailable"
+    assert http.calls == []
+    assert str(tmp_path) not in str(result)
 
 
 def test_qwen_probe_valid_gate_makes_exactly_one_redacted_batch_call(

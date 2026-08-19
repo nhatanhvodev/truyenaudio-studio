@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from importlib import metadata
 import json
 import subprocess
 import time
@@ -10,9 +11,22 @@ from typing import Any
 
 
 VOICE_PRESETS = ("vi-vieneu-1", "vi-vieneu-2", "vi-vieneu-3", "vi-vieneu-4")
+REQUIRED_VIENEU_VERSION = "3.2.9"
+REQUIRED_PSUTIL_VERSION = "7.0.0"
 
 
-def run_probe(*, model_path: Path, executable: Path, output_dir: Path) -> dict[str, Any]:
+def run_probe(*, model_path: Path, executable: Path, output_dir: Path, allow_local_model: bool = False) -> dict[str, Any]:
+    if not allow_local_model:
+        return {
+            "status": "blocked",
+            "error_code": "POC_LOCAL_MODEL_REQUIRED",
+            "redacted_error": "allow_local_model_required",
+        }
+
+    version_error = _version_error()
+    if version_error is not None:
+        return {"status": "blocked", "error_code": "MODEL_MISSING", "redacted_error": version_error}
+
     try:
         import psutil
         import vieneu
@@ -59,13 +73,35 @@ def _hash_file(path: Path) -> str:
     return sha256.hexdigest()
 
 
+def _version_error() -> str | None:
+    try:
+        vieneu_version = metadata.version("vieneu")
+    except metadata.PackageNotFoundError:
+        return "vieneu_missing"
+    if vieneu_version != REQUIRED_VIENEU_VERSION:
+        return "vieneu_version_mismatch"
+    try:
+        psutil_version = metadata.version("psutil")
+    except metadata.PackageNotFoundError:
+        return "psutil_missing"
+    if psutil_version != REQUIRED_PSUTIL_VERSION:
+        return "psutil_version_mismatch"
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", required=True)
     parser.add_argument("--executable", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument("--allow-local-model", action="store_true", required=True)
     args = parser.parse_args()
-    result = run_probe(model_path=Path(args.model_path), executable=Path(args.executable), output_dir=Path(args.output_dir))
+    result = run_probe(
+        model_path=Path(args.model_path),
+        executable=Path(args.executable),
+        output_dir=Path(args.output_dir),
+        allow_local_model=args.allow_local_model,
+    )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result["status"] in {"ok", "blocked"} else 1
 

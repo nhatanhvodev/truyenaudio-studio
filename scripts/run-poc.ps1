@@ -22,7 +22,7 @@ if ($Provider -eq "vieneu") {
     Write-Output "POC_LOCAL_MODEL_REQUIRED"
     exit 2
   }
-  & $Python (Join-Path $PSScriptRoot "poc\vieneu_probe.py") --model-path (Join-Path $RepoRoot "models\vieneu\model.bin") --executable (Join-Path $RepoRoot "models\vieneu\vieneu.exe") --output-dir (Join-Path $DataRoot "projects\poc\vieneu")
+  & $Python (Join-Path $PSScriptRoot "poc\vieneu_probe.py") --allow-local-model --model-path (Join-Path $RepoRoot "models\vieneu\model.bin") --executable (Join-Path $RepoRoot "models\vieneu\vieneu.exe") --output-dir (Join-Path $DataRoot "projects\poc\vieneu")
   exit $LASTEXITCODE
 }
 
