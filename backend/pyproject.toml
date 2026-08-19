@@ -1,0 +1,16 @@
+[project]
+name = "truyenaudio-studio-backend"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.116.1", "uvicorn[standard]==0.35.0", "pydantic==2.11.7",
+  "pydantic-settings==2.10.1", "sqlalchemy==2.0.43", "alembic==1.16.4",
+  "httpx==0.28.1", "uuid6==2025.0.1", "keyring==25.6.0",
+  "python-multipart==0.0.20", "sse-starlette==2.4.1"
+]
+[project.optional-dependencies]
+dev = ["pytest==8.4.1", "pytest-asyncio==1.1.0", "ruff==0.12.9", "mypy==1.17.1"]
+poc = ["psutil==7.0.0", "vieneu==3.2.9"]
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]

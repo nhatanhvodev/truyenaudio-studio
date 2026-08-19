@@ -1,0 +1,9 @@
+.venv/
+node_modules/
+frontend/dist/
+data/
+models/
+.env
+*.partial
+playwright-report/
+test-results/
