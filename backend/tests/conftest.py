@@ -10,6 +10,7 @@ from alembic.config import Config
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from app.modules.artifacts.store import ArtifactStore
 from app.settings.config import Settings
 
 
@@ -70,7 +71,5 @@ def db_session(migrated_engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def artifact_store(tmp_path: Path) -> Path:
-    root = tmp_path / "artifacts"
-    root.mkdir()
-    return root
+def artifact_store(tmp_path: Path) -> ArtifactStore:
+    return ArtifactStore(tmp_path / "artifacts")
