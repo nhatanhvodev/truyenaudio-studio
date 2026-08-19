@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.contracts import (
@@ -37,6 +49,13 @@ UUID = String(36)
 def enum_constraint(column_name: str, enum_type: type[StrEnum]) -> CheckConstraint:
     allowed = ", ".join(f"'{member.value}'" for member in enum_type)
     return CheckConstraint(f"{column_name} IN ({allowed})", name=f"{column_name}_enum")
+
+
+def hash_constraint(column_name: str) -> CheckConstraint:
+    return CheckConstraint(
+        f"{column_name} IS NULL OR (length({column_name}) = 64 AND {column_name} NOT GLOB '*[^0-9a-f]*')",
+        name=f"{column_name}_lowercase_sha256",
+    )
 
 
 class MutableMixin:
@@ -76,7 +95,7 @@ class Project(MutableMixin, Base):
 
 class RightsEvidence(MutableMixin, Base):
     __tablename__ = "rights_evidence"
-    __table_args__ = (enum_constraint("evidence_kind", EvidenceKind),)
+    __table_args__ = (enum_constraint("evidence_kind", EvidenceKind), hash_constraint("sha256"))
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
     project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
@@ -154,6 +173,7 @@ class SourceRevision(MutableMixin, Base):
         UniqueConstraint("chapter_id", "revision_no", name="uq_source_revisions_chapter_revision_no"),
         UniqueConstraint("chapter_id", "normalized_sha256", name="uq_source_revisions_chapter_normalized_sha256"),
         enum_constraint("import_kind", ImportKind),
+        hash_constraint("normalized_sha256"),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
@@ -172,7 +192,10 @@ class SourceRevision(MutableMixin, Base):
 
 class SourceSegment(MutableMixin, Base):
     __tablename__ = "source_segments"
-    __table_args__ = (UniqueConstraint("source_revision_id", "segment_index", name="uq_source_segments_revision_segment_index"),)
+    __table_args__ = (
+        UniqueConstraint("source_revision_id", "segment_index", name="uq_source_segments_revision_segment_index"),
+        hash_constraint("source_sha256"),
+    )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
     source_revision_id: Mapped[str] = mapped_column(UUID, ForeignKey("source_revisions.id"), nullable=False)
@@ -215,7 +238,12 @@ class StoryMemoryEntry(MutableMixin, Base):
 
 class TranslationRun(MutableMixin, Base):
     __tablename__ = "translation_runs"
-    __table_args__ = (enum_constraint("status", RunStatus),)
+    __table_args__ = (
+        enum_constraint("status", RunStatus),
+        hash_constraint("glossary_revision_hash"),
+        hash_constraint("story_memory_revision_hash"),
+        hash_constraint("translation_text_sha256"),
+    )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
     chapter_id: Mapped[str] = mapped_column(UUID, ForeignKey("chapters.id"), nullable=False)
@@ -229,13 +257,14 @@ class TranslationRun(MutableMixin, Base):
     translation_text_sha256: Mapped[str | None] = mapped_column(String(64))
     estimated_cost_vnd: Mapped[int | None] = mapped_column(BigInteger)
     actual_cost_vnd: Mapped[int | None] = mapped_column(BigInteger)
-    created_by: Mapped[str] = mapped_column(String(64), default="LOCAL_OWNER", nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), default="LOCAL_OWNER", server_default="LOCAL_OWNER", nullable=False)
 
 
 class TranslationSegment(MutableMixin, Base):
     __tablename__ = "translation_segments"
     __table_args__ = (
         UniqueConstraint("translation_run_id", "source_segment_id", name="uq_translation_segments_run_source_segment"),
+        hash_constraint("target_sha256"),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
@@ -300,6 +329,7 @@ class VoicePreset(MutableMixin, Base):
             "origin != 'USER_REFERENCE' OR consent_evidence_artifact_id IS NOT NULL",
             name="user_reference_requires_consent",
         ),
+        hash_constraint("model_snapshot_hash"),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
@@ -326,6 +356,7 @@ class VoicePlan(CreatedAtMixin, Base):
     __table_args__ = (
         UniqueConstraint("chapter_id", "revision_no", name="uq_voice_plans_chapter_revision_no"),
         enum_constraint("mode", VoiceMode),
+        hash_constraint("plan_sha256"),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
@@ -351,6 +382,8 @@ class SpeechSegment(MutableMixin, Base):
     __tablename__ = "speech_segments"
     __table_args__ = (
         UniqueConstraint("voice_plan_id", "segment_index", name="uq_speech_segments_plan_segment_index"),
+        hash_constraint("narration_sha256"),
+        hash_constraint("pronunciation_revision_hash"),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
@@ -374,6 +407,9 @@ class Artifact(MutableMixin, Base):
     __table_args__ = (
         enum_constraint("kind", ArtifactKind),
         enum_constraint("status", ArtifactStatus),
+        hash_constraint("sha256"),
+        hash_constraint("input_hash"),
+        hash_constraint("settings_hash"),
         Index("ix_artifacts_kind_input_settings_status", "kind", "input_hash", "settings_hash", "status"),
         Index(
             "uq_ready_artifact_cache",
@@ -503,6 +539,7 @@ class Export(CreatedAtMixin, Base):
     __table_args__ = (
         enum_constraint("kind", ExportKind),
         enum_constraint("status", ExportStatus),
+        hash_constraint("manifest_sha256"),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
@@ -517,7 +554,11 @@ class Export(CreatedAtMixin, Base):
 
 class AuditEvent(CreatedAtMixin, Base):
     __tablename__ = "audit_events"
-    __table_args__ = (CheckConstraint("actor IN ('LOCAL_OWNER', 'WORKER')", name="actor_enum"),)
+    __table_args__ = (
+        CheckConstraint("actor IN ('LOCAL_OWNER', 'WORKER')", name="actor_enum"),
+        hash_constraint("before_hash"),
+        hash_constraint("after_hash"),
+    )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
     actor: Mapped[str] = mapped_column(String(32), nullable=False)

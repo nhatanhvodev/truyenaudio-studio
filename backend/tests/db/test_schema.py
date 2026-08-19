@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 import pytest
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import StatementError
@@ -530,9 +533,28 @@ EXPECTED_COLUMNS = {
 }
 
 
+LOWERCASE_HASH = "a" * 64
+
+
 def test_contract_enums_match_locked_schema() -> None:
     for enum_type, expected_names in EXPECTED_ENUMS.items():
         assert {member.name for member in enum_type} == expected_names
+
+
+def test_revision_0001_is_frozen_and_does_not_import_live_models() -> None:
+    backend_root = Path(__file__).parents[2]
+    source = (backend_root / "migrations" / "versions" / "0001_canonical_schema.py").read_text(encoding="utf-8")
+
+    assert "app.db" not in source
+    assert "Base" not in source
+    assert "create_all" not in source
+    assert "drop_all" not in source
+
+
+def test_artifact_store_fixture_is_task3_temp_root(artifact_store, tmp_path) -> None:
+    assert artifact_store.is_dir()
+    assert artifact_store == tmp_path / "artifacts"
+    assert artifact_store.resolve().is_relative_to(tmp_path.resolve())
 
 
 def test_migration_has_complete_schema(migrated_engine) -> None:
@@ -612,6 +634,17 @@ def test_required_indexes_and_unique_constraints_exist(migrated_engine) -> None:
     assert ("uq_job_attempts_job_attempt_no", ("job_id", "attempt_no")) in unique_constraints["job_attempts"]
 
 
+def test_ready_artifact_cache_index_is_partial_for_ready_status(migrated_engine) -> None:
+    with migrated_engine.connect() as connection:
+        sql = connection.execute(
+            text("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'uq_ready_artifact_cache'")
+        ).scalar_one()
+
+    assert "UNIQUE INDEX uq_ready_artifact_cache" in sql
+    assert "kind, input_hash, settings_hash" in sql
+    assert "WHERE status = 'READY'" in sql
+
+
 def test_sqlite_enforces_foreign_keys_and_check_constraints(migrated_engine) -> None:
     with migrated_engine.begin() as connection:
         with pytest.raises(Exception, match="FOREIGN KEY constraint failed"):
@@ -640,7 +673,189 @@ def test_sqlite_enforces_foreign_keys_and_check_constraints(migrated_engine) -> 
                         '2026-08-19T00:00:00+00:00',
                         '2026-08-19T00:00:00+00:00')
                 """
+        )
+
+
+@pytest.mark.parametrize("bad_hash", ["A" * 64, "a" * 63, ("g" * 64)])
+def test_artifact_hash_constraints_reject_invalid_lowercase_sha256_values(migrated_engine, bad_hash) -> None:
+    valid_hash = LOWERCASE_HASH
+    cases = [
+        ("sha256", bad_hash, valid_hash, valid_hash),
+        ("input_hash", valid_hash, bad_hash, valid_hash),
+        ("settings_hash", valid_hash, valid_hash, bad_hash),
+    ]
+
+    with migrated_engine.begin() as connection:
+        for column_name, sha256, input_hash, settings_hash in cases:
+            with pytest.raises(Exception, match="CHECK constraint failed"):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO artifacts
+                        (id, kind, status, relative_path, sha256, byte_size, mime_type,
+                         input_hash, settings_hash, created_at, updated_at)
+                        VALUES
+                        (:id, 'REPORT', 'READY', :relative_path, :sha256, 1, 'application/json',
+                         :input_hash, :settings_hash,
+                         '2026-08-19T00:00:00+00:00', '2026-08-19T00:00:00+00:00')
+                        """
+                    ),
+                    {
+                        "id": f"018f0000-0000-7000-8000-{len(column_name):012x}",
+                        "relative_path": f"{column_name}.json",
+                        "sha256": sha256,
+                        "input_hash": input_hash,
+                        "settings_hash": settings_hash,
+                    },
+                )
+
+
+def test_artifact_hash_constraints_accept_valid_lowercase_hashes(migrated_engine) -> None:
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO artifacts
+                (id, kind, status, relative_path, sha256, byte_size, mime_type,
+                 input_hash, settings_hash, created_at, updated_at)
+                VALUES
+                ('018f0000-0000-7000-8000-000000000501',
+                 'REPORT',
+                 'READY',
+                 'reports/valid.json',
+                 :sha256,
+                 1,
+                 'application/json',
+                 :input_hash,
+                 :settings_hash,
+                 '2026-08-19T00:00:00+00:00',
+                 '2026-08-19T00:00:00+00:00')
+                """
+            ),
+            {"sha256": LOWERCASE_HASH, "input_hash": "b" * 64, "settings_hash": "c" * 64},
+        )
+
+        assert connection.execute(text("SELECT COUNT(*) FROM artifacts")).scalar_one() == 1
+
+
+def test_all_canonical_hash_fields_have_nullable_aware_checks(migrated_engine) -> None:
+    expected_hash_columns = {
+        "rights_evidence": {"sha256"},
+        "source_revisions": {"normalized_sha256"},
+        "source_segments": {"source_sha256"},
+        "translation_runs": {"glossary_revision_hash", "story_memory_revision_hash", "translation_text_sha256"},
+        "translation_segments": {"target_sha256"},
+        "voice_presets": {"model_snapshot_hash"},
+        "voice_plans": {"plan_sha256"},
+        "speech_segments": {"narration_sha256", "pronunciation_revision_hash"},
+        "artifacts": {"sha256", "input_hash", "settings_hash"},
+        "exports": {"manifest_sha256"},
+        "audit_events": {"before_hash", "after_hash"},
+    }
+
+    with migrated_engine.connect() as connection:
+        for table_name, column_names in expected_hash_columns.items():
+            create_sql = connection.execute(
+                text("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = :table_name"),
+                {"table_name": table_name},
+            ).scalar_one()
+            for column_name in column_names:
+                assert f"{column_name}_lowercase_sha256" in create_sql
+                assert f"{column_name} IS NULL OR" in create_sql
+                assert f"length({column_name}) = 64" in create_sql
+                assert f"{column_name} NOT GLOB '*[^0-9a-f]*'" in create_sql
+
+
+def test_translation_runs_created_by_has_database_default(migrated_engine) -> None:
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO projects (id, title, slug, source_type, rights_status, created_at, updated_at)
+                VALUES
+                ('018f0000-0000-7000-8000-000000000601', 'Title', 'created-by-title',
+                 'SELF_AUTHORED', 'PRIVATE_ONLY',
+                 '2026-08-19T00:00:00+00:00', '2026-08-19T00:00:00+00:00')
+                """
             )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO chapters (id, project_id, ordinal, state, created_at, updated_at)
+                VALUES
+                ('018f0000-0000-7000-8000-000000000602',
+                 '018f0000-0000-7000-8000-000000000601',
+                 1,
+                 'IMPORTED',
+                 '2026-08-19T00:00:00+00:00',
+                 '2026-08-19T00:00:00+00:00')
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO source_revisions
+                (id, chapter_id, revision_no, import_kind, normalized_text, normalized_sha256,
+                 han_char_count, total_char_count, normalizer_version, created_at, updated_at)
+                VALUES
+                ('018f0000-0000-7000-8000-000000000603',
+                 '018f0000-0000-7000-8000-000000000602',
+                 1,
+                 'PASTE',
+                 'text',
+                 :hash_value,
+                 0,
+                 4,
+                 'v1',
+                 '2026-08-19T00:00:00+00:00',
+                 '2026-08-19T00:00:00+00:00')
+                """
+            ),
+            {"hash_value": LOWERCASE_HASH},
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO translation_runs
+                (id, chapter_id, source_revision_id, prompt_version, status, created_at, updated_at)
+                VALUES
+                ('018f0000-0000-7000-8000-000000000604',
+                 '018f0000-0000-7000-8000-000000000602',
+                 '018f0000-0000-7000-8000-000000000603',
+                 'v1',
+                 'PENDING',
+                 '2026-08-19T00:00:00+00:00',
+                 '2026-08-19T00:00:00+00:00')
+                """
+            )
+        )
+
+        created_by = connection.execute(text("SELECT created_by FROM translation_runs")).scalar_one()
+
+    assert created_by == "LOCAL_OWNER"
+
+
+def test_downgrade_upgrade_roundtrip_on_temp_database(tmp_path) -> None:
+    from app.db.base import create_engine_for
+
+    backend_root = Path(__file__).parents[2]
+    db_path = tmp_path / "roundtrip.sqlite3"
+    engine = create_engine_for(db_path)
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+
+    command.upgrade(config, "head")
+    assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
+
+    command.downgrade(config, "base")
+    assert set(inspect(engine).get_table_names()) <= {"alembic_version"}
+
+    command.upgrade(config, "head")
+    assert EXPECTED_TABLES <= set(inspect(engine).get_table_names())
+    engine.dispose()
 
 
 def test_datetime_type_rejects_naive_and_serializes_aware(db_session) -> None:

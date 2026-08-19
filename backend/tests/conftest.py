@@ -70,7 +70,7 @@ def db_session(migrated_engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture
-def artifact_store(tmp_path: Path):
-    from app.modules.artifacts.store import ArtifactStore
-
-    return ArtifactStore(tmp_path)
+def artifact_store(tmp_path: Path) -> Path:
+    root = tmp_path / "artifacts"
+    root.mkdir()
+    return root
