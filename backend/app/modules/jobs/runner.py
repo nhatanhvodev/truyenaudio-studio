@@ -276,10 +276,18 @@ class JobRunner:
             row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
         return _job_view(row)
 
+    def acknowledge_cancel(self, job_id: str, worker_id: str, attempt_id: str, now: datetime) -> JobView:
+        _require_aware(now)
+        with self.engine.begin() as connection:
+            self._require_cancel_lease(connection, job_id, worker_id, attempt_id, now)
+            self._close_attempt_by_id(connection, job_id, attempt_id, now, "CANCELED")
+            row = self._set_terminal_for_cancel_lease(connection, job_id, worker_id, now)
+        return _job_view(row)
+
     def complete(
         self,
         job_id: str,
-        result_artifact_id: str,
+        result_artifact_id: str | None,
         worker_id: str,
         attempt_id: str,
         now: datetime,
@@ -527,6 +535,52 @@ class JobRunner:
             raise LeaseLost(f"attempt {attempt_id} is not the current open attempt for job {job_id}")
         return row
 
+    def _require_cancel_lease(
+        self,
+        connection,
+        job_id: str,
+        worker_id: str,
+        attempt_id: str,
+        now: datetime,
+    ) -> RowMapping:
+        row = connection.execute(
+            text(
+                """
+                SELECT
+                    jobs.status,
+                    jobs.lease_owner,
+                    jobs.lease_expires_at,
+                    job_attempts.id AS attempt_id,
+                    job_attempts.attempt_no,
+                    job_attempts.provider_request_id
+                FROM jobs
+                LEFT JOIN job_attempts
+                  ON job_attempts.job_id = jobs.id
+                 AND job_attempts.finished_at IS NULL
+                 AND job_attempts.attempt_no = (
+                    SELECT MAX(open_attempts.attempt_no)
+                    FROM job_attempts AS open_attempts
+                    WHERE open_attempts.job_id = jobs.id
+                      AND open_attempts.finished_at IS NULL
+                 )
+                WHERE jobs.id = :job_id
+                """
+            ),
+            {"job_id": job_id},
+        ).mappings().one_or_none()
+        if row is None:
+            raise InvalidJobTransition(f"job {job_id} does not exist")
+        if row["status"] != JobStatus.CANCEL_REQUESTED.value:
+            raise InvalidJobTransition(f"job {job_id} must be CANCEL_REQUESTED to acknowledge cancellation")
+        if row["lease_owner"] != worker_id:
+            raise LeaseLost(f"worker {worker_id} does not own job {job_id}")
+        lease_expires_at = _parse_dt(row["lease_expires_at"])
+        if lease_expires_at is None or lease_expires_at < now:
+            raise LeaseLost(f"lease expired for job {job_id}")
+        if row["attempt_id"] != attempt_id:
+            raise LeaseLost(f"attempt {attempt_id} is not the current open attempt for job {job_id}")
+        return row
+
     def _close_attempt_by_id(
         self,
         connection,
@@ -761,6 +815,42 @@ class JobRunner:
         )
         if result.rowcount != 1:
             raise LeaseLost(f"lease lost while closing job {job_id}")
+        return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+
+    def _set_terminal_for_cancel_lease(
+        self,
+        connection,
+        job_id: str,
+        worker_id: str,
+        now: datetime,
+    ) -> RowMapping:
+        result = connection.execute(
+            text(
+                """
+                UPDATE jobs
+                SET status = :canceled,
+                    lease_owner = NULL,
+                    lease_expires_at = NULL,
+                    next_run_at = NULL,
+                    error_code = NULL,
+                    error_summary = NULL,
+                    updated_at = :now
+                WHERE id = :job_id
+                  AND status = :cancel_requested
+                  AND lease_owner = :worker_id
+                  AND lease_expires_at >= :now
+                """
+            ),
+            {
+                "canceled": JobStatus.CANCELED.value,
+                "cancel_requested": JobStatus.CANCEL_REQUESTED.value,
+                "worker_id": worker_id,
+                "now": now.isoformat(),
+                "job_id": job_id,
+            },
+        )
+        if result.rowcount != 1:
+            raise LeaseLost(f"lease lost while canceling job {job_id}")
         return connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
 
 

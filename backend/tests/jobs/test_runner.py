@@ -390,6 +390,65 @@ def test_cancel_requested_jobs_reject_terminal_worker_callbacks_without_closing_
     assert _open_attempt_count(migrated_engine, fail_job.id) == 1
 
 
+def test_acknowledge_cancel_closes_only_current_cancel_requested_lease(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "ack-cancel")
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
+    runner.request_cancel(job.id, NOW + timedelta(seconds=1))
+
+    canceled = runner.acknowledge_cancel(job.id, lease.worker_id, lease.attempt_id, NOW + timedelta(seconds=2))
+
+    assert canceled.status is JobStatus.CANCELED
+    assert canceled.cancel_requested_at == NOW + timedelta(seconds=1)
+    assert canceled.lease_owner is None
+    assert canceled.lease_expires_at is None
+    assert _attempt_rows(migrated_engine, job.id)[-1][2] == "CANCELED"
+    assert _open_attempt_count(migrated_engine, job.id) == 0
+
+
+def test_acknowledge_cancel_rejects_wrong_status_worker_attempt_and_expired_lease_without_mutation(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    running_job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "ack-running")
+    running_lease = runner.claim("worker-a", NOW)
+    assert running_lease is not None
+    with pytest.raises(InvalidJobTransition, match="CANCEL_REQUESTED"):
+        runner.acknowledge_cancel(
+            running_job.id,
+            running_lease.worker_id,
+            running_lease.attempt_id,
+            NOW + timedelta(seconds=1),
+        )
+    assert runner.get(running_job.id).status is JobStatus.RUNNING
+    assert _open_attempt_count(migrated_engine, running_job.id) == 1
+
+    cancel_job = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "ack-reject")
+    cancel_lease = runner.claim("worker-b", NOW)
+    assert cancel_lease is not None
+    runner.request_cancel(cancel_job.id, NOW + timedelta(seconds=1))
+
+    with pytest.raises(LeaseLost, match="worker"):
+        runner.acknowledge_cancel(cancel_job.id, "other-worker", cancel_lease.attempt_id, NOW + timedelta(seconds=2))
+    with pytest.raises(LeaseLost, match="attempt"):
+        runner.acknowledge_cancel(cancel_job.id, cancel_lease.worker_id, "wrong-attempt", NOW + timedelta(seconds=2))
+    with pytest.raises(LeaseLost, match="expired"):
+        runner.acknowledge_cancel(
+            cancel_job.id,
+            cancel_lease.worker_id,
+            cancel_lease.attempt_id,
+            NOW + timedelta(seconds=LEASE_SECONDS + 1),
+        )
+
+    view = runner.get(cancel_job.id)
+    assert view.status is JobStatus.CANCEL_REQUESTED
+    assert view.lease_owner == cancel_lease.worker_id
+    assert _attempt_rows(migrated_engine, cancel_job.id) == [(1, None, None, None)]
+
+
 @pytest.mark.parametrize(
     ("code", "attempt_no", "retry_after", "expected"),
     [
