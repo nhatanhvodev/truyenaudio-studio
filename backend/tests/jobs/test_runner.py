@@ -81,6 +81,22 @@ def _open_attempt_count(engine: Engine, job_id: str) -> int:
         ).scalar_one()
 
 
+def _attempt_heartbeats(engine: Engine, job_id: str) -> list[tuple[int, str | None, str | None]]:
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                """
+                SELECT attempt_no, id, heartbeat_at
+                FROM job_attempts
+                WHERE job_id = :job_id
+                ORDER BY attempt_no
+                """
+            ),
+            {"job_id": job_id},
+        ).all()
+    return [(row.attempt_no, row.id, row.heartbeat_at) for row in rows]
+
+
 def _insert_artifact(engine: Engine, artifact_id: str) -> None:
     with engine.begin() as connection:
         connection.execute(
@@ -171,14 +187,15 @@ def test_claim_ignores_future_next_run_and_does_not_reclaim_fresh_lease(runner: 
 
 def test_heartbeat_only_extends_matching_owner_lease(runner: JobRunner) -> None:
     job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "heartbeat-owner")
-    runner.claim("worker-a", NOW)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
 
-    assert runner.heartbeat(job.id, "worker-b", NOW + timedelta(seconds=15)) is None
+    assert runner.heartbeat(job.id, "worker-b", lease.attempt_id, NOW + timedelta(seconds=15)) is None
     still_owned = runner.get(job.id)
     assert still_owned.lease_owner == "worker-a"
     assert still_owned.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
 
-    updated = runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=15))
+    updated = runner.heartbeat(job.id, "worker-a", lease.attempt_id, NOW + timedelta(seconds=15))
     assert updated is not None
     assert updated.heartbeat_at == NOW + timedelta(seconds=15)
     assert runner.get(job.id).lease_expires_at == NOW + timedelta(seconds=15 + LEASE_SECONDS)
@@ -187,9 +204,10 @@ def test_heartbeat_only_extends_matching_owner_lease(runner: JobRunner) -> None:
 
 def test_heartbeat_does_not_revive_already_expired_lease(runner: JobRunner) -> None:
     job = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "heartbeat-expired")
-    runner.claim("worker-a", NOW)
+    lease = runner.claim("worker-a", NOW)
+    assert lease is not None
 
-    assert runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=LEASE_SECONDS + 1)) is None
+    assert runner.heartbeat(job.id, "worker-a", lease.attempt_id, NOW + timedelta(seconds=LEASE_SECONDS + 1)) is None
     expired = runner.get(job.id)
     assert expired.lease_owner == "worker-a"
     assert expired.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
@@ -203,17 +221,47 @@ def test_cancel_requested_lease_stays_heartbeatable_only_for_matching_owner_and_
     assert lease is not None
     runner.request_cancel(job.id, NOW + timedelta(seconds=1))
 
-    assert runner.heartbeat(job.id, "worker-b", NOW + timedelta(seconds=15)) is None
+    assert runner.heartbeat(job.id, "worker-b", lease.attempt_id, NOW + timedelta(seconds=15)) is None
     still_owned = runner.get(job.id)
     assert still_owned.status is JobStatus.CANCEL_REQUESTED
     assert still_owned.lease_owner == "worker-a"
     assert still_owned.lease_expires_at == NOW + timedelta(seconds=LEASE_SECONDS)
 
-    updated = runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=15))
+    updated = runner.heartbeat(job.id, "worker-a", lease.attempt_id, NOW + timedelta(seconds=15))
     assert updated is not None
     assert updated.heartbeat_at == NOW + timedelta(seconds=15)
     assert runner.get(job.id).lease_expires_at == NOW + timedelta(seconds=15 + LEASE_SECONDS)
-    assert runner.heartbeat(job.id, "worker-a", NOW + timedelta(seconds=15 + LEASE_SECONDS + 1)) is None
+    assert runner.heartbeat(job.id, "worker-a", lease.attempt_id, NOW + timedelta(seconds=15 + LEASE_SECONDS + 1)) is None
+
+
+def test_heartbeat_rejects_stale_same_worker_attempt_after_retry_without_mutation(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.MASTER, PROJECT_ID, CHAPTER_ID, "stale-heartbeat-attempt")
+    first_lease = runner.claim("worker-a", NOW)
+    assert first_lease is not None
+    requeued = runner.fail(
+        job.id,
+        ErrorRecord(code="DB_BUSY", summary="database is locked", retryable=True),
+        first_lease.worker_id,
+        first_lease.attempt_id,
+        now=NOW + timedelta(seconds=1),
+    )
+    second_lease = runner.claim("worker-a", requeued.next_run_at)
+    assert second_lease is not None
+    before_job = runner.get(job.id)
+    before_attempts = _attempt_heartbeats(migrated_engine, job.id)
+
+    stale = runner.heartbeat(job.id, "worker-a", first_lease.attempt_id, requeued.next_run_at + timedelta(seconds=1))
+
+    assert stale is None
+    assert runner.get(job.id) == before_job
+    assert _attempt_heartbeats(migrated_engine, job.id) == before_attempts
+
+    current = runner.heartbeat(job.id, "worker-a", second_lease.attempt_id, requeued.next_run_at + timedelta(seconds=1))
+    assert current is not None
+    assert runner.get(job.id).lease_expires_at == requeued.next_run_at + timedelta(seconds=1 + LEASE_SECONDS)
 
 
 def test_request_cancel_marks_only_nonterminal_eligible_jobs(runner: JobRunner) -> None:
@@ -690,7 +738,7 @@ def test_runner_rejects_naive_now_values(runner: JobRunner) -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         runner.claim("worker-a", naive)
     with pytest.raises(ValueError, match="timezone-aware"):
-        runner.heartbeat("missing", "worker-a", naive)
+        runner.heartbeat("missing", "worker-a", "attempt-a", naive)
     with pytest.raises(ValueError, match="timezone-aware"):
         runner.request_cancel("missing", naive)
     with pytest.raises(ValueError, match="timezone-aware"):

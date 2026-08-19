@@ -178,3 +178,22 @@ async def assert_audio_processor_contract(adapter, tts_adapter, request: Synthes
             misaligned_output,
         )
     assert not misaligned_output.exists()
+
+    invalid_pause_cases = [
+        ("string-pause", "250", "integer"),
+        ("float-pause", 250.0, "integer"),
+        ("bool-pause", True, "integer"),
+    ]
+    for case_name, pause_ms, message in invalid_pause_cases:
+        invalid_output = tmp_path / f"{case_name}.wav"
+        with pytest.raises(ValueError, match=message):
+            await adapter.master(
+                MasterRequest(
+                    operation_id=case_name,
+                    ordered_segment_paths=(segment_a,),
+                    pause_after_ms=(pause_ms,),  # type: ignore[arg-type]
+                    metadata={},
+                ),
+                invalid_output,
+            )
+        assert not invalid_output.exists()

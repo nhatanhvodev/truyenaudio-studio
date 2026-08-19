@@ -80,7 +80,7 @@ class Worker:
             await asyncio.sleep(self.heartbeat_interval_seconds)
             if stop.is_set():
                 return
-            if self.runner.heartbeat(lease.job_id, lease.worker_id, self.clock()) is None:
+            if self.runner.heartbeat(lease.job_id, lease.worker_id, lease.attempt_id, self.clock()) is None:
                 return
 
     def _cancel_requested(self, job_id: str) -> bool:

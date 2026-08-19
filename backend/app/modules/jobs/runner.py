@@ -210,7 +210,7 @@ class JobRunner:
             heartbeat_at=now,
         )
 
-    def heartbeat(self, job_id: str, worker_id: str, now: datetime) -> HeartbeatView | None:
+    def heartbeat(self, job_id: str, worker_id: str, attempt_id: str, now: datetime) -> HeartbeatView | None:
         _require_aware(now)
         lease_expires_at = now + timedelta(seconds=LEASE_SECONDS)
         with self.engine.begin() as connection:
@@ -228,7 +228,14 @@ class JobRunner:
                         SELECT 1
                         FROM job_attempts
                         WHERE job_attempts.job_id = jobs.id
+                          AND job_attempts.id = :attempt_id
                           AND job_attempts.finished_at IS NULL
+                          AND job_attempts.attempt_no = (
+                            SELECT MAX(open_attempts.attempt_no)
+                            FROM job_attempts AS open_attempts
+                            WHERE open_attempts.job_id = jobs.id
+                              AND open_attempts.finished_at IS NULL
+                          )
                       )
                     """
                 ),
@@ -236,6 +243,7 @@ class JobRunner:
                     "lease_expires_at": lease_expires_at.isoformat(),
                     "now": now.isoformat(),
                     "job_id": job_id,
+                    "attempt_id": attempt_id,
                     "running": JobStatus.RUNNING.value,
                     "cancel_requested": JobStatus.CANCEL_REQUESTED.value,
                     "worker_id": worker_id,
@@ -249,17 +257,15 @@ class JobRunner:
                     UPDATE job_attempts
                     SET heartbeat_at = :now,
                         updated_at = :now
-                    WHERE id = (
-                        SELECT id
-                        FROM job_attempts
-                        WHERE job_id = :job_id AND finished_at IS NULL
-                        ORDER BY attempt_no DESC
-                        LIMIT 1
-                    )
+                    WHERE id = :attempt_id
+                      AND job_id = :job_id
+                      AND finished_at IS NULL
                     """
                 ),
-                {"job_id": job_id, "now": now.isoformat()},
+                {"attempt_id": attempt_id, "job_id": job_id, "now": now.isoformat()},
             )
+            if result.rowcount != 1:
+                raise LeaseLost(f"attempt {attempt_id} is no longer open for job {job_id}")
         return HeartbeatView(job_id, worker_id, now, lease_expires_at)
 
     def request_cancel(self, job_id: str, now: datetime) -> JobView | None:
