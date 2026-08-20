@@ -1,0 +1,1 @@
+"""Rights and compliance services."""
