@@ -2,7 +2,27 @@ from __future__ import annotations
 
 import hashlib
 
+import pytest
+
 from app.modules.translation.segmenter import segment_source
+
+
+def test_segmenter_segments_reconstruct_source_with_blank_breaks() -> None:
+    source = "甲。\n\n乙。\n\n丙。"
+
+    parts = segment_source(source)
+
+    assert "".join(part.source_text for part in parts) == source
+
+
+def test_segmenter_packs_adjacent_short_paragraphs_toward_target() -> None:
+    source = ("甲" * 700 + "。") + "\n\n" + ("乙" * 700 + "。")
+
+    (part,) = segment_source(source)
+
+    assert part.source_text == source
+    assert part.paragraph_start == 0
+    assert part.paragraph_end == 1
 
 
 def test_segmenter_never_splits_inside_sentence_or_dialogue() -> None:
@@ -20,15 +40,14 @@ def test_segmenter_never_splits_inside_sentence_or_dialogue() -> None:
     assert parts[1].paragraph_end == 1
 
 
-def test_segmenter_keeps_boundary_sized_sentences_whole() -> None:
-    below_min = "甲" * 1_199 + "。"
-    at_min = "乙" * 1_200 + "。"
-    at_max = "丙" * 2_500 + "。"
+@pytest.mark.parametrize("han_count", [1_199, 1_200, 2_500])
+def test_segmenter_keeps_boundary_sized_sentences_whole(han_count: int) -> None:
+    source = "甲" * han_count + "。"
 
-    parts = segment_source(f"{below_min}\n\n{at_min}\n\n{at_max}")
+    (part,) = segment_source(source)
 
-    assert [part.source_text for part in parts] == [below_min, at_min, at_max]
-    assert [part.segment_kind for part in parts] == ["SOURCE", "SOURCE", "SOURCE"]
+    assert part.source_text == source
+    assert part.segment_kind == "SOURCE"
 
 
 def test_segmenter_splits_single_overlong_sentence_at_comma_near_max() -> None:

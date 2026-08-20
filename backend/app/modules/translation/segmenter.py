@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import re
 
 
 SENTENCE_ENDINGS = frozenset("。！？!?…")
@@ -35,41 +36,44 @@ def segment_source(
     if min_han > target_han or target_han > max_han:
         raise ValueError("SEGMENT_LIMITS_INVALID")
 
-    segments: list[SegmentDraft] = []
-    for paragraph_index, paragraph in enumerate(_paragraphs(text)):
-        units = _units_for_paragraph(paragraph, paragraph_index, max_han)
-        segments.extend(_pack_units(units, len(segments), min_han, target_han, max_han))
-    return tuple(segments)
+    return _pack_units(
+        _units_for_source(text, max_han), 0, min_han, target_han, max_han
+    )
 
 
-def _paragraphs(text: str) -> list[str]:
-    paragraphs: list[str] = []
-    current: list[str] = []
-    for line in text.split("\n"):
-        if line.strip() == "":
-            if current:
-                paragraphs.append("\n".join(current))
-                current = []
-            continue
-        current.append(line)
-    if current:
-        paragraphs.append("\n".join(current))
-    return paragraphs
-
-
-def _units_for_paragraph(
-    paragraph: str, paragraph_index: int, max_han: int
-) -> tuple[_Unit, ...]:
+def _units_for_source(text: str, max_han: int) -> tuple[_Unit, ...]:
     units: list[_Unit] = []
-    for sentence in _sentences(paragraph):
-        if _han_count(sentence) > max_han:
-            units.extend(
-                _Unit(part, paragraph_index, "LONG_SENTENCE_SPLIT")
-                for part in _split_long_sentence(sentence, max_han)
-            )
-        else:
-            units.append(_Unit(sentence, paragraph_index))
+    for prefix, paragraph, paragraph_index in _paragraphs_with_prefixes(text):
+        sentences = list(_sentences(paragraph))
+        if not sentences:
+            continue
+        sentences[0] = prefix + sentences[0]
+        for sentence in sentences:
+            if _han_count(sentence) > max_han:
+                units.extend(
+                    _Unit(part, paragraph_index, "LONG_SENTENCE_SPLIT")
+                    for part in _split_long_sentence(sentence, max_han)
+                )
+            else:
+                units.append(_Unit(sentence, paragraph_index))
     return tuple(units)
+
+
+def _paragraphs_with_prefixes(text: str) -> tuple[tuple[str, str, int], ...]:
+    parts = re.split(r"(\n{2,})", text)
+    paragraphs: list[tuple[str, str, int]] = []
+    pending_prefix = ""
+    paragraph_index = 0
+    for part in parts:
+        if part == "":
+            continue
+        if re.fullmatch(r"\n{2,}", part):
+            pending_prefix += part
+            continue
+        paragraphs.append((pending_prefix, part, paragraph_index))
+        pending_prefix = ""
+        paragraph_index += 1
+    return tuple(paragraphs)
 
 
 def _sentences(paragraph: str) -> tuple[str, ...]:
