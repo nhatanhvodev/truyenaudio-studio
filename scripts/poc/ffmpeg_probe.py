@@ -4,10 +4,12 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import string
 import subprocess
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 _FFMPEG_SAFE_CHARS = set(string.ascii_letters + string.digits + "._-")
 
@@ -24,104 +26,118 @@ def run_probe(
     safe_wavs = _validate_wavs(wav_paths, work_root)
     if safe_wavs is None:
         return {"status": "error", "error_code": "INPUT_UNSAFE_PATH", "redacted_error": "invalid_wav_input"}
+    safe_output = _validate_output(output_path, work_root)
+    if safe_output is None:
+        return {"status": "error", "error_code": "OUTPUT_UNSAFE_PATH", "redacted_error": "invalid_output_path"}
+    if safe_output.exists():
+        return {"status": "error", "error_code": "OUTPUT_EXISTS", "redacted_error": "output_already_exists"}
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    concat_list = work_root / f"{output_path.stem}.concat.txt"
+    safe_output.parent.mkdir(parents=True, exist_ok=True)
+    partial_path = safe_output.with_name(f"{safe_output.name}.{uuid4().hex}.partial")
+    concat_list = work_root / f"{safe_output.stem}.concat.txt"
     concat_list.write_text(
         "".join(f"file '{_escape_concat(path.relative_to(concat_list.parent))}'\n" for path in safe_wavs),
         encoding="utf-8",
     )
-    first = subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "1",
-            "-i",
-            str(concat_list),
-            "-af",
-            "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
-            "-f",
-            "null",
-            "-",
-        ],
-        shell=False,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if first.returncode != 0:
-        return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "loudnorm_pass1_failed"}
-    metrics = _parse_loudnorm_metrics(first.stderr)
-    if metrics is None:
-        return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "loudnorm_metrics_invalid"}
-    filter_pass2 = (
-        "loudnorm=I=-16:TP=-1.5:LRA=11:"
-        f"measured_I={metrics['input_i']}:"
-        f"measured_TP={metrics['input_tp']}:"
-        f"measured_LRA={metrics['input_lra']}:"
-        f"measured_thresh={metrics['input_thresh']}:"
-        f"offset={metrics['target_offset']}:"
-        "linear=true:print_format=json"
-    )
-    second = subprocess.run(
-        [
-            ffmpeg,
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "1",
-            "-i",
-            str(concat_list),
-            "-af",
-            filter_pass2,
-            str(output_path),
-        ],
-        shell=False,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if second.returncode != 0:
-        return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "loudnorm_pass2_failed"}
-    probe = subprocess.run(
-        [
-            ffprobe,
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration,bit_rate:stream=codec_name,sample_rate,channels",
-            "-of",
-            "json",
-            str(output_path),
-        ],
-        shell=False,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if probe.returncode != 0:
-        return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "ffprobe_failed"}
-    parsed = json.loads(probe.stdout)
-    stream = (parsed.get("streams") or [{}])[0]
-    fmt = parsed.get("format") or {}
-    return {
-        "status": "ok",
-        "provider": "ffmpeg",
-        "model": "loudnorm",
-        "provider_version": "cli",
-        "output_sha256": _hash_file(output_path),
-        "codec": stream.get("codec_name"),
-        "sample_rate": int(stream.get("sample_rate", 0)),
-        "channels": int(stream.get("channels", 0)),
-        "bitrate": int(fmt.get("bit_rate", 0)),
-        "duration": float(fmt.get("duration", 0)),
-        "integrated_lufs": -16.0,
-        "true_peak_dbtp": -1.5,
-    }
+    try:
+        first = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "1",
+                "-i",
+                str(concat_list),
+                "-af",
+                "loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json",
+                "-f",
+                "null",
+                "-",
+            ],
+            shell=False,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if first.returncode != 0:
+            return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "loudnorm_pass1_failed"}
+        metrics = _parse_loudnorm_metrics(first.stderr)
+        if metrics is None:
+            return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "loudnorm_metrics_invalid"}
+        filter_pass2 = (
+            "loudnorm=I=-16:TP=-1.5:LRA=11:"
+            f"measured_I={metrics['input_i']}:"
+            f"measured_TP={metrics['input_tp']}:"
+            f"measured_LRA={metrics['input_lra']}:"
+            f"measured_thresh={metrics['input_thresh']}:"
+            f"offset={metrics['target_offset']}:"
+            "linear=true:print_format=json"
+        )
+        second = subprocess.run(
+            [
+                ffmpeg,
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "1",
+                "-i",
+                str(concat_list),
+                "-af",
+                filter_pass2,
+                str(partial_path),
+            ],
+            shell=False,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if second.returncode != 0:
+            return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "loudnorm_pass2_failed"}
+        try:
+            os.link(partial_path, safe_output)
+        except FileExistsError:
+            return {"status": "error", "error_code": "OUTPUT_EXISTS", "redacted_error": "output_already_exists"}
+        partial_path.unlink()
+        probe = subprocess.run(
+            [
+                ffprobe,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration,bit_rate:stream=codec_name,sample_rate,channels",
+                "-of",
+                "json",
+                str(safe_output),
+            ],
+            shell=False,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if probe.returncode != 0:
+            return {"status": "error", "error_code": "FFMPEG_FAILED", "redacted_error": "ffprobe_failed"}
+        parsed = json.loads(probe.stdout)
+        stream = (parsed.get("streams") or [{}])[0]
+        fmt = parsed.get("format") or {}
+        return {
+            "status": "ok",
+            "provider": "ffmpeg",
+            "model": "loudnorm",
+            "provider_version": "cli",
+            "output_sha256": _hash_file(safe_output),
+            "codec": stream.get("codec_name"),
+            "sample_rate": int(stream.get("sample_rate", 0)),
+            "channels": int(stream.get("channels", 0)),
+            "bitrate": int(fmt.get("bit_rate", 0)),
+            "duration": float(fmt.get("duration", 0)),
+            "integrated_lufs": -16.0,
+            "true_peak_dbtp": -1.5,
+        }
+    finally:
+        partial_path.unlink(missing_ok=True)
 
 
 def _escape_concat(path: Path) -> str:
@@ -148,6 +164,21 @@ def _validate_wavs(wav_paths: list[Path], work_root: Path) -> list[Path] | None:
             return None
         safe.append(resolved)
     return safe
+
+
+def _validate_output(output_path: Path, work_root: Path) -> Path | None:
+    text = str(output_path)
+    if "://" in text or text.lower().startswith(("http:", "https:", "file:")):
+        return None
+    if ".." in output_path.parts:
+        return None
+    try:
+        resolved = output_path.resolve(strict=False)
+    except OSError:
+        return None
+    if not resolved.is_relative_to(work_root):
+        return None
+    return resolved
 
 
 def _is_safe_concat_relative_path(path: Path) -> bool:

@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.health import create_health_router
 from app.api.poc import create_poc_router
@@ -8,19 +11,59 @@ from app.settings.config import Settings
 from app.settings.startup_lock import StartupLock
 
 
-settings = Settings()
-api_lock = StartupLock(settings.data_root / "studio-api.lock")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    api_lock.acquire()
-    try:
-        yield
-    finally:
-        api_lock.release()
+def create_app(
+    *,
+    settings: Settings | None = None,
+    frontend_dist: Path | None = None,
+    acquire_lock: bool = True,
+) -> FastAPI:
+    active_settings = settings or Settings()
+    api_lock = StartupLock(active_settings.data_root / "studio-api.lock")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if acquire_lock:
+            api_lock.acquire()
+        try:
+            yield
+        finally:
+            if acquire_lock:
+                api_lock.release()
+
+    app = FastAPI(lifespan=lifespan)
+    app.include_router(create_health_router())
+    app.include_router(create_poc_router())
+    _register_frontend(app, frontend_dist or DEFAULT_FRONTEND_DIST)
+    return app
 
 
-app = FastAPI(lifespan=lifespan)
-app.include_router(create_health_router())
-app.include_router(create_poc_router())
+def _register_frontend(app: FastAPI, frontend_dist: Path) -> None:
+    index_path = frontend_dist / "index.html"
+    assets_path = frontend_dist / "assets"
+    if assets_path.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_path), name="frontend-assets")
+
+    @app.get("/", include_in_schema=False)
+    def frontend_root() -> FileResponse:
+        if not index_path.is_file():
+            raise HTTPException(status_code=404, detail="frontend build missing")
+        return FileResponse(index_path)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def frontend_fallback(full_path: str) -> FileResponse:
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="not found")
+        dist_root = frontend_dist.resolve()
+        candidate = (dist_root / full_path).resolve()
+        if candidate.is_file() and candidate.is_relative_to(dist_root):
+            return FileResponse(candidate)
+        if not index_path.is_file():
+            raise HTTPException(status_code=404, detail="frontend build missing")
+        return FileResponse(index_path)
+
+
+app = create_app()

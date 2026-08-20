@@ -91,9 +91,52 @@ def test_ffmpeg_probe_uses_safe_contained_concat_and_measured_loudnorm_pass2(
     assert "measured_LRA=8.40" in " ".join(pass2_argv)
     assert "measured_thresh=-29.20" in " ".join(pass2_argv)
     assert "offset=0.31" in " ".join(pass2_argv)
+    assert Path(pass2_argv[-1]).name.startswith("out.mp3.")
+    assert Path(pass2_argv[-1]).suffix == ".partial"
+    assert output.read_bytes() == b"mastered"
     concat_path = Path(pass1_argv[pass1_argv.index("-i") + 1])
     assert concat_path.parent == tmp_path
     assert concat_path.read_text(encoding="utf-8").startswith("file 'input/")
+
+
+def test_ffmpeg_probe_rejects_output_escape_without_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_ffmpeg_probe()
+    recorder = RecordingSubprocess()
+    monkeypatch.setattr(module.subprocess, "run", recorder.run)
+    source = _wav(tmp_path / "input" / "chapter-one.wav")
+
+    result = module.run_probe(
+        wav_paths=[source],
+        output_path=tmp_path.parent / "outside.mp3",
+        work_root=tmp_path,
+    )
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "OUTPUT_UNSAFE_PATH"
+    assert recorder.calls == []
+    assert str(tmp_path) not in str(result)
+
+
+def test_ffmpeg_probe_rejects_existing_output_without_subprocess_or_overwrite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_ffmpeg_probe()
+    recorder = RecordingSubprocess()
+    monkeypatch.setattr(module.subprocess, "run", recorder.run)
+    source = _wav(tmp_path / "input" / "chapter-one.wav")
+    output = tmp_path / "out.mp3"
+    output.write_bytes(b"keep")
+
+    result = module.run_probe(wav_paths=[source], output_path=output, work_root=tmp_path)
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "OUTPUT_EXISTS"
+    assert output.read_bytes() == b"keep"
+    assert recorder.calls == []
 
 
 def test_ffmpeg_probe_rejects_concat_unsafe_relative_path_without_subprocess(
