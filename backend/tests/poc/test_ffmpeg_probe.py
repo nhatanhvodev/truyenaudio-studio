@@ -74,7 +74,7 @@ def test_ffmpeg_probe_uses_safe_contained_concat_and_measured_loudnorm_pass2(
     module = _load_ffmpeg_probe()
     recorder = RecordingSubprocess()
     monkeypatch.setattr(module.subprocess, "run", recorder.run)
-    source = _wav(tmp_path / "input" / "chapter one.wav")
+    source = _wav(tmp_path / "input" / "chapter-one.wav")
     output = tmp_path / "work" / "out.mp3"
 
     result = module.run_probe(wav_paths=[source], output_path=output, work_root=tmp_path)
@@ -94,6 +94,22 @@ def test_ffmpeg_probe_uses_safe_contained_concat_and_measured_loudnorm_pass2(
     concat_path = Path(pass1_argv[pass1_argv.index("-i") + 1])
     assert concat_path.parent == tmp_path
     assert concat_path.read_text(encoding="utf-8").startswith("file 'input/")
+
+
+def test_ffmpeg_probe_rejects_concat_unsafe_relative_path_without_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_ffmpeg_probe()
+    recorder = RecordingSubprocess()
+    monkeypatch.setattr(module.subprocess, "run", recorder.run)
+    source = _wav(tmp_path / "input" / "chapter one.wav")
+
+    result = module.run_probe(wav_paths=[source], output_path=tmp_path / "out.mp3", work_root=tmp_path)
+
+    assert result["status"] == "error"
+    assert result["error_code"] == "INPUT_UNSAFE_PATH"
+    assert recorder.calls == []
 
 
 @pytest.mark.parametrize(

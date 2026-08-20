@@ -4,9 +4,12 @@ import argparse
 import hashlib
 import json
 import math
+import string
 import subprocess
 from pathlib import Path
 from typing import Any
+
+_FFMPEG_SAFE_CHARS = set(string.ascii_letters + string.digits + "._-")
 
 
 def run_probe(
@@ -141,8 +144,19 @@ def _validate_wavs(wav_paths: list[Path], work_root: Path) -> list[Path] | None:
             return None
         if not resolved.is_file() or not resolved.is_relative_to(work_root):
             return None
+        if not _is_safe_concat_relative_path(resolved.relative_to(work_root)):
+            return None
         safe.append(resolved)
     return safe
+
+
+def _is_safe_concat_relative_path(path: Path) -> bool:
+    return all(
+        part
+        and not part.startswith(".")
+        and all(character in _FFMPEG_SAFE_CHARS for character in part)
+        for part in path.parts
+    )
 
 
 def _parse_loudnorm_metrics(stderr: str) -> dict[str, str] | None:
