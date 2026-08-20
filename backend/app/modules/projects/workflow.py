@@ -39,6 +39,13 @@ class ImportItem:
 
 
 @dataclass(frozen=True)
+class ImportedSource:
+    text: str
+    raw_bytes: bytes
+    original_filename: str | None
+
+
+@dataclass(frozen=True)
 class ImportChapters:
     kind: ImportKind
     items: tuple[ImportItem, ...]
@@ -121,12 +128,12 @@ class ProjectWorkflow:
             raise ValueError("PROJECT_NOT_FOUND")
         views: list[ChapterView] = []
         for item in command.items:
-            raw_text, original_filename = self._read_item(command.kind, item)
-            normalized = normalize_source(raw_text)
+            imported = self._read_item(command.kind, item)
+            normalized = normalize_source(imported.text)
             chapter = self._get_or_create_chapter(project_id, item)
-            revision = self._revision_for(chapter, command.kind, normalized)
+            revision = self._revision_for(chapter, normalized)
             if revision is None:
-                revision = self._create_revision(project, chapter, command.kind, item, raw_text, normalized, original_filename)
+                revision = self._create_revision(project, chapter, command.kind, imported, normalized)
             changed_active_revision = chapter.active_source_revision_id != revision.id
             chapter.active_source_revision_id = revision.id
             chapter.source_title = item.title
@@ -159,17 +166,17 @@ class ProjectWorkflow:
         chapters = self.session.scalars(select(Chapter).where(Chapter.project_id == project_id).order_by(Chapter.ordinal)).all()
         return {"project": _project_view(project), "chapters": tuple(_chapter_view(chapter) for chapter in chapters)}
 
-    def _read_item(self, kind: ImportKind, item: ImportItem) -> tuple[str, str | None]:
+    def _read_item(self, kind: ImportKind, item: ImportItem) -> ImportedSource:
         if item.ordinal <= 0:
             raise ValueError("CHAPTER_ORDINAL_INVALID")
         if kind is ImportKind.PASTE:
             if item.text is None:
                 raise ValueError("PASTE_TEXT_REQUIRED")
-            return item.text, None
+            return ImportedSource(item.text, item.text.encode("utf-8"), None)
         if item.payload is None:
             raise ValueError("TXT_PAYLOAD_REQUIRED")
         decoded = decode_txt(item.payload)
-        return decoded.text, _safe_basename(item.filename or "source.txt")
+        return ImportedSource(decoded.text, item.payload, _safe_basename(item.filename or "source.txt"))
 
     def _get_or_create_chapter(self, project_id: str, item: ImportItem) -> Chapter:
         chapter = self.session.scalar(
@@ -182,12 +189,11 @@ class ProjectWorkflow:
         self.session.flush()
         return chapter
 
-    def _revision_for(self, chapter: Chapter, kind: ImportKind, normalized: NormalizedSource) -> SourceRevision | None:
+    def _revision_for(self, chapter: Chapter, normalized: NormalizedSource) -> SourceRevision | None:
         return self.session.scalar(
             select(SourceRevision).where(
                 SourceRevision.chapter_id == chapter.id,
                 SourceRevision.normalized_sha256 == normalized.sha256,
-                SourceRevision.import_kind == kind.name,
             )
         )
 
@@ -196,20 +202,17 @@ class ProjectWorkflow:
         project: Project,
         chapter: Chapter,
         kind: ImportKind,
-        item: ImportItem,
-        raw_text: str,
+        imported: ImportedSource,
         normalized: NormalizedSource,
-        original_filename: str | None,
     ) -> SourceRevision:
         revision_no = (self.session.scalar(select(func.max(SourceRevision.revision_no)).where(SourceRevision.chapter_id == chapter.id)) or 0) + 1
-        raw_bytes = raw_text.encode("utf-8")
-        artifact = self._store_source_artifact(project, chapter, kind, revision_no, raw_bytes, normalized.sha256)
+        artifact = self._store_source_artifact(project, chapter, kind, revision_no, imported.raw_bytes)
         revision = SourceRevision(
             id=new_id(),
             chapter_id=chapter.id,
             revision_no=revision_no,
             import_kind=kind.name,
-            original_filename=original_filename,
+            original_filename=imported.original_filename,
             source_reference_url=project.source_reference_url,
             raw_artifact_id=artifact.id,
             normalized_text=normalized.text,
@@ -229,14 +232,14 @@ class ProjectWorkflow:
         kind: ImportKind,
         revision_no: int,
         payload: bytes,
-        normalized_sha256: str,
     ) -> Artifact:
         relative_path = f"projects/{project.slug}/sources/chapter-{chapter.ordinal:04d}/revision-{revision_no:04d}.txt"
+        source_scope = f"{project.id}:{chapter.id}:{revision_no}:{kind.name}:nfc-v1"
         write = ArtifactWrite(
             kind=ArtifactKind.SOURCE_SNAPSHOT,
             relative_path=relative_path,
-            input_hash=normalized_sha256,
-            settings_hash=hashlib.sha256(f"{kind.name}:nfc-v1".encode("utf-8")).hexdigest(),
+            input_hash=hashlib.sha256(payload).hexdigest(),
+            settings_hash=hashlib.sha256(source_scope.encode("utf-8")).hexdigest(),
             mime_type="text/plain; charset=utf-8",
         )
         with self.artifact_store.begin(write) as writer:

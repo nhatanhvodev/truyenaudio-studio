@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import socket
 import urllib.request
 
@@ -77,6 +78,54 @@ def test_same_hash_reuses_revision_but_changed_text_creates_next(workflow: Proje
 
     assert same.active_source_revision_id == first.active_source_revision_id
     assert changed.active_source_revision_id != first.active_source_revision_id
+
+
+def test_same_normalized_hash_reuses_revision_across_paste_and_txt_imports(
+    workflow: ProjectWorkflow,
+    project,
+) -> None:
+    pasted = workflow.import_chapters(project.id, ImportChapters.paste(1, "一", "甲。"))[0]
+    txt = workflow.import_chapters(project.id, ImportChapters.txt(1, "one.txt", "甲。".encode("utf-8")))[0]
+
+    assert txt.active_source_revision_id == pasted.active_source_revision_id
+
+
+def test_utf16_txt_source_snapshot_preserves_uploaded_bytes(
+    workflow: ProjectWorkflow,
+    project,
+    db_session,
+    artifact_store,
+) -> None:
+    payload = "甲。".encode("utf-16")
+
+    (chapter,) = workflow.import_chapters(project.id, ImportChapters.txt(1, "one.txt", payload))
+
+    revision = workflow.get_source_revision(chapter.active_source_revision_id)
+    artifact = db_session.get(Artifact, revision.raw_artifact_id)
+    assert artifact is not None
+    assert artifact_store.resolve(artifact.relative_path).read_bytes() == payload
+    assert artifact.sha256 == hashlib.sha256(payload).hexdigest()
+    assert artifact.byte_size == len(payload)
+
+
+def test_identical_normalized_text_in_two_chapters_gets_distinct_source_snapshots(
+    workflow: ProjectWorkflow,
+    project,
+    db_session,
+) -> None:
+    first = workflow.import_chapters(project.id, ImportChapters.paste(1, "一", "甲。"))[0]
+    second = workflow.import_chapters(project.id, ImportChapters.paste(2, "二", "甲。"))[0]
+
+    first_revision = workflow.get_source_revision(first.active_source_revision_id)
+    second_revision = workflow.get_source_revision(second.active_source_revision_id)
+    first_artifact = db_session.get(Artifact, first_revision.raw_artifact_id)
+    second_artifact = db_session.get(Artifact, second_revision.raw_artifact_id)
+
+    assert first_artifact is not None
+    assert second_artifact is not None
+    assert second_revision.id != first_revision.id
+    assert second_artifact.id != first_artifact.id
+    assert second_artifact.relative_path != first_artifact.relative_path
 
 
 def test_changed_source_revision_invalidates_active_downstream_pointers(
