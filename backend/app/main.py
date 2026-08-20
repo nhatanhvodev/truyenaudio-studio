@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.health import create_health_router
+from app.api.glossary import create_glossary_router
 from app.api.poc import create_poc_router
 from app.api.projects import create_projects_router
 from app.api.rights import create_rights_router
@@ -40,6 +41,7 @@ def create_app(
     app.include_router(create_health_router())
     app.include_router(create_poc_router())
     app.include_router(create_projects_router(active_settings))
+    app.include_router(create_glossary_router(active_settings))
     app.include_router(create_rights_router(active_settings))
     _register_frontend(app, frontend_dist or DEFAULT_FRONTEND_DIST)
     return app
