@@ -78,6 +78,34 @@ async def test_ffmpeg_probe_requires_file_checksum_to_match(tmp_path: Path) -> N
         await processor.probe(output, expected_sha256="0" * 64)
 
 
+@pytest.mark.asyncio
+async def test_ffmpeg_silence_temp_file_name_is_safe_for_windows_operation_id(
+    tmp_path: Path,
+) -> None:
+    source = _wav(tmp_path / "segments" / "a.wav")
+    output = tmp_path / "masters" / "chapter.mp3"
+    runner = RecordingRunner()
+    processor = FFmpegAudioProcessor(runner=runner.run)
+
+    await processor.master(
+        MasterRequest(
+            operation_id="master:chapter:artifact",
+            ordered_segment_paths=(source,),
+            pause_after_ms=(500,),
+            metadata={},
+        ),
+        output,
+    )
+
+    silence_outputs = [
+        Path(call["argv"][-1]).name
+        for call in runner.calls
+        if "anullsrc" in " ".join(call["argv"])
+    ]
+    assert silence_outputs
+    assert all(":" not in name for name in silence_outputs)
+
+
 class RecordingRunner:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []

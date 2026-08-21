@@ -40,7 +40,7 @@ from app.db.models import (
     VoicePreset,
     VoiceRole,
 )
-from app.modules.audio.qa import run_master_qa
+from app.modules.audio.qa import AudioIssueDraft, run_master_qa, run_premaster_qa
 from app.modules.projects.state_machine import next_state
 from app.modules.speech.narration import (
     derive_narration,
@@ -405,6 +405,10 @@ class SpeechWorkflow:
                 output_path,
             )
         )
+        premaster_issues = run_premaster_qa(
+            audio_paths,
+            tuple(segment.id for segment in segments),
+        )
         actual_sha256 = _sha256_file(output_path)
         if actual_sha256 != result.sha256:
             output_path.unlink(missing_ok=True)
@@ -429,7 +433,7 @@ class SpeechWorkflow:
                 "true_peak_dbtp": result.true_peak_dbtp,
             },
         )
-        self._replace_audio_qa(chapter.id, result)
+        self._replace_audio_qa(chapter.id, result, premaster_issues)
         return _MasterWrite(artifact=artifact, result=result)
 
     def _write_srt(
@@ -492,23 +496,28 @@ class SpeechWorkflow:
             sample_rate=preset.sample_rate,
         )
 
-    def _replace_audio_qa(self, chapter_id: str, probe: MasterResult) -> None:
+    def _replace_audio_qa(
+        self,
+        chapter_id: str,
+        probe: MasterResult,
+        premaster_issues: tuple[AudioIssueDraft, ...],
+    ) -> None:
         for issue in self.session.scalars(
             select(QaIssue).where(
                 QaIssue.chapter_id == chapter_id,
                 QaIssue.translation_run_id.is_(None),
-                QaIssue.speech_segment_id.is_(None),
                 QaIssue.rule_or_model == "audio-qa-v1",
             )
         ):
             issue.status = QaStatus.FIXED.value
             issue.resolved_note = "Replaced by latest audio QA run."
             issue.resolved_at = utc_now()
-        for draft in run_master_qa(probe):
+        for draft in (*premaster_issues, *run_master_qa(probe)):
             self.session.add(
                 QaIssue(
                     id=self.id_factory(),
                     chapter_id=chapter_id,
+                    speech_segment_id=draft.speech_segment_id,
                     category=draft.category.value,
                     severity=draft.severity.value,
                     status=QaStatus.OPEN.value,

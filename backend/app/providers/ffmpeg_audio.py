@@ -175,7 +175,7 @@ class FFmpegAudioProcessor:
             inputs.append(segment_path)
             if pause_ms <= 0:
                 continue
-            silence_path = work_root / f"{request.operation_id}.{index}.silence.wav"
+            silence_path = work_root / f"{_safe_temp_stem(request.operation_id)}.{index}.silence.wav"
             duration_seconds = pause_ms / 1000
             self._run(
                 [
@@ -216,6 +216,14 @@ def _parse_loudnorm_json(stderr: str) -> dict[str, str]:
         if all(key in data for key in required):
             return {key: str(data[key]) for key in required}
     raise RuntimeError("loudnorm_metrics_invalid")
+
+
+def _safe_temp_stem(value: str) -> str:
+    safe_prefix = re.sub(r"[^A-Za-z0-9_.-]+", "-", value).strip(".-")
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+    if not safe_prefix:
+        return f"operation-{digest}"
+    return f"{safe_prefix[:48]}-{digest}"
 
 
 def _sha256_file(path: Path) -> str:

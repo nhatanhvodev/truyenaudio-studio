@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from pathlib import Path
+import wave
 
 import pytest
 
@@ -148,6 +150,45 @@ def test_audio_approval_is_independent_and_blocks_open_major_audio_issues(
     assert chapter.state == ChapterState.READY_TO_EXPORT.value
 
 
+@pytest.mark.parametrize(
+    ("tts", "category"),
+    [
+        pytest.param("clipped", QaCategory.CLIPPING, id="clipped-premaster-segment"),
+        pytest.param("silent", QaCategory.SILENCE, id="long-silence-premaster-segment"),
+    ],
+)
+def test_premaster_audio_qa_generates_blocking_issue_before_approval(
+    db_session,
+    tmp_path: Path,
+    deterministic_uuid7_factory,
+    tts: str,
+    category: QaCategory,
+) -> None:
+    fixture = _approved_chapter(db_session)
+    preset = _voice_preset(db_session)
+    tts_adapter = WavTts(mode=tts)
+    workflow = SpeechWorkflow(
+        db_session,
+        tts=tts_adapter,
+        audio_processor=DeterministicAudioProcessor(),
+        artifact_root=tmp_path,
+        id_factory=deterministic_uuid7_factory,
+    )
+    workflow.configure_single(fixture.chapter_id, preset.id)
+    rendered = workflow.enqueue_render(fixture.chapter_id)
+
+    issues = db_session.query(QaIssue).filter(QaIssue.category == category.value).all()
+    assert issues
+    assert all(issue.status == QaStatus.OPEN.value for issue in issues)
+    assert all(issue.severity == QaSeverity.MAJOR.value for issue in issues)
+    with pytest.raises(AudioApprovalBlocked):
+        workflow.approve_audio(
+            fixture.chapter_id,
+            rendered.master_artifact_id,
+            expected_sha256=rendered.master_sha256,
+        )
+
+
 class CountingTts:
     def __init__(self) -> None:
         self.requested_segment_ids: list[str] = []
@@ -177,6 +218,49 @@ class CountingTts:
             duration_ms=30_000,
             sha256=hashlib.sha256(payload).hexdigest(),
             usage=(Usage(UsageUnit.AUDIO_SECOND.value, 30),),
+        )
+
+
+class WavTts:
+    def __init__(self, mode: str) -> None:
+        self.mode = mode
+
+    def capabilities(self) -> dict[str, object]:
+        return {
+            "provider": "fake",
+            "model": f"fake-{self.mode}-tts",
+            "provider_version": "1",
+            "sample_rates": [44_100],
+            "formats": ["wav"],
+            "network": False,
+        }
+
+    async def list_voices(self, locale: str) -> list[dict[str, object]]:
+        return [{"id": "voice-1", "locale": locale, "sample_rate": 44_100}]
+
+    async def synthesize(self, request, output_path: Path) -> SynthesisResult:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        duration_seconds = 9.2 if self.mode == "silent" else 1.0
+        frame_count = round(44_100 * duration_seconds)
+        with wave.open(str(output_path), "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(44_100)
+            if self.mode == "silent":
+                wav.writeframes(b"\x00\x00" * frame_count)
+            else:
+                frames = bytearray()
+                for index in range(frame_count):
+                    sample = 32_767 if index % 2 == 0 else -32_768
+                    frames.extend(sample.to_bytes(2, byteorder="little", signed=True))
+                wav.writeframes(bytes(frames))
+        return SynthesisResult(
+            provider="fake",
+            model=f"fake-{self.mode}-tts",
+            provider_version="1",
+            duration_ms=round(duration_seconds * 1000),
+            sha256=hashlib.sha256(output_path.read_bytes()).hexdigest(),
+            usage=(Usage(UsageUnit.AUDIO_SECOND.value, math.ceil(duration_seconds)),),
         )
 
 

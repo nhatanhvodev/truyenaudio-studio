@@ -107,3 +107,80 @@ Tests  7 passed (7)
 
 - The new `AudioReview` component is standalone and build-verified, but it is not wired into `App.tsx`; the brief only required creating the component.
 - The deterministic workflow tests inject fake TTS/mastering boundaries; real FFmpeg behavior is covered at the provider command/probe seam without invoking paid or network services.
+
+---
+
+## Review Fix Round 1
+
+### Status
+
+DONE
+
+### RED evidence
+
+Command:
+
+```powershell
+cd D:\truyenaudio-studio
+.\.venv\Scripts\python -m pytest backend/tests/speech backend/tests/audio -q
+```
+
+Output:
+
+```text
+FAILED backend\tests\speech\test_single_narrator.py::test_premaster_audio_qa_generates_blocking_issue_before_approval[clipped-premaster-segment]
+FAILED backend\tests\speech\test_single_narrator.py::test_premaster_audio_qa_generates_blocking_issue_before_approval[long-silence-premaster-segment]
+FAILED backend\tests\audio\test_ffmpeg.py::test_ffmpeg_silence_temp_file_name_is_safe_for_windows_operation_id
+3 failed, 6 passed in 2.37s
+```
+
+### GREEN evidence
+
+Focused speech/audio suite:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/speech backend/tests/audio -q
+```
+
+```text
+.........                                                                [100%]
+9 passed in 3.36s
+```
+
+Ruff touched Python files:
+
+```powershell
+.\.venv\Scripts\python -m ruff check backend/app/modules/speech/workflow.py backend/app/providers/ffmpeg_audio.py backend/app/modules/audio/qa.py backend/tests/speech/test_single_narrator.py backend/tests/audio/test_ffmpeg.py
+```
+
+```text
+All checks passed!
+```
+
+Broader backend suite:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests -q
+```
+
+```text
+239 passed, 1 warning in 36.74s
+```
+
+### Files changed
+
+- `backend/app/modules/audio/qa.py`
+- `backend/app/modules/speech/workflow.py`
+- `backend/app/providers/ffmpeg_audio.py`
+- `backend/tests/audio/test_ffmpeg.py`
+- `backend/tests/speech/test_single_narrator.py`
+
+### Self-review
+
+- Fixed Windows-unsafe FFmpeg silence filenames by deriving a sanitized temp stem with a hash suffix from `operation_id`; concat-list and two-pass loudnorm behavior are preserved.
+- Added pre-master WAV analysis for source/TTS segment peaks over `-1 dBFS` and non-scene-break silence longer than 8 seconds, generating open Major `CLIPPING` or `SILENCE` issues before approval.
+- `SpeechWorkflow.approve_audio` already blocks open Major/Critical audio categories, so generated pre-master issues now block approval without broadening export, cloud TTS, or upload scope.
+
+### Concerns
+
+- Pre-master QA currently analyzes readable 16-bit PCM WAV segment files and skips unreadable/non-WAV fake files; the real local TTS adapters already validate WAV output.
