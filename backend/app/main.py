@@ -11,6 +11,7 @@ from app.api.glossary import create_glossary_router
 from app.api.poc import create_poc_router
 from app.api.projects import create_projects_router
 from app.api.rights import create_rights_router
+from app.api.translation import create_translation_router
 from app.settings.config import Settings
 from app.settings.startup_lock import StartupLock
 
@@ -43,6 +44,7 @@ def create_app(
     app.include_router(create_poc_router())
     app.include_router(create_projects_router(active_settings))
     app.include_router(create_glossary_router(active_settings))
+    app.include_router(create_translation_router(active_settings))
     app.include_router(create_rights_router(active_settings))
     app.include_router(create_cloud_consents_router(active_settings))
     _register_frontend(app, frontend_dist or DEFAULT_FRONTEND_DIST)
