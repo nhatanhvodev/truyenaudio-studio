@@ -8,13 +8,21 @@ class FakeEventSource {
   onmessage: ((message: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
   close = vi.fn();
+  private listeners: Record<string, ((message: MessageEvent) => void)[]> = {};
 
   constructor(public readonly url: string) {
     FakeEventSource.instances.push(this);
   }
 
-  emit(payload: unknown) {
-    this.onmessage?.({ data: JSON.stringify(payload) } as MessageEvent);
+  addEventListener(eventName: string, listener: (message: MessageEvent) => void) {
+    this.listeners[eventName] ??= [];
+    this.listeners[eventName].push(listener);
+  }
+
+  dispatchJob(payload: unknown) {
+    for (const listener of this.listeners.job ?? []) {
+      listener({ data: JSON.stringify(payload) } as MessageEvent);
+    }
   }
 }
 
@@ -25,7 +33,7 @@ afterEach(() => {
 });
 
 describe('JobProgress', () => {
-  it('loads a snapshot once and keeps a stable EventSource after events', async () => {
+  it('loads a snapshot once and keeps a stable EventSource after named job events', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
@@ -55,7 +63,7 @@ describe('JobProgress', () => {
     expect(FakeEventSource.instances[0].url).toBe('/api/jobs/events?after=001');
 
     act(() => {
-      FakeEventSource.instances[0].emit({
+      FakeEventSource.instances[0].dispatchJob({
         sequenceId: '002',
         jobId: 'job-2',
         status: 'SUCCEEDED',

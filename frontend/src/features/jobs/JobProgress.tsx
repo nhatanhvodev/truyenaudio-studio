@@ -45,13 +45,14 @@ export function JobProgress({ events = [] }: Props) {
       source = new EventSource(url);
       setStreamState('connecting');
       source.onopen = () => setStreamState('connected');
-      source.onmessage = (message) => {
+      const handleJobEvent = (message: MessageEvent) => {
         try {
           appendEvents([JSON.parse(message.data) as JobEvent]);
         } catch {
           setStreamState('offline');
         }
       };
+      source.addEventListener('job', (message) => handleJobEvent(message as MessageEvent));
       source.onerror = () => setStreamState('offline');
     }
 
