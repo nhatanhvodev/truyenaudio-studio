@@ -15,6 +15,14 @@ def test_segmenter_segments_reconstruct_source_with_blank_breaks() -> None:
     assert "".join(part.source_text for part in parts) == source
 
 
+def test_segmenter_segments_reconstruct_source_with_trailing_blank_breaks() -> None:
+    source = "甲。\n\n"
+
+    parts = segment_source(source)
+
+    assert "".join(part.source_text for part in parts) == source
+
+
 def test_segmenter_packs_adjacent_short_paragraphs_toward_target() -> None:
     source = ("甲" * 700 + "。") + "\n\n" + ("乙" * 700 + "。")
 

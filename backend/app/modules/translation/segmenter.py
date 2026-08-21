@@ -44,6 +44,9 @@ def segment_source(
 def _units_for_source(text: str, max_han: int) -> tuple[_Unit, ...]:
     units: list[_Unit] = []
     for prefix, paragraph, paragraph_index in _paragraphs_with_prefixes(text):
+        if paragraph == "":
+            units.append(_Unit(prefix, paragraph_index))
+            continue
         sentences = list(_sentences(paragraph))
         if not sentences:
             continue
@@ -73,6 +76,8 @@ def _paragraphs_with_prefixes(text: str) -> tuple[tuple[str, str, int], ...]:
         paragraphs.append((pending_prefix, part, paragraph_index))
         pending_prefix = ""
         paragraph_index += 1
+    if pending_prefix:
+        paragraphs.append((pending_prefix, "", max(paragraph_index - 1, 0)))
     return tuple(paragraphs)
 
 
