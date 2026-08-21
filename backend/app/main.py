@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.cloud_consents import create_cloud_consents_router
 from app.api.audio import create_audio_router
+from app.api.exports import create_exports_router
 from app.api.health import create_health_router
 from app.api.glossary import create_glossary_router
 from app.api.poc import create_poc_router
@@ -51,6 +52,7 @@ def create_app(
     app.include_router(create_cloud_consents_router(active_settings))
     app.include_router(create_voices_router(active_settings))
     app.include_router(create_audio_router(active_settings))
+    app.include_router(create_exports_router(active_settings))
     _register_frontend(app, frontend_dist or DEFAULT_FRONTEND_DIST)
     return app
 
