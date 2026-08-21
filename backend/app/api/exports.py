@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import asdict
 from enum import Enum
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,6 +12,7 @@ from app.contracts import ExportKind
 from app.db.base import create_engine_for, session_factory
 from app.modules.exports.schemas import PublicationMetadata
 from app.modules.exports.workflow import BundleVerificationError, ExportWorkflow
+from app.providers.fake import FakeMp3AudioProcessor
 from app.settings.config import Settings
 
 
@@ -30,7 +32,13 @@ def create_exports_router(settings: Settings | None = None) -> APIRouter:
         engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
         factory = session_factory(engine)
         with factory() as session:
-            yield ExportWorkflow(session, artifact_root=active_settings.data_root / "artifacts")
+            yield ExportWorkflow(
+                session,
+                artifact_root=active_settings.data_root / "artifacts",
+                audio_processor=FakeMp3AudioProcessor()
+                if os.getenv("STUDIO_FAKE_AUDIO") == "1"
+                else None,
+            )
         engine.dispose()
 
     @router.get("/gate")

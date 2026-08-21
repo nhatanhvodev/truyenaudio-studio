@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import asdict
 from enum import Enum
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +16,7 @@ from app.modules.speech.workflow import (
     TranslationApprovalRequired,
     VoicePlanRequired,
 )
+from app.providers.fake import FakeMp3AudioProcessor
 from app.settings.config import Settings
 
 
@@ -41,6 +43,9 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
         with factory() as session:
             yield SpeechWorkflow(
                 session,
+                audio_processor=FakeMp3AudioProcessor()
+                if os.getenv("STUDIO_FAKE_AUDIO") == "1"
+                else None,
                 artifact_root=active_settings.data_root / "artifacts",
             )
         engine.dispose()

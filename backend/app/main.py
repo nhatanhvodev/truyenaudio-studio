@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.security import create_security_router, install_csrf_middleware
 from app.api.cloud_consents import create_cloud_consents_router
 from app.api.audio import create_audio_router
 from app.api.exports import create_exports_router
@@ -16,6 +17,7 @@ from app.api.rights import create_rights_router
 from app.api.translation import create_translation_router
 from app.api.voices import create_voices_router
 from app.settings.config import Settings
+from app.settings.csrf import CsrfService
 from app.settings.startup_lock import StartupLock
 
 
@@ -43,6 +45,9 @@ def create_app(
                 api_lock.release()
 
     app = FastAPI(lifespan=lifespan)
+    csrf = CsrfService()
+    install_csrf_middleware(app, csrf)
+    app.include_router(create_security_router(csrf))
     app.include_router(create_health_router())
     app.include_router(create_poc_router())
     app.include_router(create_projects_router(active_settings))

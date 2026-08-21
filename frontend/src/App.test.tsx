@@ -1,78 +1,30 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  window.history.replaceState(null, '', '/');
 });
 
 describe('App', () => {
-  it('renders the local diagnostics dashboard from loopback-relative APIs', async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url === '/api/health/ready') {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            status: 'ready',
-            components: {
-              api: { status: 'ok', message: 'live' },
-              worker: { status: 'ok', message: 'fresh' },
-              sqlite: { status: 'ok', message: 'writable' },
-              ffmpeg: { status: 'ok', message: 'available' },
-            },
-          }),
-        };
-      }
-      if (url === '/api/poc/status') {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({ status: 'ready', gates: { overall: { passed: true } } }),
-        };
-      }
-      throw new Error(`unexpected url ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
+  it('opens on the project and rights workflow instead of a landing page', async () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: 'Truyện Audio Studio' })).toBeVisible();
-    expect(await screen.findByText('API')).toBeVisible();
-    expect(screen.getByText('Worker')).toBeVisible();
-    expect(screen.getByText('SQLite')).toBeVisible();
-    expect(screen.getByText('FFmpeg')).toBeVisible();
-    expect(screen.getByText('POC Gate')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Chẩn đoán' })).toHaveAttribute('href', '/diagnostics');
-    expect(fetchMock).toHaveBeenCalledWith('/api/health/ready', expect.objectContaining({ cache: 'no-store' }));
-    expect(fetchMock).toHaveBeenCalledWith('/api/poc/status', expect.objectContaining({ cache: 'no-store' }));
+    expect(screen.getByLabelText('Tên truyện')).toBeVisible();
+    expect(screen.getByLabelText('Loại nguồn')).toBeVisible();
+    expect(screen.getByLabelText('Trạng thái quyền')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Tạo dự án' })).toBeVisible();
   });
 
-  it('shows offline and degraded states accessibly', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url === '/api/health/ready') {
-          return {
-            ok: false,
-            status: 503,
-            json: async () => ({
-              status: 'not_ready',
-              components: {
-                api: { status: 'ok', message: 'live' },
-                worker: { status: 'stale', message: 'heartbeat qua cu' },
-              },
-            }),
-          };
-        }
-        throw new TypeError('network offline');
-      }),
-    );
+  it('keeps the jobs overlay available without browser EventSource support', async () => {
+    vi.stubGlobal('EventSource', undefined);
 
     render(<App />);
 
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('API cần kiểm tra'));
-    expect(screen.getByText('Mất kết nối local')).toBeVisible();
+    expect(await screen.findByLabelText('Jobs overlay')).toBeVisible();
+    expect(screen.getByText('Chưa có job đang chạy')).toBeVisible();
   });
 });

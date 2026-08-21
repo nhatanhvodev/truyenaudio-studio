@@ -1,7 +1,7 @@
 type GateDecision = {
   allowed: boolean;
   reasons: string[];
-  rights_evaluation_hash: string;
+  rightsEvaluationHash: string;
 };
 
 type ExportGateProps = {
@@ -18,7 +18,7 @@ export function ExportGate({ decision, onBuildPrivate, onBuildPublication }: Exp
       <div style={styles.header}>
         <div>
           <h2 style={styles.title}>Xuat ban</h2>
-          <p style={styles.meta}>Hash danh gia quyen: {decision.rights_evaluation_hash.slice(0, 12)}</p>
+          <p style={styles.meta}>Hash danh gia quyen: {decision.rightsEvaluationHash.slice(0, 12)}</p>
         </div>
         <span style={decision.allowed ? styles.ready : styles.blocked}>{decision.allowed ? 'San sang' : 'Bi chan'}</span>
       </div>
@@ -36,7 +36,7 @@ export function ExportGate({ decision, onBuildPrivate, onBuildPublication }: Exp
           Tao archive rieng tu
         </button>
         <button type="button" style={styles.primaryButton} disabled={!decision.allowed} onClick={onBuildPublication}>
-          Tao goi xuat ban
+          Tạo bundle publication
         </button>
       </div>
     </section>

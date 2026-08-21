@@ -157,6 +157,34 @@ class FakeAudioProcessor:
         return _probe_wav(Path(path), integrated_lufs=-16.0, true_peak_dbtp=-1.5)
 
 
+class FakeMp3AudioProcessor:
+    async def master(self, request: MasterRequest, output_path: Path) -> MasterResult:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256()
+        for path in request.ordered_segment_paths:
+            digest.update(Path(path).read_bytes())
+        digest.update(",".join(str(pause) for pause in request.pause_after_ms).encode("ascii"))
+        payload = b"FAKE_MP3\n" + digest.hexdigest().encode("ascii") + b"\n"
+        output_path.write_bytes(payload)
+        return await self.probe(output_path)
+
+    async def probe(self, path: Path, expected_sha256: str | None = None) -> MasterResult:
+        actual_sha256 = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        if expected_sha256 is not None and actual_sha256 != expected_sha256:
+            raise ValueError("master checksum mismatch")
+        return MasterResult(
+            duration_ms=30_000,
+            sha256=actual_sha256,
+            codec="mp3",
+            sample_rate=SAMPLE_RATE,
+            channels=CHANNELS,
+            bitrate_kbps=128,
+            integrated_lufs=-16.0,
+            true_peak_dbtp=-1.5,
+        )
+
+
 def _first_han_character(value: str) -> str | None:
     for character in value:
         if "\u4e00" <= character <= "\u9fff":

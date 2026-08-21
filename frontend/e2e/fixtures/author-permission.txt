@@ -1,0 +1,1 @@
+Author permission for fake local E2E. Allows Vietnamese translation, single-narrator audio, and public streaming for this sample.

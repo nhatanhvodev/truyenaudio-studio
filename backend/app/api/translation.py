@@ -7,6 +7,7 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.db.base import create_engine_for, session_factory
 from app.modules.translation.workflow import (
     ApprovalBlocked,
@@ -36,11 +37,20 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
     active_settings = settings or Settings()
 
     def workflow_dependency() -> Iterator[TranslationWorkflow]:
-        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
-        factory = session_factory(engine)
-        with factory() as session:
-            yield TranslationWorkflow(session)
-        engine.dispose()
+        yield from _workflow_dependency(active_settings)
+
+    def fake_workflow_dependency() -> Iterator[TranslationWorkflow]:
+        yield from _workflow_dependency(active_settings, translator=CleanFakeTranslator())
+
+    @router.post("/fake")
+    def run_fake_translation(
+        chapter_id: str,
+        workflow: TranslationWorkflow = Depends(fake_workflow_dependency),
+    ) -> dict[str, object]:
+        try:
+            return _run_payload(workflow.enqueue_translation(chapter_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get("")
     def read_translation(
@@ -94,6 +104,37 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
         return _run_payload(run)
 
     return router
+
+
+def _workflow_dependency(
+    active_settings: Settings,
+    translator: object | None = None,
+) -> Iterator[TranslationWorkflow]:
+    engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+    factory = session_factory(engine)
+    with factory() as session:
+        yield TranslationWorkflow(session, translator=translator)
+    engine.dispose()
+
+
+class CleanFakeTranslator:
+    def capabilities(self) -> dict[str, object]:
+        return {
+            "provider": "fake",
+            "model": "fake-ui-clean",
+            "region": "local",
+            "network": False,
+        }
+
+    async def translate(self, request: TranslationRequest) -> TranslationResult:
+        target = "Chuong 1. Lam Dong noi xin chao."
+        return TranslationResult(
+            target_text=target,
+            provider="fake",
+            model="fake-ui-clean",
+            provider_version="1",
+            usage=(Usage(UsageUnit.CHARACTER.value, len(request.source_text)),),
+        )
 
 
 def _run_payload(run: object) -> dict[str, object]:
