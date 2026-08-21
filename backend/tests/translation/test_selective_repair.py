@@ -17,17 +17,22 @@ from app.contracts import (
     Usage,
     UsageUnit,
 )
+from app.modules.compliance.cloud import CloudCallDecision
 from app.db.models import (
     Chapter,
     Project,
     QaIssue,
     SourceRevision,
     SourceSegment,
+    StoryMemoryEntry,
     TranslationRun,
     TranslationSegment,
 )
-from app.modules.translation.repair import RepairService
+from app.modules.translation.repair import RepairConflict, RepairService
 from app.modules.translation.review import ReviewService
+from app.modules.translation.story_memory import StoryMemoryService
+from app.modules.translation.workflow import TranslationWorkflow
+from app.providers.qwen_mt import QwenMtAdapter, Secret
 
 
 def test_reviewer_only_receives_risky_or_selected_segments(db_session) -> None:
@@ -79,6 +84,79 @@ def test_accept_repair_creates_new_run_and_keeps_unchanged_rows(db_session) -> N
     assert db_session.get(TranslationRun, fixture.run_id).status == RunStatus.SUPERSEDED.value
 
 
+def test_accept_repair_rejects_stale_base_run(db_session) -> None:
+    fixture = _review_fixture(db_session)
+    repair = RepairService(db_session, translator=SuffixTranslator("Lam Dong da sua."), id_factory=_ids())
+    proposal = repair.propose(fixture.chapter_id, (fixture.major_segment_id,), "qwen-mt-plus")
+    TranslationWorkflow(db_session, id_factory=_ids()).revise_segment(
+        fixture.chapter_id,
+        fixture.run_id,
+        fixture.clean_segment_id,
+        "Ban dich moi hon.",
+        expected_run_hash="a" * 64,
+    )
+
+    try:
+        repair.accept_repair(proposal.id, proposal.hash)
+    except RepairConflict as exc:
+        assert str(exc) == "REPAIR_PROPOSAL_STALE"
+    else:
+        raise AssertionError("stale proposal was accepted")
+
+    assert repair.current_target(fixture.clean_segment_id) == "Ban dich moi hon."
+
+
+def test_qwen_plus_repair_guard_uses_qa_repair_category(db_session) -> None:
+    fixture = _review_fixture(db_session)
+    guard = RecordingCloudGuard()
+    translator = QwenMtAdapter(
+        RepairHttpFixture(),
+        "qwen-mt-plus",
+        "frankfurt",
+        Secret("secret-value"),
+        cloud_guard=guard,
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+    repair = RepairService(db_session, translator=translator, id_factory=_ids())
+
+    repair.propose(
+        fixture.chapter_id,
+        (fixture.major_segment_id,),
+        "qwen-mt-plus",
+        cloud_consent_id="consent-001",
+        budget_authorization_id="auth-001",
+    )
+
+    assert guard.categories == ["QA_REPAIR"]
+
+
+def test_accept_repair_records_memory_hash_used_for_repair(db_session) -> None:
+    fixture = _review_fixture(db_session)
+    db_session.add(
+        StoryMemoryEntry(
+            id="018f0000-0000-7000-8000-800000000201",
+            project_id="018f0000-0000-7000-8000-100000000201",
+            entity_key="lin-dong",
+            entity_type="character",
+            summary="Lin Dong is hiding his identity in chapter five.",
+            valid_from_ordinal=5,
+            valid_to_ordinal=None,
+            revision_no=1,
+        )
+    )
+    db_session.commit()
+    repair = RepairService(db_session, translator=SuffixTranslator("Lam Dong da sua."), id_factory=_ids())
+    proposal = repair.propose(fixture.chapter_id, (fixture.major_segment_id,), "qwen-mt-plus")
+
+    accepted = repair.accept_repair(proposal.id, proposal.hash)
+
+    assert accepted.story_memory_revision_hash == StoryMemoryService(db_session).hash_for(
+        "018f0000-0000-7000-8000-100000000201",
+        5,
+    )
+
+
 class RecordingJobRunner:
     def __init__(self) -> None:
         self.created = []
@@ -121,6 +199,41 @@ class SuffixTranslator:
             model="qwen-mt-plus",
             provider_version="1",
             usage=(Usage(UsageUnit.INPUT_TOKEN.value, len(request.source_text)),),
+        )
+
+
+class RepairHttpFixture:
+    async def post(self, url: str, *, json: dict, headers: dict[str, str], timeout: int):
+        return RepairHttpResponse()
+
+
+class RepairHttpResponse:
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return {
+            "request_id": "repair-request-001",
+            "model": "qwen-mt-plus",
+            "provider_version": "fixture",
+            "translations": [{"target_text": "Lam Dong da sua."}],
+            "usage": {"input_tokens": 12, "output_tokens": 6},
+        }
+
+
+class RecordingCloudGuard:
+    def __init__(self) -> None:
+        self.categories: list[str] = []
+
+    def evaluate(self, **kwargs: object) -> CloudCallDecision:
+        self.categories.append(str(kwargs["category"]))
+        return CloudCallDecision(
+            allowed=True,
+            cloud_consent_id=str(kwargs["cloud_consent_id"]),
+            authorization_id=str(kwargs["budget_authorization_id"]),
+            rate_card_ids=(),
+            remaining_quota=(),
+            reasons=(),
         )
 
 

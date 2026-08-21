@@ -39,6 +39,7 @@ class GptLunaReviewer:
         payload = _payload(request)
         headers = {"Authorization": f"Bearer {self.secret.value}", "Content-Type": "application/json"}
 
+        response_sent = False
         try:
             response = self.http_client.post(
                 self.endpoint,
@@ -48,24 +49,29 @@ class GptLunaReviewer:
             )
             if isawaitable(response):
                 response = await response
+            response_sent = True
+
+            response.raise_for_status()
+            body = response.json()
+            findings = _parse_findings(body, request.source_segment_id)
+            usage = body.get("usage") or {}
+            provider_request_id = body.get("id")
+            return ReviewResult(
+                findings=findings,
+                provider=PROVIDER,
+                model=str(body.get("model") or MODEL),
+                provider_version=str(body.get("provider_version") or PROVIDER_VERSION_FALLBACK),
+                usage=(
+                    Usage(UsageUnit.INPUT_TOKEN.value, _non_negative_usage(usage.get("prompt_tokens")), provider_request_id),
+                    Usage(UsageUnit.OUTPUT_TOKEN.value, _non_negative_usage(usage.get("completion_tokens")), provider_request_id),
+                ),
+            )
         except TimeoutError as exc:
             raise ProviderBillingUnknown("LUNA_BILLING_UNKNOWN") from exc
-
-        response.raise_for_status()
-        body = response.json()
-        findings = _parse_findings(body, request.source_segment_id)
-        usage = body.get("usage") or {}
-        provider_request_id = body.get("id")
-        return ReviewResult(
-            findings=findings,
-            provider=PROVIDER,
-            model=str(body.get("model") or MODEL),
-            provider_version=str(body.get("provider_version") or PROVIDER_VERSION_FALLBACK),
-            usage=(
-                Usage(UsageUnit.INPUT_TOKEN.value, _non_negative_usage(usage.get("prompt_tokens")), provider_request_id),
-                Usage(UsageUnit.OUTPUT_TOKEN.value, _non_negative_usage(usage.get("completion_tokens")), provider_request_id),
-            ),
-        )
+        except Exception as exc:
+            if response_sent:
+                raise ProviderBillingUnknown("LUNA_BILLING_UNKNOWN") from exc
+            raise
 
     def _validate_request(self, request: ReviewRequest) -> None:
         if request.context.cloud_consent_id is None:

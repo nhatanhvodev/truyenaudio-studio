@@ -222,6 +222,7 @@ class OperationContext:
     estimated_units: int
     budget_authorization_id: str | None
     cloud_consent_id: str | None
+    billing_category: str = "REGULAR"
 
 
 @dataclass(frozen=True)

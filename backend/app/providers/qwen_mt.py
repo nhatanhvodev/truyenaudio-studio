@@ -133,7 +133,7 @@ class QwenMtAdapter:
             provider_profile_id=self.provider_profile_id,
             operation_id=request.context.operation_id,
             estimated_usage=(Usage(UsageUnit.INPUT_TOKEN.value, request.context.estimated_units),),
-            category="REGULAR",
+            category=request.context.billing_category,
             cloud_consent_id=request.context.cloud_consent_id,
             budget_authorization_id=request.context.budget_authorization_id,
         )

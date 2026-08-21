@@ -33,8 +33,10 @@ class RepairReplacement:
 class RepairProposal:
     id: str
     base_run_id: str
+    base_run_sha256: str
     chapter_id: str
     provider_model: str
+    story_memory_revision_hash: str
     replacements: tuple[RepairReplacement, ...]
     estimated_cost_vnd: int
     hash: str
@@ -90,7 +92,9 @@ class RepairService:
         run = _current_review_run(self.session, chapter_id)
         segments = self._selected_segments(run.id, selected_source_segment_ids)
         estimated_cost_vnd = self._estimate(project, provider_model, segments)
-        memory = StoryMemoryService(self.session).summaries_for(project.id, chapter.ordinal)
+        story_memory = StoryMemoryService(self.session)
+        memory = story_memory.summaries_for(project.id, chapter.ordinal)
+        memory_hash = story_memory.hash_for(project.id, chapter.ordinal)
 
         replacements: list[RepairReplacement] = []
         for source, current in segments:
@@ -99,11 +103,18 @@ class RepairService:
                     TranslationRequest(
                         context=OperationContext(
                             operation_id=f"repair:{chapter.id}:{run.id}:{source.id}",
-                            cache_key=_repair_cache_key(run.id, source.id, current.target_sha256, provider_model),
+                            cache_key=_repair_cache_key(
+                                run.id,
+                                source.id,
+                                current.target_sha256,
+                                provider_model,
+                                memory_hash,
+                            ),
                             timeout_seconds=60,
                             estimated_units=len(source.source_text) + len(current.target_text),
                             budget_authorization_id=budget_authorization_id,
                             cloud_consent_id=cloud_consent_id,
+                            billing_category="QA_REPAIR",
                         ),
                         source_segment_id=source.id,
                         source_text=source.source_text,
@@ -127,12 +138,21 @@ class RepairService:
             )
 
         proposal_id = self.id_factory()
-        proposal_hash = _proposal_hash(run.id, provider_model, tuple(replacements), estimated_cost_vnd)
+        proposal_hash = _proposal_hash(
+            run.id,
+            run.translation_text_sha256 or ZERO_HASH,
+            provider_model,
+            memory_hash,
+            tuple(replacements),
+            estimated_cost_vnd,
+        )
         proposal = RepairProposal(
             id=proposal_id,
             base_run_id=run.id,
+            base_run_sha256=run.translation_text_sha256 or ZERO_HASH,
             chapter_id=chapter.id,
             provider_model=provider_model,
+            story_memory_revision_hash=memory_hash,
             replacements=tuple(replacements),
             estimated_cost_vnd=estimated_cost_vnd,
             hash=proposal_hash,
@@ -152,6 +172,12 @@ class RepairService:
         base = self.session.get(TranslationRun, proposal.base_run_id)
         if base is None or base.chapter_id != proposal.chapter_id:
             raise ValueError("TRANSLATION_RUN_NOT_FOUND")
+        if (
+            base.status != RunStatus.REVIEW.value
+            or (base.translation_text_sha256 or ZERO_HASH) != proposal.base_run_sha256
+            or _current_review_run(self.session, proposal.chapter_id).id != base.id
+        ):
+            raise RepairConflict("REPAIR_PROPOSAL_STALE")
         chapter = self._chapter(base.chapter_id)
         project = self._project(chapter.project_id)
         revision = self.session.get(SourceRevision, base.source_revision_id)
@@ -167,7 +193,7 @@ class RepairService:
             model=proposal.provider_model,
             prompt_version=base.prompt_version,
             glossary_revision_hash=base.glossary_revision_hash,
-            story_memory_revision_hash=base.story_memory_revision_hash,
+            story_memory_revision_hash=proposal.story_memory_revision_hash,
             status=RunStatus.REVIEW.value,
             estimated_cost_vnd=proposal.estimated_cost_vnd,
             actual_cost_vnd=0,
@@ -296,7 +322,13 @@ def _current_review_run(session: Session, chapter_id: str) -> TranslationRun:
     return run
 
 
-def _repair_cache_key(run_id: str, source_segment_id: str, target_sha256: str, provider_model: str) -> str:
+def _repair_cache_key(
+    run_id: str,
+    source_segment_id: str,
+    target_sha256: str,
+    provider_model: str,
+    story_memory_revision_hash: str,
+) -> str:
     return _canonical_sha256(
         {
             "run_id": run_id,
@@ -304,21 +336,25 @@ def _repair_cache_key(run_id: str, source_segment_id: str, target_sha256: str, p
             "target_sha256": target_sha256,
             "prompt_version": PROMPT_VERSION,
             "provider_model": provider_model,
-            "story_memory": ZERO_HASH,
+            "story_memory": story_memory_revision_hash,
         }
     )
 
 
 def _proposal_hash(
     base_run_id: str,
+    base_run_sha256: str,
     provider_model: str,
+    story_memory_revision_hash: str,
     replacements: tuple[RepairReplacement, ...],
     estimated_cost_vnd: int,
 ) -> str:
     return _canonical_sha256(
         {
             "base_run_id": base_run_id,
+            "base_run_sha256": base_run_sha256,
             "provider_model": provider_model,
+            "story_memory_revision_hash": story_memory_revision_hash,
             "estimated_cost_vnd": estimated_cost_vnd,
             "replacements": [replacement.__dict__ for replacement in replacements],
         }

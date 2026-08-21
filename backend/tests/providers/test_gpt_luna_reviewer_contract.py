@@ -96,6 +96,33 @@ async def test_luna_timeout_after_send_marks_billing_unknown_without_retry(revie
     assert http.calls == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response",
+    [
+        "http_error",
+        {"id": "bad-json", "model": "gpt-5.6-luna", "choices": [{"message": {"content": "not-json"}}], "usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+        {"id": "missing-choices", "model": "gpt-5.6-luna", "usage": {"prompt_tokens": 1, "completion_tokens": 1}},
+        {"id": "bad-usage", "model": "gpt-5.6-luna", "choices": [{"message": {"content": "{\"findings\":[]}"}}], "usage": {"prompt_tokens": -1, "completion_tokens": 1}},
+    ],
+)
+async def test_luna_unclear_result_after_send_marks_billing_unknown(review_request, response) -> None:
+    guard = RecordingGuard()
+    http = AmbiguousResultHttp(response)
+    luna = GptLunaReviewer(
+        http,
+        Secret("secret-value"),
+        cloud_guard=guard,
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+
+    with pytest.raises(ProviderBillingUnknown):
+        await luna.review(review_request)
+
+    assert http.calls == 1
+
+
 class HttpFixture:
     def __init__(self, fixture_path: Path, guard: "RecordingGuard") -> None:
         self.response_payload = json.loads(fixture_path.read_text(encoding="utf-8"))
@@ -122,6 +149,30 @@ class TimeoutAfterSendHttp:
     async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str], timeout: int):
         self.calls += 1
         raise TimeoutError("provider timed out after request dispatch")
+
+
+class AmbiguousResultHttp:
+    def __init__(self, response: object) -> None:
+        self.response = response
+        self.calls = 0
+
+    async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str], timeout: int):
+        self.calls += 1
+        return AmbiguousResponse(self.response)
+
+
+class AmbiguousResponse:
+    def __init__(self, response: object) -> None:
+        self.response = response
+
+    def raise_for_status(self) -> None:
+        if self.response == "http_error":
+            raise RuntimeError("502 Bad Gateway")
+
+    def json(self) -> dict[str, Any]:
+        if isinstance(self.response, dict):
+            return self.response
+        return {}
 
 
 class StubResponse:
