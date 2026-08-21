@@ -36,3 +36,6 @@ Self-review:
 Concerns:
 - Symlink test skips if the Windows account cannot create symlinks.
 - Editable install created `backend/truyenaudio_studio_backend.egg-info`; local policy blocked recursive deletion, so it was left untracked and unstaged.
+
+Follow-up cleanup:
+- Added `*.egg-info/` to `.gitignore` so Python editable-install metadata no longer dirties the worktree.
