@@ -98,7 +98,7 @@ class InvalidationGraph:
                 self._invalidate_translation(chapter)
         elif change.kind is ChangeKind.PROJECT_METADATA:
             for chapter in self._chapters_for_projects_or_chapters(change.affected_ids):
-                self._invalidate_master_chain(chapter)
+                self._invalidate_translation(chapter)
         elif change.kind is ChangeKind.TARGET_TEXT:
             self._invalidate_speech_segments(self._speech_for_translation_segments(change.affected_ids))
         elif change.kind is ChangeKind.PRONUNCIATION:

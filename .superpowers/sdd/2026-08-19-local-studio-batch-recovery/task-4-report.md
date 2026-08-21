@@ -91,3 +91,70 @@ All checks passed!
 
 - The full spec section 10.2 was not present locally, so the matrix is intentionally based on the task brief and current schema.
 - This task does not wire invalidation into existing workflows; it provides the graph/cache modules and tests requested for Task 4 only.
+
+## Fix Round 1
+
+Addressed review findings only:
+
+- `PROJECT_METADATA` now invalidates style-dependent approved translation runs, voice plans, TTS segment artifacts, master/SRT artifacts, and exports.
+- `SpeechWorkflow._ready_artifact()` now delegates cache hit verification to `ArtifactCache.lookup()`, so real speech cache reuse requires `READY` plus file size and SHA-256 verification, and corrupt/missing/mismatched cache entries are audited.
+
+Red evidence:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/projects/test_invalidation.py::test_invalidation_matrix_updates_statuses_and_active_pointers backend/tests/speech/test_single_narrator.py::test_reusable_tts_cache_requires_verified_file_size_and_audits_corruption -q
+```
+
+Result before fix:
+
+```text
+2 failed, 7 passed in 3.52s
+```
+
+Green evidence:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/projects/test_invalidation.py::test_invalidation_matrix_updates_statuses_and_active_pointers backend/tests/speech/test_single_narrator.py::test_reusable_tts_cache_requires_verified_file_size_and_audits_corruption -q
+```
+
+Result after fix:
+
+```text
+9 passed in 3.17s
+```
+
+Focused Task 4 tests:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/projects/test_invalidation.py backend/tests/artifacts/test_cache.py -q
+```
+
+Result:
+
+```text
+15 passed in 7.60s
+```
+
+Relevant speech workflow tests:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/speech/test_single_narrator.py -q
+```
+
+Result:
+
+```text
+13 passed in 9.46s
+```
+
+Ruff on touched backend files:
+
+```powershell
+.\.venv\Scripts\python -m ruff check backend/app/modules/projects/invalidation.py backend/app/modules/artifacts/cache.py backend/app/modules/speech/workflow.py backend/tests/projects/test_invalidation.py backend/tests/artifacts/test_cache.py backend/tests/speech/test_single_narrator.py
+```
+
+Result:
+
+```text
+All checks passed!
+```

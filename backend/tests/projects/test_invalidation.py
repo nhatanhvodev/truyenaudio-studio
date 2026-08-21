@@ -81,7 +81,14 @@ def test_target_edit_invalidates_only_dependent_speech_audio(db_session) -> None
 @pytest.mark.parametrize(
     ("change_name", "expected_invalidated", "expected_reused", "clears_translation", "clears_voice", "clears_master"),
     (
-        ("project_metadata", {"master", "srt", "export_artifact", "export"}, {"audio_1", "audio_2"}, False, False, True),
+        (
+            "project_metadata",
+            {"translation_run", "audio_1", "audio_2", "master", "srt", "export_artifact", "export"},
+            set(),
+            True,
+            True,
+            True,
+        ),
         (
             "source_revision",
             {"translation_run", "audio_1", "audio_2", "master", "srt", "export_artifact", "export"},

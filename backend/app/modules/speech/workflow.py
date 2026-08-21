@@ -40,6 +40,7 @@ from app.db.models import (
     VoicePreset,
     VoiceRole,
 )
+from app.modules.artifacts.cache import ArtifactCache
 from app.modules.audio.qa import AudioIssueDraft, run_master_qa, run_premaster_qa
 from app.modules.projects.state_machine import next_state
 from app.modules.speech.narration import (
@@ -623,24 +624,9 @@ class SpeechWorkflow:
         input_hash: str,
         settings_hash: str,
     ) -> Artifact | None:
-        artifact = self.session.scalar(
-            select(Artifact)
-            .where(
-                Artifact.kind == kind.value,
-                Artifact.input_hash == input_hash,
-                Artifact.settings_hash == settings_hash,
-                Artifact.status == ArtifactStatus.READY.value,
-            )
-            .order_by(Artifact.created_at.desc(), Artifact.id.desc())
+        return ArtifactCache(self.session, self.artifact_root).lookup(
+            kind, input_hash, settings_hash
         )
-        if artifact is None:
-            return None
-        path = self._artifact_path(artifact.relative_path)
-        if not path.is_file() or _sha256_file(path) != artifact.sha256:
-            artifact.status = ArtifactStatus.CORRUPT.value
-            self.session.flush()
-            return None
-        return artifact
 
     def _supersede_ready_artifacts(
         self,

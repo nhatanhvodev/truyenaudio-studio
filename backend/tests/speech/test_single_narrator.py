@@ -25,6 +25,7 @@ from app.contracts import (
     VoiceOrigin,
 )
 from app.db.models import (
+    AuditEvent,
     Artifact,
     Chapter,
     Project,
@@ -174,6 +175,44 @@ def test_target_edit_only_invalidates_corresponding_audio(
     ]
     assert changed.master_artifact_id != rendered.master_artifact_id
     assert tuple(segment.id for segment in plan.segments) == rendered.segment_ids
+
+
+def test_reusable_tts_cache_requires_verified_file_size_and_audits_corruption(
+    db_session, tmp_path: Path, deterministic_uuid7_factory
+) -> None:
+    fixture = _approved_chapter(db_session)
+    preset = _voice_preset(db_session)
+    tts = CountingTts()
+    workflow = SpeechWorkflow(
+        db_session,
+        tts=tts,
+        audio_processor=DeterministicAudioProcessor(),
+        artifact_root=tmp_path,
+        id_factory=deterministic_uuid7_factory,
+    )
+    workflow.configure_single(fixture.chapter_id, preset.id)
+    rendered = workflow.enqueue_render(fixture.chapter_id)
+    first_artifact = db_session.get(Artifact, rendered.tts_artifact_ids[0])
+    assert first_artifact is not None
+    (tmp_path / first_artifact.relative_path).write_bytes(b"tampered-cache")
+
+    changed = workflow.regenerate_segments(
+        fixture.chapter_id, (rendered.segment_ids[1],)
+    )
+
+    assert rendered.segment_ids[0] in changed.rendered_segment_ids
+    assert rendered.segment_ids[0] not in changed.reused_segment_ids
+    db_session.refresh(first_artifact)
+    assert first_artifact.status == ArtifactStatus.CORRUPT.value
+    assert (
+        db_session.query(AuditEvent)
+        .filter(
+            AuditEvent.action == "ARTIFACT_CACHE_CORRUPT",
+            AuditEvent.entity_id == first_artifact.id,
+        )
+        .count()
+        == 1
+    )
 
 
 def test_render_requires_voice_plan_for_current_approved_translation(
