@@ -15,8 +15,15 @@ from app.db.models import RateCard, UsageLedger
 FX_RATE_VND_PER_USD = 26_500
 CONTINGENCY_PERCENT = 15
 REGULAR_CAP_VND = 400_000
+QA_REPAIR_RESERVE_VND = 50_000
+RERENDER_RESERVE_VND = 50_000
 HARD_LIMIT_VND = 500_000
+WARNING_THRESHOLD_VND = 350_000
 QUOTE_TTL_MINUTES = 15
+RESERVE_LIMITS = {
+    "QA_REPAIR": QA_REPAIR_RESERVE_VND,
+    "RERENDER": RERENDER_RESERVE_VND,
+}
 
 
 @dataclass(frozen=True)
@@ -29,6 +36,7 @@ class CostQuote:
     rate_card_id: str | None
     expires_at: datetime
     rate_card_ids: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
 
     @property
     def total_vnd(self) -> int:
@@ -43,6 +51,8 @@ class BudgetAuthorization:
     contingency_vnd: int
     expires_at: datetime
     status: str
+    category: str | None = None
+    rate_card_ids: tuple[str, ...] = ()
 
 
 class BudgetBlocked(Exception):
@@ -58,15 +68,17 @@ class BudgetGuard:
 
     def quote(self, operation_id: str, estimate_vnd: int, category: str) -> CostQuote:
         _require_non_negative_int(estimate_vnd, "estimate_vnd")
+        contingency_vnd = _contingency(estimate_vnd)
         return CostQuote(
             id=new_id(),
             operation_id=operation_id,
             estimate_vnd=estimate_vnd,
-            contingency_vnd=_contingency(estimate_vnd),
+            contingency_vnd=contingency_vnd,
             category=category,
             rate_card_id=None,
             rate_card_ids=(),
             expires_at=self.now() + timedelta(minutes=QUOTE_TTL_MINUTES),
+            warnings=self._warnings_for(estimate_vnd + contingency_vnd),
         )
 
     def quote_usage(
@@ -102,6 +114,7 @@ class BudgetGuard:
             rate_card_id=rate_card_ids[0] if len(rate_card_ids) == 1 else None,
             rate_card_ids=tuple(rate_card_ids),
             expires_at=self.now() + timedelta(minutes=QUOTE_TTL_MINUTES),
+            warnings=self._warnings_for(estimate_vnd + _contingency(estimate_vnd)),
         )
 
     def authorize(self, quote: CostQuote) -> BudgetAuthorization:
@@ -109,6 +122,9 @@ class BudgetGuard:
             raise BudgetBlocked("BUDGET_QUOTE_EXPIRED")
 
         total_after = self._committed_vnd() + quote.total_vnd
+        reserve_limit = RESERVE_LIMITS.get(quote.category)
+        if reserve_limit is not None and self._category_authorized_vnd(quote.category) + quote.total_vnd > reserve_limit:
+            raise BudgetBlocked(f"BUDGET_{quote.category}_RESERVE_EXCEEDED")
         if quote.category == "REGULAR" and total_after > REGULAR_CAP_VND:
             raise BudgetBlocked("BUDGET_REGULAR_CAP_EXCEEDED")
         if total_after > HARD_LIMIT_VND:
@@ -119,6 +135,8 @@ class BudgetGuard:
             operation_id=quote.operation_id,
             estimate_vnd=quote.estimate_vnd,
             contingency_vnd=quote.contingency_vnd,
+            category=quote.category,
+            rate_card_ids_json=list(quote.rate_card_ids),
             expires_at=quote.expires_at,
             status="HELD",
         )
@@ -133,6 +151,14 @@ class BudgetGuard:
         if row.expires_at <= self.now():
             raise BudgetBlocked("BUDGET_AUTHORIZATION_EXPIRED")
         return _authorization_view(row)
+
+    def validate_authorization_for_quote(self, authorization_id: str, quote: CostQuote) -> BudgetAuthorization:
+        authorization = self.validate_authorization(authorization_id, quote.operation_id)
+        if authorization.category != quote.category or authorization.rate_card_ids != quote.rate_card_ids:
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_METADATA_MISMATCH")
+        if authorization.estimate_vnd < quote.estimate_vnd or authorization.contingency_vnd < quote.contingency_vnd:
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_UNDERFUNDED")
+        return authorization
 
     def commit_usage(
         self,
@@ -227,6 +253,21 @@ class BudgetGuard:
         )
         return confirmed + held + unknown
 
+    def _category_authorized_vnd(self, category: str) -> int:
+        rows = self.session.scalars(
+            select(BudgetAuthorizationRow).where(
+                BudgetAuthorizationRow.category == category,
+                BudgetAuthorizationRow.status.in_(("HELD", "COMMITTED")),
+                BudgetAuthorizationRow.expires_at > self.now(),
+            )
+        ).all()
+        return sum(row.estimate_vnd + row.contingency_vnd for row in rows)
+
+    def _warnings_for(self, quote_total_vnd: int) -> tuple[str, ...]:
+        if self._committed_vnd() + quote_total_vnd > WARNING_THRESHOLD_VND:
+            return ("BUDGET_WARNING_THRESHOLD_EXCEEDED",)
+        return ()
+
 
 def _authorization_view(row: BudgetAuthorizationRow) -> BudgetAuthorization:
     return BudgetAuthorization(
@@ -236,6 +277,8 @@ def _authorization_view(row: BudgetAuthorizationRow) -> BudgetAuthorization:
         contingency_vnd=row.contingency_vnd,
         expires_at=row.expires_at,
         status=row.status,
+        category=row.category,
+        rate_card_ids=tuple(row.rate_card_ids_json or ()),
     )
 
 

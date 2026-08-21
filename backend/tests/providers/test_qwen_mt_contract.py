@@ -40,7 +40,15 @@ def http_fixture() -> HttpFixture:
 
 @pytest.mark.asyncio
 async def test_qwen_maps_terms_tm_usage(http_fixture, translation_request) -> None:
-    adapter = QwenMtAdapter(http_fixture.client, "qwen-mt-flash", "frankfurt", Secret("x"))
+    adapter = QwenMtAdapter(
+        http_fixture.client,
+        "qwen-mt-flash",
+        "frankfurt",
+        Secret("x"),
+        cloud_guard=AllowingGuard(),
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
 
     result = await adapter.translate(translation_request)
 
@@ -57,6 +65,17 @@ async def test_qwen_maps_terms_tm_usage(http_fixture, translation_request) -> No
     assert http_fixture.last_json["translation_options"]["domain"] == "Tien hiep, giu xung ho nhat quan."
     assert http_fixture.last_headers["Authorization"] == "Bearer x"
     assert http_fixture.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_qwen_blocks_without_cloud_guard_before_http(http_fixture, translation_request) -> None:
+    adapter = QwenMtAdapter(http_fixture.client, "qwen-mt-flash", "frankfurt", Secret("x"))
+
+    with pytest.raises(CloudCallBlocked) as exc:
+        await adapter.translate(translation_request)
+
+    assert exc.value.reasons == ("CLOUD_GUARD_REQUIRED",)
+    assert http_fixture.calls == 0
 
 
 @pytest.mark.asyncio
@@ -111,7 +130,15 @@ async def test_qwen_denied_guard_blocks_before_http(http_fixture, translation_re
 @pytest.mark.asyncio
 async def test_qwen_timeout_after_send_marks_billing_unknown_without_retry(translation_request) -> None:
     http = TimeoutAfterSendHttp()
-    adapter = QwenMtAdapter(http, "qwen-mt-flash", "frankfurt", Secret("secret-value"))
+    adapter = QwenMtAdapter(
+        http,
+        "qwen-mt-flash",
+        "frankfurt",
+        Secret("secret-value"),
+        cloud_guard=AllowingGuard(),
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
 
     with pytest.raises(ProviderBillingUnknown):
         await adapter.translate(translation_request)
@@ -192,4 +219,16 @@ class DenyingGuard:
             rate_card_ids=(),
             remaining_quota=(),
             reasons=("CONSENT_NOT_GRANTED",),
+        )
+
+
+class AllowingGuard:
+    def evaluate(self, **kwargs: object) -> CloudCallDecision:
+        return CloudCallDecision(
+            allowed=True,
+            cloud_consent_id=str(kwargs["cloud_consent_id"]),
+            authorization_id=str(kwargs["budget_authorization_id"]),
+            rate_card_ids=("rate-card-001",),
+            remaining_quota=(),
+            reasons=(),
         )

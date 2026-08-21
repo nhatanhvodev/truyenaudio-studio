@@ -125,7 +125,7 @@ class QwenMtAdapter:
 
     def _evaluate_cloud_guard(self, request: TranslationRequest) -> None:
         if self.cloud_guard is None:
-            return
+            raise CloudCallBlocked(("CLOUD_GUARD_REQUIRED",))
         if self.project_id is None or self.provider_profile_id is None:
             raise CloudCallBlocked(("CLOUD_GUARD_CONTEXT_REQUIRED",))
         decision = self.cloud_guard.evaluate(

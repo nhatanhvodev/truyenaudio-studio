@@ -37,6 +37,69 @@ def test_total_never_exceeds_hard_limit(db_session, guard: BudgetGuard) -> None:
     assert exc.value.reason == "BUDGET_HARD_LIMIT_EXCEEDED"
 
 
+@pytest.mark.parametrize(
+    ("category", "expected_reason"),
+    [
+        ("QA_REPAIR", "BUDGET_QA_REPAIR_RESERVE_EXCEEDED"),
+        ("RERENDER", "BUDGET_RERENDER_RESERVE_EXCEEDED"),
+    ],
+)
+def test_reserve_jobs_cannot_spend_past_their_bucket(
+    guard: BudgetGuard,
+    category: str,
+    expected_reason: str,
+) -> None:
+    quote = guard.quote(f"{category.lower()}-too-large", 43_479, category)
+
+    with pytest.raises(BudgetBlocked) as exc:
+        guard.authorize(quote)
+
+    assert exc.value.reason == expected_reason
+
+
+def test_qa_reserve_counts_existing_held_budget(guard: BudgetGuard) -> None:
+    guard.authorize(guard.quote("qa-held", 43_000, "QA_REPAIR"))
+
+    with pytest.raises(BudgetBlocked) as exc:
+        guard.authorize(guard.quote("qa-next", 500, "QA_REPAIR"))
+
+    assert exc.value.reason == "BUDGET_QA_REPAIR_RESERVE_EXCEEDED"
+
+
+def test_qa_reserve_counts_committed_billing_unknown_budget(db_session, guard: BudgetGuard) -> None:
+    authorization = guard.authorize(guard.quote("qa-unknown", 43_000, "QA_REPAIR"))
+    stored = db_session.get(BudgetAuthorization, authorization.id)
+    stored.status = "COMMITTED"
+    db_session.add(
+        UsageLedger(
+            id="018f0000-0000-7000-8000-00000000b001",
+            provider="qwen",
+            model="qwen-mt-flash",
+            region="frankfurt",
+            operation_id="qa-unknown",
+            unit=UsageUnit.INPUT_TOKEN.value,
+            measured_units=1,
+            billing_confidence="UNKNOWN",
+        )
+    )
+    db_session.commit()
+
+    with pytest.raises(BudgetBlocked) as exc:
+        guard.authorize(guard.quote("qa-after-unknown", 500, "QA_REPAIR"))
+
+    assert exc.value.reason == "BUDGET_QA_REPAIR_RESERVE_EXCEEDED"
+
+
+def test_warning_threshold_marks_quote_without_blocking(db_session, guard: BudgetGuard) -> None:
+    _seed_confirmed_usage(db_session, 349_000)
+
+    quote = guard.quote("translate-warning", 1_000, "REGULAR")
+    authorization = guard.authorize(quote)
+
+    assert quote.warnings == ("BUDGET_WARNING_THRESHOLD_EXCEEDED",)
+    assert authorization.id == quote.id
+
+
 def test_quote_from_usage_requires_exact_current_rate_card(db_session, guard: BudgetGuard) -> None:
     _seed_rate_card(db_session, unit=UsageUnit.OUTPUT_TOKEN.value)
 

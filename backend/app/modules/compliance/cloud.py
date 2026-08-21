@@ -26,6 +26,7 @@ class CloudCallDecision:
     rate_card_ids: tuple[str, ...]
     remaining_quota: tuple[Usage, ...]
     reasons: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
 
 
 class CloudCallBlocked(Exception):
@@ -72,7 +73,7 @@ class CloudCallGuard:
         if current_hash and policy.sha256 != current_hash:
             return _deny("POLICY_SNAPSHOT_STALE")
 
-        if not self._rights_allow_cloud_translation(project):
+        if not self._rights_allow_cloud_translation(project, consent):
             return _deny("RIGHTS_CLOUD_NOT_PERMITTED")
 
         provider = _provider_name(profile)
@@ -88,7 +89,7 @@ class CloudCallGuard:
             if budget_authorization_id is None:
                 authorization = self.budget_guard.authorize(quote)
             else:
-                authorization = self.budget_guard.validate_authorization(budget_authorization_id, operation_id)
+                authorization = self.budget_guard.validate_authorization_for_quote(budget_authorization_id, quote)
         except BudgetBlocked as exc:
             return _deny(exc.reason)
 
@@ -99,6 +100,7 @@ class CloudCallGuard:
             rate_card_ids=quote.rate_card_ids,
             remaining_quota=(),
             reasons=(),
+            warnings=quote.warnings,
         )
 
     def now(self) -> datetime:
@@ -128,16 +130,9 @@ class CloudCallGuard:
             return None
         return self.session.get(Artifact, consent.policy_snapshot_artifact_id)
 
-    def _rights_allow_cloud_translation(self, project: Project) -> bool:
+    def _rights_allow_cloud_translation(self, project: Project, consent: CloudProcessingConsent) -> bool:
         if project.source_type == SourceType.USER_SUPPLIED_PRIVATE.value:
-            consent = self.session.scalar(
-                select(CloudProcessingConsent).where(
-                    CloudProcessingConsent.project_id == project.id,
-                    CloudProcessingConsent.status == CloudConsentStatus.GRANTED.value,
-                    CloudProcessingConsent.attestation_evidence_id.is_not(None),
-                )
-            )
-            if consent is not None:
+            if consent.attestation_evidence_id is not None:
                 return True
 
         grants = self.session.scalars(

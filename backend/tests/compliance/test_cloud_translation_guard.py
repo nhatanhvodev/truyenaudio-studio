@@ -16,7 +16,16 @@ from app.contracts import (
     Usage,
     UsageUnit,
 )
-from app.db.models import Artifact, CloudProcessingConsent, Project, ProviderProfile, RateCard, RightsGrant
+from app.db.models import (
+    Artifact,
+    BudgetAuthorization,
+    CloudProcessingConsent,
+    Project,
+    ProviderProfile,
+    RateCard,
+    RightsGrant,
+    UsageLedger,
+)
 from app.modules.budgets.guard import BudgetGuard
 from app.modules.compliance.cloud import CloudCallGuard
 
@@ -126,6 +135,56 @@ def test_valid_cloud_call_returns_current_consent_rate_cards_and_budget_hold(clo
     assert decision.cloud_consent_id == CONSENT_ID
     assert decision.authorization_id is not None
     assert decision.rate_card_ids == (rate_card.id,)
+    assert decision.reasons == ()
+
+
+def test_cloud_call_rejects_underfunded_budget_authorization(cloud_guard, qwen_case, db_session) -> None:
+    db_session.add(
+        BudgetAuthorization(
+            id="018f0000-0000-7000-8000-000000003101",
+            operation_id="translate-segment-001",
+            estimate_vnd=1,
+            contingency_vnd=1,
+            category="REGULAR",
+            rate_card_ids_json=["018f0000-0000-7000-8000-000000003006"],
+            expires_at=NOW + timedelta(minutes=10),
+            status="HELD",
+        )
+    )
+    db_session.commit()
+
+    decision = cloud_guard.evaluate(
+        **qwen_case.request,
+        budget_authorization_id="018f0000-0000-7000-8000-000000003101",
+    )
+
+    assert not decision.allowed
+    assert "BUDGET_AUTHORIZATION_UNDERFUNDED" in decision.reasons
+    assert decision.authorization_id is None
+
+
+def test_cloud_call_surfaces_budget_warning_without_blocking(cloud_guard, qwen_case, db_session) -> None:
+    db_session.add(
+        UsageLedger(
+            id="018f0000-0000-7000-8000-000000003102",
+            provider="qwen",
+            model="qwen-mt-flash",
+            region="frankfurt",
+            operation_id="seed-warning",
+            unit=UsageUnit.INPUT_TOKEN.value,
+            measured_units=1,
+            actual_usd_micros=0,
+            fx_rate=26_500,
+            actual_vnd=349_900,
+            billing_confidence="CONFIRMED",
+        )
+    )
+    db_session.commit()
+
+    decision = cloud_guard.evaluate(**qwen_case.request)
+
+    assert decision.allowed
+    assert decision.warnings == ("BUDGET_WARNING_THRESHOLD_EXCEEDED",)
     assert decision.reasons == ()
 
 
