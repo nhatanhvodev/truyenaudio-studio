@@ -9,8 +9,10 @@ from app.contracts import ArtifactKind, JobKind, JobStatus, new_id
 
 
 COMMON_PREVIEW_TEXT = (
-    "Day la doan nghe thu giong doc chung cho moi preset. Giong doc can ro rang, am ap, "
-    "giu nhip ke chuyen on dinh va phu hop voi tieu thuyet audio tieng Viet."
+    "Khi canh cua go khép lại, Minh dừng trước hiên nhà và lắng nghe tiếng mưa rơi xuống mái ngói. "
+    "Ngoài con ngõ nhỏ, ánh đèn vàng trải thành từng vệt mỏng, lúc sáng, lúc tối, như đang thở cùng thành phố. "
+    "Cậu mở cuốn sổ cũ, đọc chậm từng dòng ghi chú, rồi mỉm cười khi nhận ra bí mật tưởng đã mất vẫn nằm ở trang cuối. "
+    "Giọng kể cần giữ nhịp bình tĩnh, rõ chữ, có khoảng nghỉ tự nhiên trước những câu dài, và đủ ấm để người nghe muốn bước tiếp vào chương sau."
 )
 
 
@@ -85,6 +87,9 @@ class VoiceCatalog:
 
     @classmethod
     def local_defaults(cls, data_root: Path) -> VoiceCatalog:
+        manifest_presets = _load_manifest_presets(Path(data_root))
+        if manifest_presets is not None:
+            return cls(presets=manifest_presets)
         model_root = Path(data_root) / "models" / "voices"
         return cls(
             presets=(
@@ -248,3 +253,84 @@ def _path_matches_sha256(path: Path, expected_sha256: str) -> bool:
     if not expected_sha256 or not path.is_file():
         return False
     return hashlib.sha256(path.read_bytes()).hexdigest() == expected_sha256
+
+
+def _load_manifest_presets(data_root: Path) -> tuple[VoicePreset, ...] | None:
+    manifest_path = data_root / "models" / "voices" / "voice-presets.manifest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return ()
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != "truyenaudio-studio.voice-presets.v1":
+        return ()
+    raw_presets = manifest.get("presets")
+    if not isinstance(raw_presets, list):
+        return ()
+    presets: list[VoicePreset] = []
+    for raw in raw_presets:
+        preset = _manifest_preset(data_root, raw)
+        if preset is not None:
+            presets.append(preset)
+    return tuple(presets)
+
+
+def _manifest_preset(data_root: Path, raw: object) -> VoicePreset | None:
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return VoicePreset(
+            id=_required_str(raw, "id"),
+            name=_required_str(raw, "name"),
+            provider=_required_str(raw, "provider"),
+            model=_required_str(raw, "model"),
+            locale=_required_str(raw, "locale"),
+            region=_required_str(raw, "region"),
+            gender=_required_str(raw, "gender"),
+            license=_required_str(raw, "license"),
+            cost_tier=_required_str(raw, "cost_tier"),
+            sample_rate=_required_int(raw, "sample_rate"),
+            model_path=_manifest_path(data_root, _required_str(raw, "model_path")),
+            license_snapshot_path=_manifest_path(data_root, _required_str(raw, "license_snapshot_path")),
+            model_sha256=_required_str(raw, "model_sha256"),
+            license_snapshot_sha256=_required_str(raw, "license_snapshot_sha256"),
+            model_verified=_required_bool(raw, "model_verified"),
+            license_verified=_required_bool(raw, "license_verified"),
+            poc_passed=_required_bool(raw, "poc_passed"),
+            settings_hash=str(raw.get("settings_hash") or "default"),
+            pronunciation_hash=str(raw.get("pronunciation_hash") or "default"),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _manifest_path(data_root: Path, relative_path: str) -> Path:
+    path = Path(relative_path)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("voice manifest paths must stay under data_root")
+    candidate = (data_root / path).resolve()
+    if not candidate.is_relative_to(data_root.resolve()):
+        raise ValueError("voice manifest paths must stay under data_root")
+    return candidate
+
+
+def _required_str(raw: dict[str, object], key: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(key)
+    return value
+
+
+def _required_int(raw: dict[str, object], key: str) -> int:
+    value = raw.get(key)
+    if type(value) is not int or value <= 0:
+        raise ValueError(key)
+    return value
+
+
+def _required_bool(raw: dict[str, object], key: str) -> bool:
+    value = raw.get(key)
+    if type(value) is not bool:
+        raise ValueError(key)
+    return value

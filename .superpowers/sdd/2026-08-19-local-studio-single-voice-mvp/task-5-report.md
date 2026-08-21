@@ -165,3 +165,103 @@ Output:
 
 - `VoiceCatalog.local_defaults()` currently requires future verification metadata to set real model/license hashes; without those verified snapshots the default API catalog intentionally reports local voices as unavailable.
 - The broader backend test suite has an existing SQLAlchemy table-cycle warning unrelated to Task 5.
+
+## Round 1 Review Fix
+
+### RED Evidence
+
+Command:
+
+```powershell
+cd D:\truyenaudio-studio
+.\.venv\Scripts\python -m pytest backend\tests\providers\test_local_tts_contract.py -q
+```
+
+Observed failing output after adding regressions:
+
+```text
+FAILED backend\tests\providers\test_local_tts_contract.py::test_local_defaults_loads_verified_manifest_and_api_can_queue_preview
+AssertionError: API returned hardcoded unavailable defaults instead of the verified manifest preset
+
+FAILED backend\tests\providers\test_local_tts_contract.py::test_common_preview_text_estimates_between_20_and_60_seconds
+AssertionError: assert 20 <= 13.2
+2 failed, 9 passed in 1.61s
+```
+
+### GREEN Evidence
+
+Command:
+
+```powershell
+cd D:\truyenaudio-studio
+.\.venv\Scripts\python -m pytest backend\tests\providers\test_local_tts_contract.py -q
+```
+
+Output:
+
+```text
+...........                                                              [100%]
+11 passed in 1.40s
+```
+
+Command:
+
+```powershell
+cd D:\truyenaudio-studio
+.\.venv\Scripts\python -m ruff check backend\app\modules\voices\catalog.py backend\tests\providers\test_local_tts_contract.py
+```
+
+Output:
+
+```text
+All checks passed!
+```
+
+Command:
+
+```powershell
+cd D:\truyenaudio-studio\frontend
+npm test -- --run src/features/voices/VoiceBrowser.test.tsx
+```
+
+Output:
+
+```text
+✓ src/features/voices/VoiceBrowser.test.tsx (2 tests) 145ms
+Test Files  1 passed (1)
+Tests  2 passed (2)
+```
+
+Command:
+
+```powershell
+cd D:\truyenaudio-studio
+.\.venv\Scripts\python -m pytest backend\tests -q
+```
+
+Output:
+
+```text
+230 passed, 1 warning in 32.00s
+```
+
+Warning remains:
+
+```text
+tests/db/test_schema.py::test_frozen_migration_matches_orm_metadata_server_defaults
+SAWarning: Cannot correctly sort tables; there are unresolvable cycles between tables "artifacts, chapters, exports, projects, source_revisions, translation_runs, voice_plans, voice_presets"
+```
+
+### Changes
+
+- `VoiceCatalog.local_defaults()` now reads verified local preset metadata from `data_root/models/voices/voice-presets.manifest.json` using schema `truyenaudio-studio.voice-presets.v1`.
+- Manifest presets include model path, license snapshot path, model hash, license snapshot hash, model/license verification flags, VieNeu POC status, settings hash, and pronunciation hash.
+- Manifest paths must be relative and stay under `data_root`; invalid entries are skipped fail-closed.
+- Availability still requires verified booleans plus matching model and license snapshot hashes; missing metadata still falls back to unavailable local defaults with guidance.
+- Expanded the common preview text to a Vietnamese narration passage with an estimated 20-60 second duration and varied punctuation/rhythm.
+
+### Self-Review
+
+- Confirmed verified Piper metadata can make the catalog/API mark a local voice available and queue a preview job without spawning a real model.
+- Confirmed the preview passage is protected by a words-per-second heuristic and punctuation check.
+- Confirmed no auto-download, cloud fallback, or real provider spawn was added.

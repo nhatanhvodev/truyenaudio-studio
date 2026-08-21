@@ -3,18 +3,24 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import json
 import wave
 from pathlib import Path
 
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 import pytest
 
 from app.contracts import OperationContext, SynthesisRequest
+from app.api.voices import create_voices_router
 from app.modules.voices.catalog import (
+    COMMON_PREVIEW_TEXT,
     ModelLicenseUnverified,
     VoiceCatalog,
     VoicePreset,
     preview_cache_key,
 )
+from app.settings.config import Settings
 from app.providers.piper import PiperTtsAdapter
 from app.providers.vieneu import VieNeuTtsAdapter
 
@@ -255,6 +261,75 @@ def test_catalog_marks_piper_active_when_vieneu_is_not_available(tmp_path: Path)
     ]
 
 
+def test_local_defaults_loads_verified_manifest_and_api_can_queue_preview(tmp_path: Path) -> None:
+    model = tmp_path / "models" / "voices" / "piper" / "vais1000.onnx"
+    license_snapshot = tmp_path / "models" / "voices" / "piper" / "LICENSE.snapshot.txt"
+    model.parent.mkdir(parents=True)
+    model.write_bytes(b"verified-piper-model")
+    license_snapshot.write_bytes(b"CC-BY-4.0 verified snapshot")
+    _write_voice_manifest(
+        tmp_path,
+        {
+            "id": "piper-vais1000",
+            "name": "Piper vais1000",
+            "provider": "piper",
+            "model": "vais1000",
+            "locale": "vi-VN",
+            "region": "local",
+            "gender": "neutral",
+            "license": "CC-BY-4.0",
+            "cost_tier": "local",
+            "sample_rate": 22_050,
+            "model_path": "models/voices/piper/vais1000.onnx",
+            "license_snapshot_path": "models/voices/piper/LICENSE.snapshot.txt",
+            "model_sha256": hashlib.sha256(model.read_bytes()).hexdigest(),
+            "license_snapshot_sha256": hashlib.sha256(license_snapshot.read_bytes()).hexdigest(),
+            "model_verified": True,
+            "license_verified": True,
+            "poc_passed": True,
+            "settings_hash": "speed=1",
+            "pronunciation_hash": "names=v1",
+        },
+    )
+    app = FastAPI()
+    app.include_router(create_voices_router(Settings(data_root=tmp_path)))
+    client = TestClient(app)
+
+    list_response = client.get("/api/voices?locale=vi-VN")
+    preview_response = client.post(
+        "/api/voices/preview",
+        json={"presetId": "piper-vais1000", "text": "Xin chao ban doc."},
+    )
+
+    assert list_response.status_code == 200
+    voices = list_response.json()["voices"]
+    assert voices == [
+        {
+            "id": "piper-vais1000",
+            "name": "Piper vais1000",
+            "provider": "piper",
+            "model": "vais1000",
+            "locale": "vi-VN",
+            "region": "local",
+            "gender": "neutral",
+            "license": "CC-BY-4.0",
+            "costTier": "local",
+            "online": False,
+            "favorite": False,
+            "available": True,
+            "active": True,
+            "activationHint": "Ready",
+        }
+    ]
+    assert preview_response.status_code == 200
+    assert preview_response.json()["artifactKind"] == "VOICE_PREVIEW"
+
+
+def test_common_preview_text_estimates_between_20_and_60_seconds() -> None:
+    assert 20 <= _estimated_vietnamese_narration_seconds(COMMON_PREVIEW_TEXT) <= 60
+    assert COMMON_PREVIEW_TEXT.count(",") + COMMON_PREVIEW_TEXT.count(".") >= 8
+
+
 def test_catalog_guides_missing_model_without_cloud_fallback(tmp_path: Path) -> None:
     catalog = VoiceCatalog(
         presets=(
@@ -362,6 +437,25 @@ def _wav_bytes(*, sample_rate: int, duration_seconds: float) -> bytes:
         wav.setframerate(sample_rate)
         wav.writeframes(b"\x00\x01" * frame_count)
     return buffer.getvalue()
+
+
+def _write_voice_manifest(data_root: Path, preset: dict[str, object]) -> None:
+    manifest_path = data_root / "models" / "voices" / "voice-presets.manifest.json"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "truyenaudio-studio.voice-presets.v1",
+                "presets": [preset],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _estimated_vietnamese_narration_seconds(text: str) -> float:
+    # Vietnamese TTS narration commonly lands around 150 words per minute.
+    return len(text.split()) / 2.5
 
 
 class ProcessSpy:
