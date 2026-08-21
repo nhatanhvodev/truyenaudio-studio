@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 import hashlib
 import json
 
 from sqlalchemy import Engine, select
+from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
-from app.contracts import JobKind, JobStatus
+from app.contracts import JobKind, JobStatus, Usage
 from app.db.base import session_factory
 from app.db.models import Chapter, Job
+from app.modules.budgets.guard import BudgetGuard
+from app.modules.compliance.cloud import CloudCallGuard
 from app.modules.jobs.runner import JobRunner
 
 
 MAX_BATCH_CHAPTERS = 50
+CLOUD_CAPABLE_STAGES = frozenset({JobKind.TRANSLATE, JobKind.REVIEW, JobKind.SYNTHESIZE})
+PauseRequested = Callable[[str, int], bool]
 
 
 @dataclass(frozen=True)
@@ -30,6 +36,20 @@ class BatchView:
     canceled: int
     blocked: int
     job_ids: tuple[str, ...]
+    paused: bool = False
+
+
+@dataclass(frozen=True)
+class BatchCloudAuthorization:
+    provider_profile_id: str
+    cloud_consent_id: str
+    budget_authorization_id: str
+    estimated_usage: tuple[Usage, ...]
+    category: str = "REGULAR"
+
+
+class BatchBlocked(ValueError):
+    pass
 
 
 class BatchCoordinator:
@@ -50,6 +70,10 @@ class BatchCoordinator:
         chapter_ids: tuple[str, ...],
         stage: JobKind,
         quote_id: str | None,
+        *,
+        cloud_authorization: BatchCloudAuthorization | None = None,
+        cloud_guard: CloudCallGuard | None = None,
+        pause_requested: PauseRequested | None = None,
     ) -> BatchView:
         if not 1 <= len(chapter_ids) <= MAX_BATCH_CHAPTERS:
             raise ValueError("BATCH_CHAPTER_LIMIT_EXCEEDED")
@@ -68,20 +92,71 @@ class BatchCoordinator:
                 raise ValueError("BATCH_CHAPTER_REVISION_REQUIRED")
 
             batch_input = _batch_input_hash(project_id, chapter_ids, stage, quote_id)
-            job_ids = tuple(
-                self.job_runner.enqueue(
+            self._validate_cloud_authorization(
+                session,
+                project_id,
+                stage,
+                quote_id,
+                cloud_authorization,
+                cloud_guard,
+            )
+
+            job_ids: list[str] = []
+            paused = False
+            for chapter in ordered:
+                if pause_requested is not None and pause_requested(batch_input, len(job_ids)):
+                    paused = True
+                    break
+                job = self.job_runner.enqueue(
                     stage,
                     project_id,
                     chapter.id,
                     _child_idempotency_key(batch_input, chapter.id, stage, chapter.active_source_revision_id or ""),
-                ).id
-                for chapter in ordered
-            )
-            return self._view(project_id, stage, batch_input, job_ids)
+                )
+                job_ids.append(job.id)
+            return self._view(project_id, stage, batch_input, tuple(job_ids), paused=paused)
 
-    def _view(self, project_id: str, stage: JobKind, batch_input: str, job_ids: tuple[str, ...]) -> BatchView:
+    def _validate_cloud_authorization(
+        self,
+        session: Session,
+        project_id: str,
+        stage: JobKind,
+        quote_id: str | None,
+        cloud_authorization: BatchCloudAuthorization | None,
+        cloud_guard: CloudCallGuard | None,
+    ) -> None:
+        if stage not in CLOUD_CAPABLE_STAGES:
+            return
+        if cloud_authorization is None:
+            raise BatchBlocked("BATCH_CLOUD_AUTHORIZATION_REQUIRED")
+        if quote_id is None or not quote_id.strip():
+            raise BatchBlocked("BATCH_QUOTE_REQUIRED")
+        if not cloud_authorization.estimated_usage:
+            raise BatchBlocked("BATCH_ESTIMATE_REQUIRED")
+        guard = cloud_guard or CloudCallGuard(session, BudgetGuard(session))
+        decision = guard.evaluate(
+            project_id=project_id,
+            provider_profile_id=cloud_authorization.provider_profile_id,
+            operation_id=quote_id,
+            estimated_usage=cloud_authorization.estimated_usage,
+            category=cloud_authorization.category,
+            cloud_consent_id=cloud_authorization.cloud_consent_id,
+            budget_authorization_id=cloud_authorization.budget_authorization_id,
+        )
+        if not decision.allowed:
+            raise BatchBlocked(",".join(decision.reasons))
+
+    def _view(
+        self,
+        project_id: str,
+        stage: JobKind,
+        batch_input: str,
+        job_ids: tuple[str, ...],
+        *,
+        paused: bool,
+    ) -> BatchView:
         with self._session_factory() as session:
-            rows = session.scalars(select(Job).where(Job.id.in_(job_ids))).all()
+            rows = session.scalars(select(Job).where(Job.id.in_(job_ids))).all() if job_ids else []
         counts = Counter(JobStatus(row.status) for row in rows)
         return BatchView(
             batch_id=batch_input,
@@ -95,6 +170,7 @@ class BatchCoordinator:
             canceled=counts[JobStatus.CANCELED],
             blocked=counts[JobStatus.BLOCKED_BUDGET],
             job_ids=job_ids,
+            paused=paused,
         )
 
 

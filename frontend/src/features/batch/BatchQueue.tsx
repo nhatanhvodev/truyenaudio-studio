@@ -55,6 +55,11 @@ export function BatchQueue({ projectId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [batch, setBatch] = useState<BatchView | null>(null);
+  const [providerProfileId, setProviderProfileId] = useState('');
+  const [cloudConsentId, setCloudConsentId] = useState('');
+  const [quoteId, setQuoteId] = useState('');
+  const [budgetAuthorizationId, setBudgetAuthorizationId] = useState('');
+  const [estimatedUnits, setEstimatedUnits] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +130,18 @@ export function BatchQueue({ projectId }: Props) {
     if (selectedIds.length === 0) {
       return;
     }
+    const estimate = Number.parseInt(estimatedUnits, 10);
+    if (
+      !providerProfileId.trim()
+      || !cloudConsentId.trim()
+      || !quoteId.trim()
+      || !budgetAuthorizationId.trim()
+      || !Number.isFinite(estimate)
+      || estimate <= 0
+    ) {
+      setError('BATCH_CLOUD_AUTHORIZATION_REQUIRED');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -134,7 +151,12 @@ export function BatchQueue({ projectId }: Props) {
           projectId,
           chapterIds: selectedIds,
           stage: 'TRANSLATE',
-          quoteId: null,
+          quoteId: quoteId.trim(),
+          providerProfileId: providerProfileId.trim(),
+          cloudConsentId: cloudConsentId.trim(),
+          budgetAuthorizationId: budgetAuthorizationId.trim(),
+          estimatedUnits: estimate,
+          estimatedUnit: 'INPUT_TOKEN',
         },
       });
       setBatch(payload);
@@ -161,6 +183,29 @@ export function BatchQueue({ projectId }: Props) {
           Queue translate
         </button>
       </header>
+
+      <section style={styles.guardBox} aria-label="Cloud batch authorization">
+        <label style={styles.label}>
+          Provider profile ID
+          <input value={providerProfileId} onChange={(event) => setProviderProfileId(event.target.value)} style={styles.input} />
+        </label>
+        <label style={styles.label}>
+          Cloud consent ID
+          <input value={cloudConsentId} onChange={(event) => setCloudConsentId(event.target.value)} style={styles.input} />
+        </label>
+        <label style={styles.label}>
+          Batch operation ID
+          <input value={quoteId} onChange={(event) => setQuoteId(event.target.value)} style={styles.input} />
+        </label>
+        <label style={styles.label}>
+          Budget authorization ID
+          <input value={budgetAuthorizationId} onChange={(event) => setBudgetAuthorizationId(event.target.value)} style={styles.input} />
+        </label>
+        <label style={styles.label}>
+          Estimated input tokens
+          <input value={estimatedUnits} onChange={(event) => setEstimatedUnits(event.target.value)} inputMode="numeric" style={styles.input} />
+        </label>
+      </section>
 
       <div style={styles.list}>
         {items.map((chapter) => (
@@ -225,6 +270,30 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'auto',
     border: '1px solid #d7dde8',
     borderRadius: 8,
+  },
+  guardBox: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))',
+    gap: 12,
+    padding: 12,
+    border: '1px solid #d7dde8',
+    borderRadius: 8,
+    background: '#f8fafc',
+  },
+  label: {
+    display: 'grid',
+    gap: 6,
+    color: '#344054',
+    fontWeight: 800,
+  },
+  input: {
+    width: '100%',
+    minHeight: 38,
+    boxSizing: 'border-box',
+    padding: '8px 10px',
+    border: '1px solid #c9d3df',
+    borderRadius: 6,
+    font: 'inherit',
   },
   row: {
     display: 'grid',

@@ -7,9 +7,9 @@ from enum import Enum
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.contracts import JobKind
+from app.contracts import JobKind, Usage, UsageUnit
 from app.db.base import create_engine_for
-from app.modules.jobs.batch import BatchCoordinator
+from app.modules.jobs.batch import BatchBlocked, BatchCloudAuthorization, BatchCoordinator
 from app.settings.config import Settings
 
 
@@ -20,6 +20,12 @@ class EnqueueBatchRequest(BaseModel):
     chapter_ids: tuple[str, ...] = Field(alias="chapterIds")
     stage: JobKind
     quote_id: str | None = Field(default=None, alias="quoteId")
+    provider_profile_id: str | None = Field(default=None, alias="providerProfileId")
+    cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
+    budget_authorization_id: str | None = Field(default=None, alias="budgetAuthorizationId")
+    estimated_units: int | None = Field(default=None, alias="estimatedUnits")
+    estimated_unit: UsageUnit = Field(default=UsageUnit.INPUT_TOKEN, alias="estimatedUnit")
+    pause_requested: bool = Field(default=False, alias="pauseRequested")
 
 
 def create_batches_router(settings: Settings | None = None) -> APIRouter:
@@ -44,11 +50,33 @@ def create_batches_router(settings: Settings | None = None) -> APIRouter:
                 request.chapter_ids,
                 request.stage,
                 request.quote_id,
+                cloud_authorization=_cloud_authorization(request),
+                pause_requested=(lambda _batch_id, _created_count: True) if request.pause_requested else None,
             ))))
+        except BatchBlocked as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return router
+
+
+def _cloud_authorization(request: EnqueueBatchRequest) -> BatchCloudAuthorization | None:
+    if not all(
+        (
+            request.provider_profile_id,
+            request.cloud_consent_id,
+            request.budget_authorization_id,
+            request.estimated_units is not None,
+        )
+    ):
+        return None
+    return BatchCloudAuthorization(
+        provider_profile_id=request.provider_profile_id or "",
+        cloud_consent_id=request.cloud_consent_id or "",
+        budget_authorization_id=request.budget_authorization_id or "",
+        estimated_usage=(Usage(request.estimated_unit.value, request.estimated_units or 0),),
+    )
 
 
 def _convert(value: object) -> object:

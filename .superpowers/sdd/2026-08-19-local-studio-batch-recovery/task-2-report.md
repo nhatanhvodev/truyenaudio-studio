@@ -140,4 +140,88 @@ Result:
 
 ## Concerns
 
-- Paid-stage batch authorization remains intentionally provider-neutral for Task 2 because the current schema/API cannot distinguish local from paid execution at enqueue time without expanding contracts beyond the brief.
+- None for Task 2 after fix round 1.
+
+## Fix Round 1
+
+Review findings addressed:
+
+- Paid/cloud-capable stages now require `BatchCloudAuthorization` before any child jobs are persisted.
+- The batch endpoint accepts existing `providerProfileId`, `cloudConsentId`, `budgetAuthorizationId`, `quoteId`, and explicit `estimatedUnits` values.
+- Guard validation uses existing `CloudCallGuard` and `BudgetGuard` primitives with no paid provider execution.
+- Missing or denied guard inputs return `422` with a clear block reason and leave the jobs table untouched.
+- `pause_requested` is checked between child job enqueue attempts; already-created jobs are left queued/running and subsequent children are not created.
+- `BatchQueue.tsx` no longer submits a provider-neutral cloud-capable batch; it requires the guard input fields before posting.
+
+Fix RED command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/jobs/test_batch.py backend/tests/api/test_pagination.py -q
+```
+
+Fix RED result:
+
+```text
+ImportError: cannot import name 'BatchCloudAuthorization' from 'app.modules.jobs.batch'
+```
+
+Focused Task 2 tests:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/jobs/test_batch.py backend/tests/api/test_pagination.py -q
+```
+
+Result:
+
+```text
+10 passed in 5.75s
+```
+
+Ruff on touched backend files:
+
+```powershell
+.\.venv\Scripts\python -m ruff check backend\app\modules\jobs\batch.py backend\app\api\batches.py backend\tests\jobs\test_batch.py backend\tests\api\test_pagination.py
+```
+
+Result:
+
+```text
+All checks passed!
+```
+
+Relevant backend regressions:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/api backend/tests/jobs/test_runner.py backend/tests/budgets/test_guard.py backend/tests/compliance/test_cloud_translation_guard.py -q
+```
+
+Result:
+
+```text
+84 passed in 19.09s
+```
+
+Frontend build:
+
+```powershell
+npm run build
+```
+
+Result:
+
+```text
+tsc -b && vite build
+✓ built in 1.33s
+```
+
+Frontend tests:
+
+```powershell
+npm test -- --run
+```
+
+Result:
+
+```text
+5 passed, 12 tests passed
+```

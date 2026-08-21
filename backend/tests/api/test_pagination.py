@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.contracts import ChapterState, ImportKind, RightsStatus, SourceType
-from app.db.models import Chapter, Project, SourceRevision
+from app.db.models import Chapter, Job, Project, SourceRevision
 from app.main import create_app
 from app.settings.config import Settings
 
@@ -44,6 +45,32 @@ def test_chapter_page_rejects_tampered_cursor(settings: Settings, db_session: Se
 
     assert response.status_code == 400
     assert response.json()["detail"] == "CHAPTER_CURSOR_INVALID"
+
+
+def test_cloud_capable_batch_endpoint_rejects_missing_guard_inputs_before_jobs(
+    settings: Settings,
+    db_session: Session,
+) -> None:
+    project = _project_with_chapters(db_session)
+    chapter_id = db_session.scalar(select(Chapter.id).where(Chapter.project_id == project.id).limit(1))
+    assert chapter_id is not None
+    with TestClient(create_app(settings=settings, acquire_lock=False), base_url=LOOPBACK_ORIGIN) as client:
+        token = client.get("/api/security/bootstrap").json()["csrfToken"]
+
+        response = client.post(
+            "/api/batches",
+            json={
+                "projectId": project.id,
+                "chapterIds": [chapter_id],
+                "stage": "TRANSLATE",
+                "quoteId": "batch-cloud-quote",
+            },
+            headers={"Origin": LOOPBACK_ORIGIN, "X-CSRF-Token": token},
+        )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "BATCH_CLOUD_AUTHORIZATION_REQUIRED"
+    assert db_session.scalar(select(Job).where(Job.project_id == project.id).limit(1)) is None
 
 
 def _project_with_chapters(db_session: Session) -> Project:
