@@ -408,6 +408,7 @@ class SpeechWorkflow:
         premaster_issues = run_premaster_qa(
             audio_paths,
             tuple(segment.id for segment in segments),
+            pause_after_ms=tuple(segment.pause_after_ms for segment in segments),
         )
         actual_sha256 = _sha256_file(output_path)
         if actual_sha256 != result.sha256:

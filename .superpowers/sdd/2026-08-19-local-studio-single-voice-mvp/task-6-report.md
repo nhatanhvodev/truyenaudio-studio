@@ -184,3 +184,76 @@ Broader backend suite:
 ### Concerns
 
 - Pre-master QA currently analyzes readable 16-bit PCM WAV segment files and skips unreadable/non-WAV fake files; the real local TTS adapters already validate WAV output.
+
+---
+
+## Review Fix Round 2
+
+### Status
+
+DONE
+
+### RED evidence
+
+Command:
+
+```powershell
+cd D:\truyenaudio-studio
+.\.venv\Scripts\python -m pytest backend/tests/speech backend/tests/audio -q
+```
+
+Output:
+
+```text
+FAILED backend\tests\speech\test_single_narrator.py::test_long_pause_generates_blocking_silence_issue_before_approval
+1 failed, 9 passed in 3.63s
+```
+
+### GREEN evidence
+
+Focused speech/audio suite:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/speech backend/tests/audio -q
+```
+
+```text
+..........                                                               [100%]
+10 passed in 3.67s
+```
+
+Ruff touched Python files:
+
+```powershell
+.\.venv\Scripts\python -m ruff check backend/app/modules/audio/qa.py backend/app/modules/speech/workflow.py backend/tests/speech/test_single_narrator.py
+```
+
+```text
+All checks passed!
+```
+
+Broader backend suite:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests -q
+```
+
+```text
+240 passed, 1 warning in 34.79s
+```
+
+### Files changed
+
+- `backend/app/modules/audio/qa.py`
+- `backend/app/modules/speech/workflow.py`
+- `backend/tests/speech/test_single_narrator.py`
+
+### Self-review
+
+- Added a regression where a normal TTS WAV followed by `pause_after_ms=8500` creates an open Major `SILENCE` issue and blocks audio approval.
+- Wired workflow pause durations into pre-master QA and added fail-closed pause analysis for pauses over 8 seconds unless an explicit scene-break exemption exists.
+- Preserved FFmpeg concat-list/two-pass mastering behavior; this fix does not introduce Python byte concatenation or export/cloud/upload scope.
+
+### Concerns
+
+- No existing scene-break signal is present in the Task 6 schema/workflow, so all pauses over 8 seconds are treated as non-scene-break and blocking.

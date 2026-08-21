@@ -28,6 +28,7 @@ from app.db.models import (
     QaIssue,
     SourceRevision,
     SourceSegment,
+    SpeechSegment,
     TranslationRun,
     TranslationSegment,
     VoicePreset,
@@ -189,6 +190,40 @@ def test_premaster_audio_qa_generates_blocking_issue_before_approval(
         )
 
 
+def test_long_pause_generates_blocking_silence_issue_before_approval(
+    db_session,
+    tmp_path: Path,
+    deterministic_uuid7_factory,
+) -> None:
+    fixture = _approved_chapter(db_session)
+    preset = _voice_preset(db_session)
+    workflow = SpeechWorkflow(
+        db_session,
+        tts=WavTts(mode="normal"),
+        audio_processor=DeterministicAudioProcessor(),
+        artifact_root=tmp_path,
+        id_factory=deterministic_uuid7_factory,
+    )
+    plan = workflow.configure_single(fixture.chapter_id, preset.id)
+    paused_segment = db_session.get(SpeechSegment, plan.segments[0].id)
+    paused_segment.pause_after_ms = 8_500
+    db_session.commit()
+
+    rendered = workflow.enqueue_render(fixture.chapter_id)
+
+    issues = db_session.query(QaIssue).filter(QaIssue.category == QaCategory.SILENCE.value).all()
+    assert issues
+    assert all(issue.status == QaStatus.OPEN.value for issue in issues)
+    assert all(issue.severity == QaSeverity.MAJOR.value for issue in issues)
+    assert any("pause_after_ms=8500" in (issue.evidence or "") for issue in issues)
+    with pytest.raises(AudioApprovalBlocked):
+        workflow.approve_audio(
+            fixture.chapter_id,
+            rendered.master_artifact_id,
+            expected_sha256=rendered.master_sha256,
+        )
+
+
 class CountingTts:
     def __init__(self) -> None:
         self.requested_segment_ids: list[str] = []
@@ -248,6 +283,12 @@ class WavTts:
             wav.setframerate(44_100)
             if self.mode == "silent":
                 wav.writeframes(b"\x00\x00" * frame_count)
+            elif self.mode == "normal":
+                frames = bytearray()
+                for index in range(frame_count):
+                    sample = round(8_000 * math.sin(2 * math.pi * 440 * index / 44_100))
+                    frames.extend(sample.to_bytes(2, byteorder="little", signed=True))
+                wav.writeframes(bytes(frames))
             else:
                 frames = bytearray()
                 for index in range(frame_count):

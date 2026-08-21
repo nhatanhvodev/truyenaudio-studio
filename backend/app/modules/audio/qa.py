@@ -58,6 +58,7 @@ def run_premaster_qa(
     segment_paths: tuple[Path, ...],
     speech_segment_ids: tuple[str, ...],
     *,
+    pause_after_ms: tuple[int, ...] = (),
     scene_break_segment_ids: frozenset[str] = frozenset(),
 ) -> tuple[AudioIssueDraft, ...]:
     issues: list[AudioIssueDraft] = []
@@ -91,6 +92,35 @@ def run_premaster_qa(
                     speech_segment_id=speech_segment_id,
                 )
             )
+    issues.extend(
+        _pause_silence_issues(
+            speech_segment_ids,
+            pause_after_ms,
+            scene_break_segment_ids=scene_break_segment_ids,
+        )
+    )
+    return tuple(issues)
+
+
+def _pause_silence_issues(
+    speech_segment_ids: tuple[str, ...],
+    pause_after_ms: tuple[int, ...],
+    *,
+    scene_break_segment_ids: frozenset[str],
+) -> tuple[AudioIssueDraft, ...]:
+    issues: list[AudioIssueDraft] = []
+    for speech_segment_id, pause_ms in zip(speech_segment_ids, pause_after_ms, strict=False):
+        if speech_segment_id in scene_break_segment_ids or pause_ms <= 8_000:
+            continue
+        issues.append(
+            AudioIssueDraft(
+                category=QaCategory.SILENCE,
+                severity=QaSeverity.MAJOR,
+                evidence=f"speech_segment_id={speech_segment_id}, pause_after_ms={pause_ms}",
+                suggestion="Reduce generated pause silence to 8 seconds or less unless it is a scene break.",
+                speech_segment_id=speech_segment_id,
+            )
+        )
     return tuple(issues)
 
 
