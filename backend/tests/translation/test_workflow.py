@@ -80,6 +80,27 @@ def test_manual_edit_creates_new_review_run(db_session) -> None:
     )
 
 
+def test_superseded_run_cannot_be_approved_after_manual_revision(db_session) -> None:
+    fixture = _approved_chapter(db_session)
+    workflow = TranslationWorkflow(db_session, id_factory=_ids())
+
+    workflow.revise_segment(
+        fixture.chapter_id,
+        fixture.run_id,
+        fixture.segment_id,
+        "Lam Dong 42",
+        expected_run_hash=fixture.run_sha256,
+    )
+
+    with pytest.raises(RevisionConflict):
+        workflow.approve_revision(
+            fixture.chapter_id, fixture.run_id, fixture.run_sha256
+        )
+    chapter = db_session.get(Chapter, fixture.chapter_id)
+    assert chapter.state == ChapterState.TRANSLATION_REVIEW.value
+    assert chapter.approved_translation_run_id is None
+
+
 def test_revision_requires_expected_run_hash(db_session) -> None:
     fixture = _translated_chapter(db_session)
     workflow = TranslationWorkflow(db_session, id_factory=_ids())

@@ -155,3 +155,105 @@ Output:
 
 - Full backend tests pass with the pre-existing SQLAlchemy metadata warning about unresolved FK cycles in `tests/db/test_schema.py`; no Task 4 failures remain.
 - Workflow uses the injected/default adapter primitive directly. Real Qwen budget/cloud consent wiring remains governed by the existing adapter/guard primitives and was not exercised with paid provider calls.
+
+## Review Fix Round 1
+
+### Finding addressed
+
+- Critical stale approval bug: after a manual revision superseded run A with run B, `approve_revision()` could still approve old run A if the caller had A's valid hash.
+
+### RED evidence
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/translation/test_workflow.py::test_superseded_run_cannot_be_approved_after_manual_revision -q
+```
+
+Output:
+
+```text
+F                                                                        [100%]
+E       Failed: DID NOT RAISE <class 'app.modules.translation.workflow.RevisionConflict'>
+1 failed in 1.29s
+```
+
+### GREEN evidence
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/translation/test_workflow.py::test_superseded_run_cannot_be_approved_after_manual_revision -q
+```
+
+Output:
+
+```text
+.                                                                        [100%]
+1 passed in 0.86s
+```
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/translation -q
+```
+
+Output:
+
+```text
+....................                                                     [100%]
+20 passed in 3.14s
+```
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m ruff check backend/app/modules/translation/workflow.py backend/tests/translation/test_workflow.py
+```
+
+Output:
+
+```text
+All checks passed!
+```
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m ruff format --check backend/app/modules/translation/workflow.py backend/tests/translation/test_workflow.py
+```
+
+Output:
+
+```text
+2 files already formatted
+```
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests -q
+```
+
+Output:
+
+```text
+219 passed, 1 warning in 28.20s
+```
+
+### Implementation notes
+
+- Added regression coverage proving stale run A cannot be approved after manual revision creates current run B; chapter remains `TRANSLATION_REVIEW` and has no approved translation run.
+- Added approval gating so `approve_revision()` accepts only the current latest `REVIEW` run, while preserving idempotent approval for the already-approved run.
+- Updated approval audit `before_hash` to record the prior approved translation run hash when present instead of deriving from a run UUID.
+
+### Self-review
+
+- Verified the stale approval path fails before mutating chapter approval state.
+- Verified `RunStatus.SUPERSEDED` is rejected through the non-review approval gate.
+- Verified focused translation tests, broader backend tests, and Ruff checks after the final formatted code.
+
+### Concerns
+
+- The broader backend suite still reports the existing SQLAlchemy FK-cycle metadata warning in `tests/db/test_schema.py`; no new warning or failure was introduced by this fix.

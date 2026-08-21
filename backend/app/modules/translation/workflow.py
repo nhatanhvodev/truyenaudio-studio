@@ -279,6 +279,10 @@ class TranslationWorkflow:
         run = self._run_for_chapter(chapter_id, run_id)
         if run.translation_text_sha256 != expected_run_hash:
             raise RevisionConflict("TRANSLATION_RUN_HASH_MISMATCH")
+        chapter = self.session.get(Chapter, chapter_id)
+        if chapter is None:
+            raise ValueError("CHAPTER_NOT_FOUND")
+        self._require_current_approvable_run(chapter, run)
         blockers = self.session.scalars(
             select(QaIssue).where(
                 QaIssue.chapter_id == chapter_id,
@@ -292,10 +296,7 @@ class TranslationWorkflow:
         if blockers:
             raise ApprovalBlocked("TRANSLATION_QA_BLOCKERS_OPEN")
 
-        chapter = self.session.get(Chapter, chapter_id)
-        if chapter is None:
-            raise ValueError("CHAPTER_NOT_FOUND")
-        before_hash = chapter.approved_translation_run_id
+        before_hash = self._approved_translation_hash(chapter)
         run.status = RunStatus.APPROVED.value
         chapter.approved_translation_run_id = run.id
         chapter.translation_approved_at = utc_now()
@@ -310,7 +311,7 @@ class TranslationWorkflow:
                 action="APPROVE_TRANSLATION",
                 entity_type="TranslationRun",
                 entity_id=run.id,
-                before_hash=before_hash if _looks_like_sha(before_hash) else None,
+                before_hash=before_hash,
                 after_hash=run.translation_text_sha256,
                 redacted_details=json.dumps(
                     {"chapter_id": chapter_id, "run_id": run.id},
@@ -321,6 +322,37 @@ class TranslationWorkflow:
         )
         self.session.commit()
         return self._run_view(run.id)
+
+    def _require_current_approvable_run(
+        self, chapter: Chapter, run: TranslationRun
+    ) -> None:
+        if (
+            run.status == RunStatus.APPROVED.value
+            and chapter.approved_translation_run_id == run.id
+        ):
+            return
+        if run.status != RunStatus.REVIEW.value:
+            raise RevisionConflict("TRANSLATION_RUN_NOT_APPROVABLE")
+        if self._latest_review_run_id(chapter.id) != run.id:
+            raise RevisionConflict("TRANSLATION_RUN_NOT_CURRENT")
+
+    def _latest_review_run_id(self, chapter_id: str) -> str | None:
+        return self.session.scalar(
+            select(TranslationRun.id)
+            .where(
+                TranslationRun.chapter_id == chapter_id,
+                TranslationRun.status == RunStatus.REVIEW.value,
+            )
+            .order_by(TranslationRun.created_at.desc(), TranslationRun.id.desc())
+        )
+
+    def _approved_translation_hash(self, chapter: Chapter) -> str | None:
+        if chapter.approved_translation_run_id is None:
+            return None
+        approved = self.session.get(TranslationRun, chapter.approved_translation_run_id)
+        if approved is None:
+            return None
+        return approved.translation_text_sha256
 
     def current_translation(self, chapter_id: str) -> TranslationRunView:
         chapter = self.session.get(Chapter, chapter_id)
@@ -703,9 +735,3 @@ def _optional_str(value: object) -> str | None:
     if value is None:
         return None
     return str(value)
-
-
-def _looks_like_sha(value: str | None) -> bool:
-    if value is None:
-        return False
-    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
