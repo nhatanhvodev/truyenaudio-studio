@@ -69,16 +69,28 @@ def _extract_xhtml_text(payload: bytes) -> str:
     except ElementTree.ParseError as exc:
         raise InputArchiveUnsafe("EPUB_XHTML_INVALID") from exc
     for element in root.iter():
-        if _local_name(element.tag) in {"script", "style"}:
+        if _local_name(element.tag) == "script":
             raise InputArchiveUnsafe("EPUB_ACTIVE_CONTENT")
 
     lines: list[str] = []
     for element in root.iter():
         if _local_name(element.tag) in {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li"}:
-            text = " ".join("".join(element.itertext()).split())
+            text = " ".join(_visible_text(element).split())
             if text:
                 lines.append(text)
     return "\n".join(lines)
+
+
+def _visible_text(element) -> str:
+    pieces: list[str] = []
+    if element.text:
+        pieces.append(element.text)
+    for child in element:
+        if _local_name(child.tag) != "style":
+            pieces.append(_visible_text(child))
+        if child.tail:
+            pieces.append(child.tail)
+    return "".join(pieces)
 
 
 def _local_name(tag: str) -> str:

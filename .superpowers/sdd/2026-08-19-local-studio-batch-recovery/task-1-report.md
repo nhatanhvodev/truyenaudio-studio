@@ -39,3 +39,12 @@ Concerns:
 
 Follow-up cleanup:
 - Added `*.egg-info/` to `.gitignore` so Python editable-install metadata no longer dirties the worktree.
+
+Fix round 1:
+- Changed folder import to read only direct `.txt` files under the selected root/subfolder; nested directories are not traversed.
+- Changed EPUB XHTML extraction to reject `<script>` but ignore `<style>` content while preserving visible chapter text.
+- Added regressions for non-recursive folder reads and EPUB style dropping.
+- RED: `.\.venv\Scripts\python -m pytest backend/tests/sources -q` -> `2 failed, 11 passed`.
+- GREEN: `.\.venv\Scripts\python -m pytest backend/tests/sources -q` -> `13 passed in 0.55s`.
+- GREEN: `.\.venv\Scripts\python -m ruff check backend/app/modules/sources/epub.py backend/app/modules/sources/folder.py backend/tests/sources/test_secure_imports.py` -> `All checks passed!`.
+- GREEN: `npm test -- --run src/features/import/ImportPreview.test.tsx` -> `1 passed`.

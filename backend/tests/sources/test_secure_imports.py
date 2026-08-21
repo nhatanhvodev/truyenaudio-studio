@@ -118,6 +118,28 @@ def test_read_epub_rejects_inline_script(zip_factory) -> None:
         read_epub(archive_path)
 
 
+def test_read_epub_ignores_style_content(zip_factory) -> None:
+    archive_path = zip_factory(
+        {
+            "mimetype": b"application/epub+zip",
+            "META-INF/container.xml": b"""<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+<rootfiles><rootfile full-path="content.opf"/></rootfiles></container>""",
+            "content.opf": b"""<package xmlns="http://www.idpf.org/2007/opf">
+<manifest><item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/></manifest>
+<spine><itemref idref="c1"/></spine></package>""",
+            "ch1.xhtml": b"""<html xmlns="http://www.w3.org/1999/xhtml"><body>
+<style>.hidden { color: red; }</style>
+<h1>Chuong 1</h1><p>Visible text.</p>
+</body></html>""",
+        }
+    )
+
+    (candidate,) = read_epub(archive_path)
+
+    assert candidate.text == "Chuong 1\nVisible text."
+    assert "hidden" not in candidate.text
+
+
 def test_read_docx_returns_paragraph_and_table_candidates(tmp_path: Path) -> None:
     from docx import Document
 
@@ -153,6 +175,23 @@ def test_folder_reads_txt_in_natural_order_and_reports_preview_warnings(tmp_path
     assert [candidate.ordinal for candidate in candidates[:2]] == [2, 10]
     assert "EMPTY_CHAPTER" in candidates[2].warnings
     assert "ORDINAL_MISSING" in candidates[2].warnings
+
+
+def test_folder_reads_only_direct_txt_files_under_selected_folder(tmp_path: Path) -> None:
+    root = tmp_path / "imports"
+    nested = root / "nested"
+    chosen = root / "chosen"
+    nested.mkdir(parents=True)
+    chosen.mkdir()
+    (root / "chapter-1.txt").write_text("Chuong 1\nRoot.", encoding="utf-8")
+    (nested / "chapter-2.txt").write_text("Chuong 2\nNested ignored.", encoding="utf-8")
+    (chosen / "chapter-3.txt").write_text("Chuong 3\nChosen.", encoding="utf-8")
+
+    root_candidates = read_folder(root)
+    chosen_candidates = read_folder(root, "chosen")
+
+    assert [candidate.source_path for candidate in root_candidates] == ["chapter-1.txt"]
+    assert [candidate.source_path for candidate in chosen_candidates] == ["chosen/chapter-3.txt"]
 
 
 def test_folder_rejects_subfolder_escape(tmp_path: Path) -> None:

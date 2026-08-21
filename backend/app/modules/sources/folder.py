@@ -39,9 +39,7 @@ def _collect_txt_files(selected: Path, root_path: Path) -> list[Path]:
         entry_path = entry.resolve()
         if not _is_relative_to(entry_path, root_path):
             raise InputPathUnsafe("INPUT_FOLDER_OUTSIDE_ROOT")
-        if entry.is_dir():
-            files.extend(_collect_txt_files(entry_path, root_path))
-        elif entry.is_file() and entry.suffix.lower() == ".txt":
+        if entry.is_file() and entry.suffix.lower() == ".txt":
             files.append(entry_path)
     return files
 
