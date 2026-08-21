@@ -207,3 +207,202 @@ REFUSED: confirmation was not RUN.
 
 - The browser E2E uses `STUDIO_FAKE_AUDIO=1` because the local environment failed on real FFmpeg execution during HTTP E2E. The full backend suite still exercises FFmpeg contract/mastering tests.
 - `frontend/e2e/.tmp-data/` remains ignored test output after E2E runs. Recursive removal was blocked by the runtime policy, so it is intentionally not staged.
+
+---
+
+# Task 8 review fix round 1
+
+## Summary
+
+Addressed the review findings:
+
+- Added `/api/jobs/snapshot` and `/api/jobs/events` with persisted job event mapping `{sequenceId, jobId, status, current, total, errorCode}` and Last-Event-ID/query cursor replay.
+- Updated the jobs overlay to fetch one snapshot first and keep a stable `EventSource` instance instead of rebuilding on every message.
+- Added `/api/chapters/{chapter_id}/audio/status` and made the audio approval screen load the current/pending master artifact from DB on direct navigation/refresh.
+- Replaced smoke script post-RUN “manual ready” status with actual guarded Qwen/local execution paths, controlled FAIL reports, Qwen one-segment guard, and local WAV format/duration/hash validation.
+
+## RED evidence
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/api/test_jobs_api.py backend/tests/api/test_audio_status.py backend/tests/scripts/test_smoke_real_providers.py -q
+```
+
+Output after adding focused tests and correcting test fixture FK ordering:
+
+```text
+FFFFF                                                                    [100%]
+FAILED backend\tests\api\test_jobs_api.py::test_jobs_snapshot_maps_persisted_jobs_and_after_cursor - KeyError: 'events'
+FAILED backend\tests\api\test_jobs_api.py::test_jobs_events_replays_after_last_event_id_header - assert 404 == 200
+FAILED backend\tests\api\test_audio_status.py::test_audio_status_loads_latest_pending_master_from_database - AssertionError: assert {'detail': 'not found'} == ...
+FAILED backend\tests\scripts\test_smoke_real_providers.py::test_qwen_smoke_refuses_multi_segment_before_run - assert 'REFUSED: qwen smoke allows exactly one non-empty segment' in ...
+FAILED backend\tests\scripts\test_smoke_real_providers.py::test_local_smoke_after_run_writes_controlled_fail_when_executable_missing - AssertionError: assert 0 == 1
+5 failed in 2.17s
+```
+
+Command:
+
+```powershell
+cd frontend
+npm test -- --run src/features/jobs/JobProgress.test.tsx src/App.test.tsx
+```
+
+Output:
+
+```text
+FAIL  src/features/jobs/JobProgress.test.tsx > JobProgress > loads a snapshot once and keeps a stable EventSource after events
+TestingLibraryElementError: Unable to find an element with the text: job-1.
+FAIL  src/App.test.tsx > App > loads rendered audio approval state on direct navigation
+TestingLibraryElementError: Unable to find an element with the text: /Master abc123abc123/.
+Test Files  2 failed (2)
+Tests  2 failed | 2 passed (4)
+```
+
+## GREEN evidence
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/api/test_jobs_api.py backend/tests/api/test_audio_status.py backend/tests/scripts/test_smoke_real_providers.py -q
+```
+
+Output:
+
+```text
+......                                                                   [100%]
+6 passed in 2.50s
+```
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/api/test_csrf.py backend/tests/api/test_jobs_api.py backend/tests/api/test_audio_status.py backend/tests/scripts/test_smoke_real_providers.py -q
+```
+
+Output:
+
+```text
+.......                                                                  [100%]
+7 passed in 2.32s
+```
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m ruff check backend/app/api/audio.py backend/app/api/jobs.py backend/app/main.py backend/tests/api/test_audio_status.py backend/tests/api/test_jobs_api.py backend/tests/scripts/test_smoke_real_providers.py
+```
+
+Output:
+
+```text
+All checks passed!
+```
+
+Command:
+
+```powershell
+cd frontend
+npm test -- --run
+```
+
+Output:
+
+```text
+Test Files  4 passed (4)
+Tests  9 passed (9)
+Duration  2.39s
+```
+
+Command:
+
+```powershell
+cd frontend
+npm run build
+```
+
+Output:
+
+```text
+✓ 45 modules transformed.
+✓ built in 950ms
+```
+
+Command:
+
+```powershell
+cd frontend
+npm exec playwright test e2e/single-voice.spec.ts
+```
+
+Output:
+
+```text
+ok 1 e2e\single-voice.spec.ts:3:1 › fake single narrator reaches verified publication bundle (9.3s)
+1 passed (22.5s)
+```
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests -q
+```
+
+Output:
+
+```text
+255 passed, 1 warning in 38.80s
+```
+
+Command:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke-real-providers.ps1 -Provider refuse
+```
+
+Output:
+
+```text
+{"provider":"refuse","model":"piper-vais1000","region":"local","han_count":0,"duration_seconds":null,"paid_network":false}
+REFUSED: choose -Provider qwen, vieneu, or piper and type RUN when prompted.
+```
+
+Command:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\smoke-real-providers.ps1 -Provider vieneu
+```
+
+Output:
+
+```text
+{"provider":"vieneu","model":"vieneu-vi-int8","region":"local","han_count":0,"duration_seconds":30,"paid_network":false}
+REFUSED: confirmation was not RUN.
+```
+
+## Files changed in review round 1
+
+- `backend/app/api/audio.py`
+- `backend/app/api/jobs.py`
+- `backend/app/main.py`
+- `backend/tests/api/test_audio_status.py`
+- `backend/tests/api/test_jobs_api.py`
+- `backend/tests/scripts/test_smoke_real_providers.py`
+- `frontend/src/App.test.tsx`
+- `frontend/src/features/jobs/JobProgress.tsx`
+- `frontend/src/features/jobs/JobProgress.test.tsx`
+- `frontend/src/routes/router.tsx`
+- `scripts/smoke-real-providers.ps1`
+
+## Self-review
+
+- Jobs snapshot/SSE are read-only GET routes and use the same SQLite data root as the rest of the app.
+- SSE cursor replay accepts both `Last-Event-ID` and `?after=`, and normalizes `+` decoded from ISO timestamps.
+- The UI now fetches audio master status from the backend, so refresh/direct navigation does not depend on `location.state`.
+- Smoke script default/no-RUN refusal remains non-mutating. After RUN, missing Qwen endpoint or local binaries produce explicit FAIL reports instead of PASS/ready placeholders.
+- Smoke reports store hashes, IDs-present booleans, provider/model/region, and validation metadata; they do not store full text or secrets.
+
+## Concerns
+
+- No real local TTS binary/model or Qwen endpoint/auth was available in this environment; real-provider PASS remains a guarded manual smoke path. Automated coverage verifies refusal, one-segment guard, and controlled FAIL report behavior.
+- Two ignored smoke reports were generated by the RED run before the old script honored `-ReportRoot`. The runtime blocked exact deletion commands, so they remain local ignored artifacts under `data/smoke-reports/` and are not staged.

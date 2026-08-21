@@ -36,6 +36,13 @@ type RenderedAudio = {
   reusedSegmentIds: string[];
 };
 
+type AudioStatus = {
+  chapterId: string;
+  masterArtifactId: string | null;
+  masterSha256: string | null;
+  approved: boolean;
+};
+
 type GateDecision = {
   allowed: boolean;
   reasons: string[];
@@ -261,9 +268,33 @@ function AudioScreen() {
   const { chapterId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const rendered = (location.state as { rendered?: RenderedAudio } | null)?.rendered;
+  const initialRendered = (location.state as { rendered?: RenderedAudio } | null)?.rendered ?? null;
+  const [rendered, setRendered] = useState<RenderedAudio | null>(initialRendered);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!chapterId) {
+      return;
+    }
+    let cancelled = false;
+    apiJson<AudioStatus>(`/api/chapters/${chapterId}/audio/status`)
+      .then((status) => {
+        if (cancelled || !status.masterArtifactId || !status.masterSha256) {
+          return;
+        }
+        setRendered({
+          masterArtifactId: status.masterArtifactId,
+          masterSha256: status.masterSha256,
+          renderedSegmentIds: [],
+          reusedSegmentIds: [],
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [chapterId]);
 
   async function approveAudio() {
     if (!chapterId || !rendered) {

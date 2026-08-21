@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { apiJson } from '../../shared/api';
 
 type JobEvent = {
   sequenceId: string;
@@ -16,23 +17,59 @@ type Props = {
 export function JobProgress({ events = [] }: Props) {
   const [streamEvents, setStreamEvents] = useState<JobEvent[]>([]);
   const [streamState, setStreamState] = useState('offline');
+  const lastSequenceRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (typeof EventSource === 'undefined') {
-      return;
+    let cancelled = false;
+    let source: EventSource | null = null;
+
+    async function connect() {
+      try {
+        const snapshot = await apiJson<{ events: JobEvent[] }>('/api/jobs/snapshot');
+        if (cancelled) {
+          return;
+        }
+        appendEvents(snapshot.events);
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setStreamState('offline');
+      }
+
+      if (cancelled || typeof EventSource === 'undefined') {
+        return;
+      }
+      const lastEventId = lastSequenceRef.current;
+      const url = lastEventId ? `/api/jobs/events?after=${encodeURIComponent(lastEventId)}` : '/api/jobs/events';
+      source = new EventSource(url);
+      setStreamState('connecting');
+      source.onopen = () => setStreamState('connected');
+      source.onmessage = (message) => {
+        try {
+          appendEvents([JSON.parse(message.data) as JobEvent]);
+        } catch {
+          setStreamState('offline');
+        }
+      };
+      source.onerror = () => setStreamState('offline');
     }
-    const lastEventId = streamEvents.at(-1)?.sequenceId;
-    const url = lastEventId ? `/api/jobs/events?after=${encodeURIComponent(lastEventId)}` : '/api/jobs/events';
-    const source = new EventSource(url);
-    setStreamState('connecting');
-    source.onopen = () => setStreamState('connected');
-    source.onmessage = (message) => {
-      const next = JSON.parse(message.data) as JobEvent;
-      setStreamEvents((current) => [...current, next].slice(-6));
+
+    function appendEvents(nextEvents: JobEvent[]) {
+      if (nextEvents.length === 0) {
+        return;
+      }
+      lastSequenceRef.current = nextEvents.at(-1)?.sequenceId ?? lastSequenceRef.current;
+      setStreamEvents((current) => [...current, ...nextEvents].slice(-6));
+    }
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      source?.close();
     };
-    source.onerror = () => setStreamState('offline');
-    return () => source.close();
-  }, [streamEvents]);
+  }, []);
 
   const visibleEvents = useMemo(() => [...events, ...streamEvents].slice(-6), [events, streamEvents]);
 

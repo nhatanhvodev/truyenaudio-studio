@@ -7,8 +7,11 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 
+from app.contracts import ArtifactKind, ArtifactStatus
 from app.db.base import create_engine_for, session_factory
+from app.db.models import Artifact, Chapter
 from app.modules.speech.workflow import (
     AudioApprovalBlocked,
     AudioApprovalConflict,
@@ -97,6 +100,43 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @router.get("/status")
+    def audio_status(chapter_id: str) -> dict[str, object]:
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        factory = session_factory(engine)
+        try:
+            with factory() as session:
+                chapter = session.get(Chapter, chapter_id)
+                if chapter is None:
+                    raise HTTPException(status_code=404, detail="chapter not found")
+                artifact = None
+                approved = False
+                if chapter.approved_master_artifact_id:
+                    artifact = session.get(Artifact, chapter.approved_master_artifact_id)
+                    approved = artifact is not None
+                if artifact is None:
+                    artifact = (
+                        session.execute(
+                            select(Artifact)
+                            .where(
+                                Artifact.chapter_id == chapter_id,
+                                Artifact.kind == ArtifactKind.MASTER_MP3.value,
+                                Artifact.status == ArtifactStatus.READY.value,
+                            )
+                            .order_by(Artifact.updated_at.desc(), Artifact.id.desc())
+                        )
+                        .scalars()
+                        .first()
+                    )
+                return {
+                    "chapterId": chapter_id,
+                    "masterArtifactId": artifact.id if artifact else None,
+                    "masterSha256": artifact.sha256 if artifact else None,
+                    "approved": approved,
+                }
+        finally:
+            engine.dispose()
 
     return router
 

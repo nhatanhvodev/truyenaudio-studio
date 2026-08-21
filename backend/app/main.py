@@ -12,6 +12,7 @@ from app.api.exports import create_exports_router
 from app.api.health import create_health_router
 from app.api.glossary import create_glossary_router
 from app.api.poc import create_poc_router
+from app.api.jobs import create_jobs_router
 from app.api.projects import create_projects_router
 from app.api.rights import create_rights_router
 from app.api.translation import create_translation_router
@@ -50,6 +51,7 @@ def create_app(
     app.include_router(create_security_router(csrf))
     app.include_router(create_health_router())
     app.include_router(create_poc_router())
+    app.include_router(create_jobs_router(active_settings))
     app.include_router(create_projects_router(active_settings))
     app.include_router(create_glossary_router(active_settings))
     app.include_router(create_translation_router(active_settings))
