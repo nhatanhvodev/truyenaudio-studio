@@ -1,5 +1,6 @@
 import { createBrowserRouter, Link, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { BatchQueue } from '../features/batch/BatchQueue';
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
       { index: true, element: <ProjectWizard /> },
       { path: 'projects/new', element: <ProjectWizard /> },
       { path: 'projects/:projectId/import', element: <ImportScreen /> },
+      { path: 'projects/:projectId/batch', element: <BatchScreen /> },
       { path: 'chapters/:chapterId/translation', element: <TranslationScreen /> },
       { path: 'chapters/:chapterId/voice', element: <VoiceScreen /> },
       { path: 'chapters/:chapterId/audio', element: <AudioScreen /> },
@@ -138,6 +140,14 @@ function ImportScreen() {
       {error ? <p role="alert" style={styles.error}>{error}</p> : null}
     </section>
   );
+}
+
+function BatchScreen() {
+  const { projectId } = useParams();
+  if (!projectId) {
+    return <Navigate to="/" replace />;
+  }
+  return <BatchQueue projectId={projectId} />;
 }
 
 function TranslationScreen() {

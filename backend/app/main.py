@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.security import create_security_router, install_csrf_middleware
+from app.api.batches import create_batches_router
 from app.api.cloud_consents import create_cloud_consents_router
 from app.api.audio import create_audio_router
 from app.api.exports import create_exports_router
@@ -51,8 +52,9 @@ def create_app(
     app.include_router(create_security_router(csrf))
     app.include_router(create_health_router())
     app.include_router(create_poc_router())
+    app.include_router(create_batches_router(active_settings))
     app.include_router(create_jobs_router(active_settings))
-    app.include_router(create_projects_router(active_settings))
+    app.include_router(create_projects_router(active_settings, cursor_secret=csrf.token))
     app.include_router(create_glossary_router(active_settings))
     app.include_router(create_translation_router(active_settings))
     app.include_router(create_rights_router(active_settings))

@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.contracts import ChapterState, ImportKind, RightsStatus, SourceType
 from app.db.base import create_engine_for, session_factory
 from app.modules.artifacts.store import ArtifactStore
+from app.modules.projects.queries import ChapterQueries, InvalidCursor
 from app.modules.projects.state_machine import InvalidChapterTransition
 from app.modules.projects.workflow import CreateProject, ImportChapters, ProjectWorkflow
 from app.settings.config import Settings
@@ -40,7 +41,7 @@ class TransitionRequest(BaseModel):
     state: ChapterState
 
 
-def create_projects_router(settings: Settings | None = None) -> APIRouter:
+def create_projects_router(settings: Settings | None = None, *, cursor_secret: str = "startup-token") -> APIRouter:
     router = APIRouter(prefix="/api/projects")
     active_settings = settings or Settings()
 
@@ -50,6 +51,13 @@ def create_projects_router(settings: Settings | None = None) -> APIRouter:
         with factory() as session:
             yield ProjectWorkflow(session, ArtifactStore(active_settings.data_root))
         engine.dispose()
+
+    def queries_dependency() -> Iterator[ChapterQueries]:
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        try:
+            yield ChapterQueries(engine, cursor_secret=cursor_secret)
+        finally:
+            engine.dispose()
 
     @router.post("")
     def create_project(
@@ -83,6 +91,19 @@ def create_projects_router(settings: Settings | None = None) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"chapters": [_dataclass_dict(chapter) for chapter in chapters]}
+
+    @router.get("/{project_id}/chapters")
+    def list_chapters(
+        project_id: str,
+        limit: int = 25,
+        cursor: str | None = None,
+        queries: ChapterQueries = Depends(queries_dependency),
+    ) -> dict[str, object]:
+        try:
+            page = queries.list_chapters(project_id, limit=limit, cursor=cursor)
+        except InvalidCursor as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _camelize(_dataclass_dict(page))
 
     @router.post("/chapters/{chapter_id}/transition")
     def transition_chapter(
@@ -129,14 +150,33 @@ def _import_command(request: ImportChaptersRequest) -> ImportChapters:
 
 
 def _dataclass_dict(value: object) -> dict[str, object]:
-    from dataclasses import asdict
+    from dataclasses import asdict, is_dataclass
     from enum import Enum
 
     def convert(item: object) -> object:
         if isinstance(item, Enum):
-            return item.name
+            return item.value
         if isinstance(item, Path):
             return item.as_posix()
+        if is_dataclass(item) and not isinstance(item, type):
+            return {key: convert(value) for key, value in asdict(item).items()}
+        if isinstance(item, tuple | list):
+            return [convert(value) for value in item]
+        if isinstance(item, dict):
+            return {key: convert(value) for key, value in item.items()}
         return item
 
     return {key: convert(item) for key, item in asdict(value).items()}
+
+
+def _camelize(value: object) -> object:
+    if isinstance(value, dict):
+        return {_camel_key(key): _camelize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_camelize(item) for item in value]
+    return value
+
+
+def _camel_key(value: str) -> str:
+    head, *tail = value.split("_")
+    return head + "".join(part[:1].upper() + part[1:] for part in tail)
