@@ -1,0 +1,15 @@
+{
+  "id": "chatcmpl-review-001",
+  "model": "gpt-5.6-luna",
+  "choices": [
+    {
+      "message": {
+        "content": "{\"findings\":[{\"source_segment_id\":\"seg-001\",\"category\":\"RESIDUAL_HAN\",\"severity\":\"MAJOR\",\"evidence\":\"Name rendering may be inconsistent.\",\"suggestion\":\"Compare the name with story memory and glossary before repair.\"}]}"
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 34,
+    "completion_tokens": 12
+  }
+}

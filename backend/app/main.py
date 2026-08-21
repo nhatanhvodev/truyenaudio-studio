@@ -15,6 +15,7 @@ from app.api.glossary import create_glossary_router
 from app.api.poc import create_poc_router
 from app.api.jobs import create_jobs_router
 from app.api.projects import create_projects_router
+from app.api.review import create_review_router
 from app.api.rights import create_rights_router
 from app.api.translation import create_translation_router
 from app.api.voices import create_voices_router
@@ -57,6 +58,7 @@ def create_app(
     app.include_router(create_projects_router(active_settings, cursor_secret=csrf.token))
     app.include_router(create_glossary_router(active_settings))
     app.include_router(create_translation_router(active_settings))
+    app.include_router(create_review_router(active_settings))
     app.include_router(create_rights_router(active_settings))
     app.include_router(create_cloud_consents_router(active_settings))
     app.include_router(create_voices_router(active_settings))
