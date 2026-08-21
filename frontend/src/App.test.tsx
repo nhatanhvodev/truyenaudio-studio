@@ -59,6 +59,51 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Phê duyệt audio' })).toBeVisible();
   });
 
+  it('requires guard IDs before calling the Qwen translation route', async () => {
+    window.history.replaceState(null, '', '/chapters/chapter-1/translation');
+    vi.stubGlobal('EventSource', undefined);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/chapters/chapter-1/translation') {
+        return jsonResponse({ detail: 'TRANSLATION_RUN_NOT_FOUND' }, false, 404);
+      }
+      if (url === '/api/security/bootstrap') {
+        return jsonResponse({ csrfToken: 'token-1' });
+      }
+      if (url === '/api/chapters/chapter-1/translation/qwen' && init?.method === 'POST') {
+        return jsonResponse(translationPayload('qwen-run-1'));
+      }
+      if (url === '/api/jobs/snapshot') {
+        return jsonResponse({ events: [] });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { default: App } = await import('./App');
+
+    render(<App />);
+
+    const qwenButton = await screen.findByRole('button', { name: 'Dịch bằng Qwen' });
+    expect(screen.getByText('Qwen cần consent cloud và budget authorization đã tạo trước.')).toBeVisible();
+
+    fireEvent.click(qwenButton);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('CLOUD_CONSENT_AND_BUDGET_REQUIRED');
+    expect(fetchSpy.mock.calls.some(([url]) => url === '/api/chapters/chapter-1/translation/qwen')).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Cloud consent ID'), { target: { value: 'consent-1' } });
+    fireEvent.change(screen.getByLabelText('Budget authorization ID'), { target: { value: 'budget-1' } });
+    fireEvent.click(qwenButton);
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/chapters/chapter-1/translation/qwen', expect.anything()));
+    const qwenCall = fetchSpy.mock.calls.find(([url]) => url === '/api/chapters/chapter-1/translation/qwen');
+    expect(JSON.parse(String(qwenCall?.[1]?.body))).toEqual({
+      cloudConsentId: 'consent-1',
+      budgetAuthorizationId: 'budget-1',
+    });
+    expect(await screen.findByText('Qwen source')).toBeVisible();
+    expect(screen.getByText('Qwen target')).toBeVisible();
+  });
+
   it('builds a private archive from the export screen and displays checksum result', async () => {
     window.history.replaceState(null, '', '/chapters/chapter-1/export');
     vi.stubGlobal('EventSource', undefined);
@@ -98,11 +143,28 @@ describe('App', () => {
   });
 });
 
-function jsonResponse(body: unknown): Response {
+function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
-    ok: true,
-    status: 200,
+    ok,
+    status,
     text: async () => JSON.stringify(body),
     json: async () => body,
   } as Response;
+}
+
+function translationPayload(id: string) {
+  return {
+    run: {
+      id,
+      status: 'REVIEW',
+      sha256: 'abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd',
+    },
+    segments: [
+      {
+        sourceSegmentId: 'source-1',
+        sourceText: 'Qwen source',
+        targetText: 'Qwen target',
+      },
+    ],
+  };
 }

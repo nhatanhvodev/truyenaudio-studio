@@ -147,6 +147,8 @@ function TranslationScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [cloudConsentId, setCloudConsentId] = useState('');
+  const [budgetAuthorizationId, setBudgetAuthorizationId] = useState('');
 
   useEffect(() => {
     if (!chapterId) {
@@ -166,7 +168,7 @@ function TranslationScreen() {
     };
   }, [chapterId]);
 
-  async function translate() {
+  async function translateFake() {
     if (!chapterId) {
       return;
     }
@@ -181,6 +183,33 @@ function TranslationScreen() {
       setMessage('Chờ duyệt bản dịch');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'TRANSLATION_FAILED');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function translateQwen() {
+    if (!chapterId) {
+      return;
+    }
+    if (!cloudConsentId.trim() || !budgetAuthorizationId.trim()) {
+      setError('CLOUD_CONSENT_AND_BUDGET_REQUIRED');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const payload = await apiJson<TranslationPayload>(`/api/chapters/${chapterId}/translation/qwen`, {
+        method: 'POST',
+        body: {
+          cloudConsentId: cloudConsentId.trim(),
+          budgetAuthorizationId: budgetAuthorizationId.trim(),
+        },
+      });
+      setData(payload);
+      setMessage('Chờ duyệt bản dịch');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'QWEN_TRANSLATION_FAILED');
     } finally {
       setBusy(false);
     }
@@ -208,10 +237,36 @@ function TranslationScreen() {
   return (
     <section style={styles.panel} aria-label="Dịch và duyệt">
       <h1 style={styles.title}>Dịch</h1>
-      <p style={styles.quote}>Quote fake local: 0 VND, không gọi mạng trả phí.</p>
-      <button type="button" onClick={() => void translate()} disabled={busy} style={styles.primaryButton}>
-        Dịch bằng fake
-      </button>
+      <section style={styles.guardBox} aria-label="Qwen translation">
+        <p style={styles.quote}>Qwen cần consent cloud và budget authorization đã tạo trước.</p>
+        <label style={styles.label}>
+          Cloud consent ID
+          <input
+            value={cloudConsentId}
+            onChange={(event) => setCloudConsentId(event.target.value)}
+            style={styles.input}
+            autoComplete="off"
+          />
+        </label>
+        <label style={styles.label}>
+          Budget authorization ID
+          <input
+            value={budgetAuthorizationId}
+            onChange={(event) => setBudgetAuthorizationId(event.target.value)}
+            style={styles.input}
+            autoComplete="off"
+          />
+        </label>
+        <button type="button" onClick={() => void translateQwen()} disabled={busy} style={styles.primaryButton}>
+          Dịch bằng Qwen
+        </button>
+      </section>
+      <section style={styles.guardBox} aria-label="Fake test translation">
+        <p style={styles.quote}>Fake test local: 0 VND, không gọi mạng trả phí.</p>
+        <button type="button" onClick={() => void translateFake()} disabled={busy} style={styles.secondaryButton}>
+          Dịch bằng fake
+        </button>
+      </section>
       {message ? <p role="status" style={styles.success}>{message}</p> : null}
       {data ? (
         <div style={styles.reviewBox}>
@@ -507,6 +562,15 @@ const styles: Record<string, React.CSSProperties> = {
     font: 'inherit',
     lineHeight: 1.5,
   },
+  input: {
+    width: '100%',
+    minHeight: 40,
+    boxSizing: 'border-box',
+    padding: '8px 10px',
+    border: '1px solid #c9d3df',
+    borderRadius: 6,
+    font: 'inherit',
+  },
   primaryButton: {
     justifySelf: 'start',
     padding: '10px 14px',
@@ -516,10 +580,27 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#ffffff',
     fontWeight: 900,
   },
+  secondaryButton: {
+    justifySelf: 'start',
+    padding: '10px 14px',
+    border: '1px solid #a9b7c6',
+    borderRadius: 6,
+    background: '#ffffff',
+    color: '#17324d',
+    fontWeight: 900,
+  },
   quote: {
     margin: 0,
     color: '#475467',
     fontWeight: 700,
+  },
+  guardBox: {
+    display: 'grid',
+    gap: 12,
+    padding: 12,
+    border: '1px solid #d7dde8',
+    borderRadius: 8,
+    background: '#f8fafc',
   },
   reviewBox: {
     display: 'grid',
