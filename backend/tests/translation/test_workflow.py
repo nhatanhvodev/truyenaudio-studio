@@ -10,6 +10,8 @@ from sqlalchemy import select
 
 from app.api.translation import create_translation_router
 from app.contracts import (
+    ArtifactKind,
+    ArtifactStatus,
     ChapterState,
     ImportKind,
     QaCategory,
@@ -22,13 +24,17 @@ from app.contracts import (
     UsageUnit,
 )
 from app.db.models import (
+    Artifact,
     Chapter,
+    Export,
     GlossaryEntry,
     Project,
     ProviderProfile,
     SourceRevision,
     SourceSegment,
     UsageLedger,
+    VoicePlan,
+    VoicePreset,
 )
 from app.db.base import create_engine_for, session_factory
 from app.modules.translation.workflow import (
@@ -78,6 +84,81 @@ def test_manual_edit_creates_new_review_run(db_session) -> None:
         db_session.get(Chapter, fixture.chapter_id).state
         == ChapterState.TRANSLATION_REVIEW.value
     )
+
+
+def test_revision_invalidates_voice_audio_and_export_pointers(db_session) -> None:
+    fixture = _approved_chapter(db_session)
+    chapter = db_session.get(Chapter, fixture.chapter_id)
+    db_session.add(
+        VoicePreset(
+            id="018f0000-0000-7000-8000-000000000900",
+            name="Narrator",
+            locale="vi-VN",
+            origin="BUILT_IN",
+            speed="1.0",
+            pitch="0",
+            sample_rate=44_100,
+            active=True,
+        )
+    )
+    db_session.flush()
+    db_session.add(
+        VoicePlan(
+            id="018f0000-0000-7000-8000-000000000901",
+            chapter_id=chapter.id,
+            revision_no=1,
+            mode="SINGLE_NARRATOR",
+            narrator_preset_id="018f0000-0000-7000-8000-000000000900",
+            plan_sha256="a" * 64,
+        )
+    )
+    db_session.flush()
+    chapter.active_voice_plan_id = "018f0000-0000-7000-8000-000000000901"
+    chapter.audio_approved_at = chapter.translation_approved_at
+    db_session.add(
+        Artifact(
+            id="018f0000-0000-7000-8000-000000000902",
+            chapter_id=chapter.id,
+            kind=ArtifactKind.MASTER_MP3.value,
+            status=ArtifactStatus.READY.value,
+            relative_path="audio/old/master.mp3",
+            sha256="b" * 64,
+            byte_size=10,
+            mime_type="audio/mpeg",
+            input_hash="c" * 64,
+            settings_hash="d" * 64,
+        )
+    )
+    db_session.flush()
+    chapter.approved_master_artifact_id = "018f0000-0000-7000-8000-000000000902"
+    db_session.add(
+        Export(
+            id="018f0000-0000-7000-8000-000000000903",
+            chapter_id=chapter.id,
+            kind="PUBLICATION_BUNDLE",
+            status="READY",
+            manifest_sha256="e" * 64,
+        )
+    )
+    db_session.flush()
+    chapter.last_export_id = "018f0000-0000-7000-8000-000000000903"
+    db_session.commit()
+    workflow = TranslationWorkflow(db_session, id_factory=_ids())
+
+    workflow.revise_segment(
+        fixture.chapter_id,
+        fixture.run_id,
+        fixture.segment_id,
+        "Ban sua 42",
+        expected_run_hash=fixture.run_sha256,
+    )
+
+    chapter = db_session.get(Chapter, fixture.chapter_id)
+    assert chapter.approved_translation_run_id is None
+    assert chapter.active_voice_plan_id is None
+    assert chapter.approved_master_artifact_id is None
+    assert chapter.last_export_id is None
+    assert chapter.audio_approved_at is None
 
 
 def test_superseded_run_cannot_be_approved_after_manual_revision(db_session) -> None:
@@ -151,6 +232,59 @@ def test_translation_api_rejects_stale_revision_hash(tmp_path: Path) -> None:
     assert response.json()["detail"] == "TRANSLATION_RUN_HASH_MISMATCH"
 
 
+def test_translation_api_qwen_route_requires_consent_and_authorization(
+    tmp_path: Path,
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "studio.sqlite3"
+    backend_root = Path(__file__).parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+    command.upgrade(config, "head")
+
+    engine = create_engine_for(db_path)
+    with session_factory(engine)() as session:
+        fixture = _source_chapter(session)
+        chapter_id = fixture.chapter_id
+    engine.dispose()
+
+    app = FastAPI()
+    app.include_router(create_translation_router(Settings(data_root=tmp_path)))
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/chapters/{chapter_id}/translation/qwen",
+            json={},
+        )
+
+    assert response.status_code == 422
+    assert "CLOUD_CONSENT_REQUIRED" in response.json()["detail"]
+
+
+def test_translation_workflow_passes_cloud_context_to_translator(db_session) -> None:
+    fixture = _source_chapter(db_session)
+    provider = CountingTranslator("Ban dich 42")
+    workflow = TranslationWorkflow(db_session, translator=provider, id_factory=_ids())
+
+    workflow.enqueue_translation(
+        fixture.chapter_id,
+        cloud_consent_id="018f0000-0000-7000-8000-000000001001",
+        budget_authorization_id="018f0000-0000-7000-8000-000000001002",
+    )
+
+    assert (
+        provider.last_request.context.cloud_consent_id
+        == "018f0000-0000-7000-8000-000000001001"
+    )
+    assert (
+        provider.last_request.context.budget_authorization_id
+        == "018f0000-0000-7000-8000-000000001002"
+    )
+
+
 def test_cached_translation_creates_segment_without_usage_charge(db_session) -> None:
     fixture = _source_chapter(db_session)
     provider = CountingTranslator("Ban dich 42")
@@ -183,6 +317,7 @@ class CountingTranslator:
     def __init__(self, target_text: str) -> None:
         self.target_text = target_text
         self.calls = 0
+        self.last_request = None
 
     def capabilities(self) -> dict[str, object]:
         return {
@@ -194,6 +329,7 @@ class CountingTranslator:
 
     async def translate(self, request) -> TranslationResult:
         self.calls += 1
+        self.last_request = request
         return TranslationResult(
             target_text=self.target_text,
             provider="fake",

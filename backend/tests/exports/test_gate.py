@@ -17,7 +17,15 @@ from app.contracts import (
     RunStatus,
     SourceType,
 )
-from app.db.models import Artifact, Chapter, Project, RightsEvidence, RightsGrant, SourceRevision, TranslationRun
+from app.db.models import (
+    Artifact,
+    Chapter,
+    Project,
+    RightsEvidence,
+    RightsGrant,
+    SourceRevision,
+    TranslationRun,
+)
 from app.modules.exports.workflow import ExportWorkflow
 
 
@@ -26,12 +34,19 @@ NOW = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
 
 @pytest.fixture
 def workflow(db_session, artifact_store) -> ExportWorkflow:
-    return ExportWorkflow(db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW)
+    return ExportWorkflow(
+        db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW
+    )
 
 
 @pytest.fixture
 def private_chapter(db_session, artifact_store) -> Chapter:
-    return _ready_chapter(db_session, artifact_store, rights_status=RightsStatus.PRIVATE_ONLY, grant_scopes=())
+    return _ready_chapter(
+        db_session,
+        artifact_store,
+        rights_status=RightsStatus.PRIVATE_ONLY,
+        grant_scopes=(),
+    )
 
 
 @pytest.fixture
@@ -44,31 +59,47 @@ def cleared_without_stream(db_session, artifact_store) -> Chapter:
     )
 
 
-def test_private_only_never_gets_publication_metadata(workflow: ExportWorkflow, private_chapter: Chapter) -> None:
+def test_private_only_never_gets_publication_metadata(
+    workflow: ExportWorkflow, private_chapter: Chapter
+) -> None:
     export = workflow.build_private_archive(private_chapter.id)
 
     assert "PRIVATE_ONLY.txt" in export.files
     assert "metadata.json" not in export.files
 
 
-def test_publication_requires_all_three_scopes(workflow: ExportWorkflow, cleared_without_stream: Chapter) -> None:
-    decision = workflow.evaluate_gate(cleared_without_stream.id, ExportKind.PUBLICATION_BUNDLE)
+def test_publication_requires_all_three_scopes(
+    workflow: ExportWorkflow, cleared_without_stream: Chapter
+) -> None:
+    decision = workflow.evaluate_gate(
+        cleared_without_stream.id, ExportKind.PUBLICATION_BUNDLE
+    )
 
     assert not decision.allowed
     assert "PUBLIC_STREAM" in decision.reasons
 
 
-def test_expired_and_wrong_territory_grants_fail_closed(db_session, artifact_store) -> None:
+def test_expired_and_wrong_territory_grants_fail_closed(
+    db_session, artifact_store
+) -> None:
     chapter = _ready_chapter(
         db_session,
         artifact_store,
         rights_status=RightsStatus.CLEARED,
-        grant_scopes=(RightsScope.TRANSLATE_VI, RightsScope.CREATE_AUDIO, RightsScope.PUBLIC_STREAM),
+        grant_scopes=(
+            RightsScope.TRANSLATE_VI,
+            RightsScope.CREATE_AUDIO,
+            RightsScope.PUBLIC_STREAM,
+        ),
         territory="US",
     )
-    workflow = ExportWorkflow(db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW)
+    workflow = ExportWorkflow(
+        db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW
+    )
 
-    wrong_territory = workflow.evaluate_gate(chapter.id, ExportKind.PUBLICATION_BUNDLE, territory="VN")
+    wrong_territory = workflow.evaluate_gate(
+        chapter.id, ExportKind.PUBLICATION_BUNDLE, territory="VN"
+    )
 
     assert not wrong_territory.allowed
     assert "TRANSLATE_VI" in wrong_territory.reasons
@@ -76,16 +107,24 @@ def test_expired_and_wrong_territory_grants_fail_closed(db_session, artifact_sto
     assert "PUBLIC_STREAM" in wrong_territory.reasons
 
 
-def test_premium_publication_requires_monetize_scope(db_session, artifact_store) -> None:
+def test_premium_publication_requires_monetize_scope(
+    db_session, artifact_store
+) -> None:
     from app.modules.exports.schemas import PublicationMetadata
 
     chapter = _ready_chapter(
         db_session,
         artifact_store,
         rights_status=RightsStatus.CLEARED,
-        grant_scopes=(RightsScope.TRANSLATE_VI, RightsScope.CREATE_AUDIO, RightsScope.PUBLIC_STREAM),
+        grant_scopes=(
+            RightsScope.TRANSLATE_VI,
+            RightsScope.CREATE_AUDIO,
+            RightsScope.PUBLIC_STREAM,
+        ),
     )
-    workflow = ExportWorkflow(db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW)
+    workflow = ExportWorkflow(
+        db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW
+    )
 
     decision = workflow.evaluate_gate(
         chapter.id,
@@ -97,14 +136,22 @@ def test_premium_publication_requires_monetize_scope(db_session, artifact_store)
     assert "MONETIZE" in decision.reasons
 
 
-def test_download_publication_requires_download_scope(db_session, artifact_store) -> None:
+def test_download_publication_requires_download_scope(
+    db_session, artifact_store
+) -> None:
     chapter = _ready_chapter(
         db_session,
         artifact_store,
         rights_status=RightsStatus.CLEARED,
-        grant_scopes=(RightsScope.TRANSLATE_VI, RightsScope.CREATE_AUDIO, RightsScope.PUBLIC_STREAM),
+        grant_scopes=(
+            RightsScope.TRANSLATE_VI,
+            RightsScope.CREATE_AUDIO,
+            RightsScope.PUBLIC_STREAM,
+        ),
     )
-    workflow = ExportWorkflow(db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW)
+    workflow = ExportWorkflow(
+        db_session, artifact_root=artifact_store.resolve(), now=lambda: NOW
+    )
 
     decision = workflow.evaluate_gate(
         chapter.id,
@@ -124,7 +171,9 @@ def _ready_chapter(
     grant_scopes: tuple[RightsScope, ...],
     territory: str = "VN",
 ) -> Chapter:
-    suffix = _suffix(rights_status.value, ",".join(scope.value for scope in grant_scopes), territory)
+    suffix = _suffix(
+        rights_status.value, ",".join(scope.value for scope in grant_scopes), territory
+    )
     project = Project(
         id=f"018f0000-0000-7000-8000-{suffix}001",
         title=f"Truyen {suffix}",
@@ -177,6 +226,7 @@ def _ready_chapter(
         ArtifactKind.MASTER_MP3,
         "audio/mpeg",
         duration_ms=61_000,
+        metadata={"translation_run_id": run.id, "voice_plan_id": None},
     )
     chapter.approved_master_artifact_id = f"018f0000-0000-7000-8000-{suffix}005"
     for index, scope in enumerate(grant_scopes, start=6):
@@ -215,6 +265,7 @@ def _write_artifact(
     mime_type: str,
     *,
     duration_ms: int | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> None:
     path = artifact_root / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -232,6 +283,7 @@ def _write_artifact(
             duration_ms=duration_ms,
             input_hash=_sha(relative_path),
             settings_hash=_sha(kind.value),
+            metadata_json=metadata,
         )
     )
 

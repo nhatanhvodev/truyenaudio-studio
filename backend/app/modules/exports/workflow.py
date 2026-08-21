@@ -13,7 +13,15 @@ import zipfile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.contracts import ArtifactKind, ArtifactStatus, ExportKind, ExportStatus, MasterResult, RunStatus, new_id
+from app.contracts import (
+    ArtifactKind,
+    ArtifactStatus,
+    ExportKind,
+    ExportStatus,
+    MasterResult,
+    RunStatus,
+    new_id,
+)
 from app.db.models import (
     Artifact,
     Chapter,
@@ -26,7 +34,12 @@ from app.db.models import (
     VoicePreset,
 )
 from app.modules.compliance.rights import RightsGate
-from app.modules.exports.schemas import EXPORT_SCHEMA_VERSION, ExportBundle, GateDecision, PublicationMetadata
+from app.modules.exports.schemas import (
+    EXPORT_SCHEMA_VERSION,
+    ExportBundle,
+    GateDecision,
+    PublicationMetadata,
+)
 from app.providers.ffmpeg_audio import FFmpegAudioProcessor
 
 
@@ -72,17 +85,23 @@ class ExportWorkflow:
         metadata: PublicationMetadata | None = None,
         include_download: bool = False,
     ) -> GateDecision:
-        return RightsGate(self.session, now=self.now).evaluate(
-            chapter_id,
-            ExportKind(kind),
-            territory=territory,
-            metadata=metadata,
-            include_download=include_download,
-        ).decision
+        return (
+            RightsGate(self.session, now=self.now)
+            .evaluate(
+                chapter_id,
+                ExportKind(kind),
+                territory=territory,
+                metadata=metadata,
+                include_download=include_download,
+            )
+            .decision
+        )
 
     def build_private_archive(self, chapter_id: str) -> ExportBundle:
         context = self._context(chapter_id, require_srt=False)
-        evaluation = RightsGate(self.session, now=self.now).evaluate(chapter_id, ExportKind.PRIVATE_ARCHIVE)
+        evaluation = RightsGate(self.session, now=self.now).evaluate(
+            chapter_id, ExportKind.PRIVATE_ARCHIVE
+        )
         export_id = self.id_factory()
         files = {
             "PRIVATE_ONLY.txt": (
@@ -91,8 +110,12 @@ class ExportWorkflow:
             ).encode("utf-8"),
             "ban-dich.md": self._translation_markdown(context).encode("utf-8"),
             "source.txt": context.revision.normalized_text.encode("utf-8"),
-            "production-report.json": _json_bytes(self._production_report(context, private=True)),
-            "provenance.json": _json_bytes(self._provenance(context, evaluation.payload)),
+            "production-report.json": _json_bytes(
+                self._production_report(context, private=True)
+            ),
+            "provenance.json": _json_bytes(
+                self._provenance(context, evaluation.payload)
+            ),
         }
         return self._write_export(
             context,
@@ -126,10 +149,18 @@ class ExportWorkflow:
             "tap-0001.mp3": master_path.read_bytes(),
             "metadata.json": _json_bytes(self._metadata(context, metadata)),
             "ban-dich.md": self._translation_markdown(context).encode("utf-8"),
-            "transcript.srt": self._artifact_path(context.srt.relative_path).read_bytes(),
-            "production-report.json": _json_bytes(self._production_report(context, private=False)),
-            "provenance.json": _json_bytes(self._provenance(context, evaluation.payload)),
-            "THIRD_PARTY_LICENSES.txt": self._third_party_licenses(context).encode("utf-8"),
+            "transcript.srt": self._artifact_path(
+                context.srt.relative_path
+            ).read_bytes(),
+            "production-report.json": _json_bytes(
+                self._production_report(context, private=False)
+            ),
+            "provenance.json": _json_bytes(
+                self._provenance(context, evaluation.payload)
+            ),
+            "THIRD_PARTY_LICENSES.txt": self._third_party_licenses(context).encode(
+                "utf-8"
+            ),
         }
         return self._write_export(
             context,
@@ -165,7 +196,9 @@ class ExportWorkflow:
         *,
         required_files: tuple[str, ...] | None = None,
     ) -> ExportBundle:
-        if required_files is not None and set(files) != set(required_files) - {"checksums.sha256"}:
+        if required_files is not None and set(files) != set(required_files) - {
+            "checksums.sha256"
+        }:
             raise BundleVerificationError("PUBLICATION_FILE_SET_MISMATCH")
         build_parent = self._artifact_path("exports/builds")
         build_parent.mkdir(parents=True, exist_ok=True)
@@ -181,7 +214,10 @@ class ExportWorkflow:
             _write_file(
                 tmp_path,
                 "checksums.sha256",
-                "".join(f"{digest}  {filename}\n" for filename, digest in sorted(checksums.items())).encode("utf-8"),
+                "".join(
+                    f"{digest}  {filename}\n"
+                    for filename, digest in sorted(checksums.items())
+                ).encode("utf-8"),
             )
             verified = self.verify_bundle(tmp_path)
             if set(verified) != set(files):
@@ -206,7 +242,9 @@ class ExportWorkflow:
             byte_size=zip_path.stat().st_size,
             mime_type="application/zip",
             input_hash=manifest_sha256,
-            settings_hash=_canonical_sha256({"kind": kind.value, "schema": EXPORT_SCHEMA_VERSION}),
+            settings_hash=_canonical_sha256(
+                {"kind": kind.value, "schema": EXPORT_SCHEMA_VERSION}
+            ),
             producer="truyenaudio-studio",
             producer_version=EXPORT_SCHEMA_VERSION,
             metadata_json={"files": sorted((*files.keys(), "checksums.sha256"))},
@@ -258,8 +296,17 @@ class ExportWorkflow:
         if chapter.approved_master_artifact_id is None:
             raise ValueError("APPROVED_MASTER_REQUIRED")
         master = self.session.get(Artifact, chapter.approved_master_artifact_id)
-        if master is None or master.kind != ArtifactKind.MASTER_MP3.value or master.status != ArtifactStatus.READY.value:
+        if (
+            master is None
+            or master.kind != ArtifactKind.MASTER_MP3.value
+            or master.status != ArtifactStatus.READY.value
+        ):
             raise ValueError("APPROVED_MASTER_REQUIRED")
+        master_metadata = master.metadata_json or {}
+        if master_metadata.get("translation_run_id") != run.id:
+            raise ValueError("MASTER_TRANSLATION_STALE")
+        if master_metadata.get("voice_plan_id") != chapter.active_voice_plan_id:
+            raise ValueError("MASTER_VOICE_PLAN_STALE")
         srt = self.session.scalar(
             select(Artifact)
             .where(
@@ -271,7 +318,14 @@ class ExportWorkflow:
         )
         if srt is None and require_srt:
             raise ValueError("SRT_REQUIRED")
-        return _ExportContext(project=project, chapter=chapter, revision=revision, run=run, master=master, srt=srt)
+        return _ExportContext(
+            project=project,
+            chapter=chapter,
+            revision=revision,
+            run=run,
+            master=master,
+            srt=srt,
+        )
 
     def _verify_master(self, artifact: Artifact, path: Path) -> MasterResult | None:
         if not path.is_file() or _sha256_file(path) != artifact.sha256:
@@ -283,11 +337,16 @@ class ExportWorkflow:
         probe = asyncio.run(self.audio_processor.probe(path, artifact.sha256))
         if probe.sha256 != artifact.sha256 or probe.codec.lower() != "mp3":
             raise BundleVerificationError("MASTER_PROBE_MISMATCH")
-        if probe.duration_ms <= 0 or abs(probe.duration_ms - artifact.duration_ms) > 1000:
+        if (
+            probe.duration_ms <= 0
+            or abs(probe.duration_ms - artifact.duration_ms) > 1000
+        ):
             raise BundleVerificationError("MASTER_PROBE_MISMATCH")
         return probe
 
-    def _metadata(self, context: _ExportContext, metadata: PublicationMetadata) -> dict[str, object]:
+    def _metadata(
+        self, context: _ExportContext, metadata: PublicationMetadata
+    ) -> dict[str, object]:
         return {
             "schema_version": EXPORT_SCHEMA_VERSION,
             "episode_title": metadata.episode_title,
@@ -299,12 +358,17 @@ class ExportWorkflow:
         }
 
     def _translation_markdown(self, context: _ExportContext) -> str:
-        lines = [f"# {context.chapter.translated_title or context.chapter.source_title or 'Chapter'}", ""]
+        lines = [
+            f"# {context.chapter.translated_title or context.chapter.source_title or 'Chapter'}",
+            "",
+        ]
         for segment in self._translation_segments(context.run.id):
             lines.extend((segment.target_text, ""))
         return "\n".join(lines).rstrip() + "\n"
 
-    def _production_report(self, context: _ExportContext, *, private: bool) -> dict[str, object]:
+    def _production_report(
+        self, context: _ExportContext, *, private: bool
+    ) -> dict[str, object]:
         return {
             "schema_version": EXPORT_SCHEMA_VERSION,
             "private_archive": private,
@@ -318,7 +382,9 @@ class ExportWorkflow:
             "generated_at": self.now().astimezone(UTC).isoformat(),
         }
 
-    def _provenance(self, context: _ExportContext, rights_evaluation: dict[str, object]) -> dict[str, object]:
+    def _provenance(
+        self, context: _ExportContext, rights_evaluation: dict[str, object]
+    ) -> dict[str, object]:
         return {
             "schema_version": EXPORT_SCHEMA_VERSION,
             "source": {
@@ -335,8 +401,16 @@ class ExportWorkflow:
         }
 
     def _third_party_licenses(self, context: _ExportContext) -> str:
-        plan = self.session.get(VoicePlan, context.chapter.active_voice_plan_id) if context.chapter.active_voice_plan_id else None
-        preset = self.session.get(VoicePreset, plan.narrator_preset_id) if plan is not None else None
+        plan = (
+            self.session.get(VoicePlan, context.chapter.active_voice_plan_id)
+            if context.chapter.active_voice_plan_id
+            else None
+        )
+        preset = (
+            self.session.get(VoicePreset, plan.narrator_preset_id)
+            if plan is not None
+            else None
+        )
         if preset is None or preset.license_snapshot_artifact_id is None:
             return "No third-party license snapshot declared for this export.\n"
         artifact = self.session.get(Artifact, preset.license_snapshot_artifact_id)
@@ -381,7 +455,9 @@ class _ExportContext:
 
 
 def _json_bytes(payload: object) -> bytes:
-    return (json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+    return (
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    ).encode("utf-8")
 
 
 def _write_file(root: Path, filename: str, payload: bytes) -> None:
@@ -429,5 +505,11 @@ def _sha256_file(path: Path) -> str:
 
 def _canonical_sha256(payload: object) -> str:
     return hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8")
     ).hexdigest()

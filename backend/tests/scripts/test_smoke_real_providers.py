@@ -39,7 +39,9 @@ def test_qwen_smoke_refuses_multi_segment_before_run(tmp_path: Path) -> None:
     assert list(tmp_path.glob("*.json")) == []
 
 
-def test_qwen_smoke_after_run_requires_endpoint_and_writes_fail_report(tmp_path: Path) -> None:
+def test_qwen_smoke_after_run_requires_local_db_context_before_endpoint(
+    tmp_path: Path,
+) -> None:
     result = subprocess.run(
         [
             "powershell",
@@ -68,17 +70,19 @@ def test_qwen_smoke_after_run_requires_endpoint_and_writes_fail_report(tmp_path:
 
     reports = list(tmp_path.glob("real-provider-smoke-*.json"))
     assert result.returncode == 1
-    assert "FAIL: QWEN_ENDPOINT_REQUIRED" in result.stdout
+    assert "FAIL: QWEN_DB_CONTEXT_REQUIRED" in result.stdout
     assert len(reports) == 1
     report = json.loads(reports[0].read_text(encoding="utf-8-sig"))
     assert report["status"] == "FAIL"
-    assert report["error_code"] == "QWEN_ENDPOINT_REQUIRED"
+    assert report["error_code"] == "QWEN_DB_CONTEXT_REQUIRED"
     assert report["provider"] == "qwen"
     assert report["segment_count"] == 1
     assert report["full_text_redacted"] is True
 
 
-def test_local_smoke_after_run_writes_controlled_fail_when_executable_missing(tmp_path: Path) -> None:
+def test_local_smoke_after_run_writes_controlled_fail_when_executable_missing(
+    tmp_path: Path,
+) -> None:
     missing_executable = tmp_path / "missing-tts.exe"
     result = subprocess.run(
         [

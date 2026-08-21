@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
@@ -57,6 +57,44 @@ describe('App', () => {
 
     expect(await screen.findByText(/Master abc123abc123/)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Phê duyệt audio' })).toBeVisible();
+  });
+
+  it('builds a private archive from the export screen and displays checksum result', async () => {
+    window.history.replaceState(null, '', '/chapters/chapter-1/export');
+    vi.stubGlobal('EventSource', undefined);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/chapters/chapter-1/exports/gate') {
+        return jsonResponse({
+          allowed: false,
+          reasons: ['PUBLIC_STREAM'],
+          rightsEvaluationHash: 'abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd',
+        });
+      }
+      if (url === '/api/security/bootstrap') {
+        return jsonResponse({ csrfToken: 'token-1' });
+      }
+      if (url === '/api/chapters/chapter-1/exports/private' && init?.method === 'POST') {
+        return jsonResponse({
+          id: 'export-private-1',
+          files: ['PRIVATE_ONLY.txt', 'checksums.sha256'],
+          manifestSha256: 'def456def456def456def456def456def456def456def456def456def456abcd',
+          directoryPath: 'D:/tmp/private',
+        });
+      }
+      if (url === '/api/jobs/snapshot') {
+        return jsonResponse({ events: [] });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { default: App } = await import('./App');
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Tao archive rieng tu' }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/chapters/chapter-1/exports/private', expect.anything()));
+    expect(await screen.findByText('Đã tạo archive riêng tư')).toBeVisible();
+    expect(screen.getByText(/def456def456/)).toBeVisible();
   });
 });
 

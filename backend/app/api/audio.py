@@ -17,9 +17,10 @@ from app.modules.speech.workflow import (
     AudioApprovalConflict,
     SpeechWorkflow,
     TranslationApprovalRequired,
+    TtsUnavailable,
     VoicePlanRequired,
 )
-from app.providers.fake import FakeMp3AudioProcessor
+from app.providers.fake import FakeMp3AudioProcessor, FakeTts
 from app.settings.config import Settings
 
 
@@ -44,12 +45,13 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
         engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
         factory = session_factory(engine)
         with factory() as session:
+            fake_audio = os.getenv("STUDIO_FAKE_AUDIO") == "1"
             yield SpeechWorkflow(
                 session,
-                audio_processor=FakeMp3AudioProcessor()
-                if os.getenv("STUDIO_FAKE_AUDIO") == "1"
-                else None,
+                tts=FakeTts() if fake_audio else None,
+                audio_processor=FakeMp3AudioProcessor() if fake_audio else None,
                 artifact_root=active_settings.data_root / "artifacts",
+                allow_fake_tts=fake_audio,
             )
         engine.dispose()
 
@@ -60,7 +62,9 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
         workflow: SpeechWorkflow = Depends(workflow_dependency),
     ) -> dict[str, object]:
         try:
-            return _camel_payload(workflow.configure_single(chapter_id, request.preset_id))
+            return _camel_payload(
+                workflow.configure_single(chapter_id, request.preset_id)
+            )
         except TranslationApprovalRequired as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
@@ -76,6 +80,8 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
         except VoicePlanRequired as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TranslationApprovalRequired as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TtsUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -113,7 +119,9 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
                 artifact = None
                 approved = False
                 if chapter.approved_master_artifact_id:
-                    artifact = session.get(Artifact, chapter.approved_master_artifact_id)
+                    artifact = session.get(
+                        Artifact, chapter.approved_master_artifact_id
+                    )
                     approved = artifact is not None
                 if artifact is None:
                     artifact = (

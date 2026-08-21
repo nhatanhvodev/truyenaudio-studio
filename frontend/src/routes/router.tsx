@@ -6,6 +6,7 @@ import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { apiJson } from '../shared/api';
 
 const fakePresetId = '018f0000-0000-7000-8000-000000000001';
+const fakeAudioEnabled = ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_STUDIO_FAKE_AUDIO) === '1';
 
 type Chapter = {
   id: string;
@@ -54,6 +55,14 @@ type ExportBundle = {
   files: string[];
   manifestSha256: string;
   directoryPath: string;
+};
+
+type VoiceCatalogPayload = {
+  voices: {
+    id: string;
+    available: boolean;
+    active: boolean;
+  }[];
 };
 
 export const router = createBrowserRouter([
@@ -228,6 +237,31 @@ function VoiceScreen() {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [presetId, setPresetId] = useState(fakeAudioEnabled ? fakePresetId : '');
+
+  useEffect(() => {
+    if (fakeAudioEnabled) {
+      return;
+    }
+    let cancelled = false;
+    apiJson<VoiceCatalogPayload>('/api/voices?locale=vi-VN')
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        const selected = payload.voices.find((voice) => voice.active && voice.available)
+          ?? payload.voices.find((voice) => voice.available);
+        setPresetId(selected?.id ?? '');
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setError(reason instanceof Error ? reason.message : 'VOICE_CATALOG_FAILED');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function renderAudio() {
     if (!chapterId) {
@@ -238,7 +272,7 @@ function VoiceScreen() {
     try {
       await apiJson(`/api/chapters/${chapterId}/audio/configure-single`, {
         method: 'POST',
-        body: { presetId: fakePresetId },
+        body: { presetId },
       });
       const rendered = await apiJson<RenderedAudio>(`/api/chapters/${chapterId}/audio/render`, {
         method: 'POST',
@@ -255,8 +289,10 @@ function VoiceScreen() {
   return (
     <section style={styles.panel} aria-label="Chọn giọng">
       <h1 style={styles.title}>Giọng đọc</h1>
-      <p style={styles.quote}>Fake offline narrator, 44.1 kHz, single narrator only.</p>
-      <button type="button" onClick={() => void renderAudio()} disabled={busy} style={styles.primaryButton}>
+      <p style={styles.quote}>
+        {presetId ? `Preset ${presetId}` : 'Chưa có giọng local đã verify để render.'}
+      </p>
+      <button type="button" onClick={() => void renderAudio()} disabled={busy || !presetId} style={styles.primaryButton}>
         Render một giọng
       </button>
       {error ? <p role="alert" style={styles.error}>{error}</p> : null}
@@ -371,13 +407,37 @@ function ExportScreen() {
     }
   }
 
+  async function buildPrivate() {
+    if (!chapterId) {
+      return;
+    }
+    setError('');
+    try {
+      const payload = await apiJson<ExportBundle>(`/api/chapters/${chapterId}/exports/private`, {
+        method: 'POST',
+        body: {},
+      });
+      setBundle(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'PRIVATE_EXPORT_FAILED');
+    }
+  }
+
   return (
     <section style={styles.panel} aria-label="Xuất bản">
       <h1 style={styles.title}>Export</h1>
-      {gate ? <ExportGate decision={gate} onBuildPublication={() => void buildPublication()} /> : <p>Đang kiểm tra quyền</p>}
+      {gate ? (
+        <ExportGate
+          decision={gate}
+          onBuildPrivate={() => void buildPrivate()}
+          onBuildPublication={() => void buildPublication()}
+        />
+      ) : (
+        <p>Đang kiểm tra quyền</p>
+      )}
       {bundle ? (
         <section style={styles.result}>
-          <strong>Đã verify checksum</strong>
+          <strong>{bundle.files.includes('PRIVATE_ONLY.txt') ? 'Đã tạo archive riêng tư' : 'Đã verify checksum'}</strong>
           <span>{bundle.manifestSha256.slice(0, 12)}</span>
           <span>{bundle.files.join(', ')}</span>
         </section>

@@ -47,8 +47,9 @@ from app.modules.speech.narration import (
     estimate_duration_ms,
     narration_chunks,
 )
-from app.providers.fake import FakeTts
 from app.providers.ffmpeg_audio import FFmpegAudioProcessor
+from app.providers.piper import PiperTtsAdapter
+from app.providers.vieneu import VieNeuTtsAdapter
 
 
 ZERO_HASH = "0" * 64
@@ -69,6 +70,10 @@ class AudioApprovalBlocked(Exception):
 
 class AudioApprovalConflict(Exception):
     """Raised when the requested master artifact is stale or invalid."""
+
+
+class TtsUnavailable(ValueError):
+    """Raised when no verified local TTS adapter is available for publication render."""
 
 
 @dataclass(frozen=True)
@@ -130,12 +135,14 @@ class SpeechWorkflow:
         audio_processor: AudioProcessor | None = None,
         artifact_root: Path | None = None,
         id_factory: Callable[[], str] = new_id,
+        allow_fake_tts: bool = False,
     ) -> None:
         self.session = session
-        self.tts = tts or FakeTts()
+        self.tts = tts
         self.audio_processor = audio_processor or FFmpegAudioProcessor()
         self.artifact_root = Path(artifact_root or Path("data") / "artifacts")
         self.id_factory = id_factory
+        self.allow_fake_tts = allow_fake_tts
 
     def preview(self, *args: object, **kwargs: object) -> object:
         raise NotImplementedError("voice preview is owned by VoiceCatalog")
@@ -225,6 +232,11 @@ class SpeechWorkflow:
             raise AudioApprovalConflict("MASTER_ARTIFACT_NOT_READY")
         if artifact.sha256 != expected_sha256:
             raise AudioApprovalConflict("MASTER_HASH_MISMATCH")
+        metadata = artifact.metadata_json or {}
+        if metadata.get("translation_run_id") != chapter.approved_translation_run_id:
+            raise AudioApprovalConflict("MASTER_TRANSLATION_STALE")
+        if metadata.get("voice_plan_id") != chapter.active_voice_plan_id:
+            raise AudioApprovalConflict("MASTER_VOICE_PLAN_STALE")
         master_path = self._artifact_path(artifact.relative_path)
         probe = asyncio.run(self.audio_processor.probe(master_path, expected_sha256))
         if probe.sha256 != artifact.sha256:
@@ -281,7 +293,9 @@ class SpeechWorkflow:
         if plan is None:
             raise VoicePlanRequired("VOICE_PLAN_REQUIRED")
         run = self._approved_run(chapter)
+        self._require_current_voice_plan(plan, run)
         preset = self._voice_preset(plan.narrator_preset_id)
+        tts = self._tts_for_preset(preset)
         segments = self._speech_segments(plan.id)
         if not segments:
             raise VoicePlanRequired("SPEECH_SEGMENTS_REQUIRED")
@@ -311,7 +325,9 @@ class SpeechWorkflow:
                 reused_segment_ids.append(segment.id)
                 artifact_ids.append(cached.id)
                 audio_paths.append(self._artifact_path(cached.relative_path))
-                durations.append(cached.duration_ms or segment.estimated_duration_ms or 0)
+                durations.append(
+                    cached.duration_ms or segment.estimated_duration_ms or 0
+                )
                 continue
 
             self._supersede_ready_artifacts(
@@ -322,7 +338,11 @@ class SpeechWorkflow:
             artifact_id = self.id_factory()
             relative_path = f"audio/{chapter.id}/segments/{artifact_id}.wav"
             output_path = self._artifact_path(relative_path)
-            result = asyncio.run(self.tts.synthesize(self._synthesis_request(segment, preset, cache_key), output_path))
+            result = asyncio.run(
+                tts.synthesize(
+                    self._synthesis_request(segment, preset, cache_key), output_path
+                )
+            )
             actual_sha256 = _sha256_file(output_path)
             if actual_sha256 != result.sha256:
                 output_path.unlink(missing_ok=True)
@@ -386,7 +406,9 @@ class SpeechWorkflow:
                 "id3v2": "2.3",
             }
         )
-        self._supersede_ready_artifacts(ArtifactKind.MASTER_MP3, input_hash, settings_hash)
+        self._supersede_ready_artifacts(
+            ArtifactKind.MASTER_MP3, input_hash, settings_hash
+        )
         artifact_id = self.id_factory()
         relative_path = f"audio/{chapter.id}/masters/{artifact_id}.mp3"
         output_path = self._artifact_path(relative_path)
@@ -395,9 +417,13 @@ class SpeechWorkflow:
                 MasterRequest(
                     operation_id=f"master:{chapter.id}:{artifact_id}",
                     ordered_segment_paths=audio_paths,
-                    pause_after_ms=tuple(segment.pause_after_ms for segment in segments),
+                    pause_after_ms=tuple(
+                        segment.pause_after_ms for segment in segments
+                    ),
                     metadata={
-                        "title": chapter.translated_title or chapter.source_title or "Chapter",
+                        "title": chapter.translated_title
+                        or chapter.source_title
+                        or "Chapter",
                         "album": chapter.project_id,
                     },
                     sample_rate=44_100,
@@ -432,6 +458,9 @@ class SpeechWorkflow:
                 "bitrate_kbps": result.bitrate_kbps,
                 "integrated_lufs": result.integrated_lufs,
                 "true_peak_dbtp": result.true_peak_dbtp,
+                "translation_run_id": run.id,
+                "voice_plan_id": plan.id,
+                "voice_plan_sha256": plan.plan_sha256,
             },
         )
         self._replace_audio_qa(chapter.id, result, premaster_issues)
@@ -451,13 +480,17 @@ class SpeechWorkflow:
                 "version": "srt-v1",
             }
         )
-        settings_hash = _canonical_sha256({"format": "srt", "max_end_ms": master.duration_ms})
+        settings_hash = _canonical_sha256(
+            {"format": "srt", "max_end_ms": master.duration_ms}
+        )
         self._supersede_ready_artifacts(ArtifactKind.SRT, input_hash, settings_hash)
         artifact_id = self.id_factory()
         relative_path = f"audio/{chapter.id}/subtitles/{artifact_id}.srt"
         output_path = self._artifact_path(relative_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(_srt_text(segments, durations, master.duration_ms), encoding="utf-8")
+        output_path.write_text(
+            _srt_text(segments, durations, master.duration_ms), encoding="utf-8"
+        )
         return self._add_artifact(
             artifact_id=artifact_id,
             chapter_id=chapter.id,
@@ -627,7 +660,7 @@ class SpeechWorkflow:
         self.session.flush()
 
     def _synthesis_cache_key(self, segment: SpeechSegment, preset: VoicePreset) -> str:
-        capabilities = self.tts.capabilities()
+        capabilities = self._tts_for_preset(preset).capabilities()
         return _canonical_sha256(
             {
                 "narration": segment.narration_sha256,
@@ -723,6 +756,65 @@ class SpeechWorkflow:
             raise TranslationApprovalRequired("TRANSLATION_APPROVAL_REQUIRED")
         return run
 
+    def _require_current_voice_plan(self, plan: VoicePlan, run: TranslationRun) -> None:
+        segment_run_ids = {
+            segment.translation_run_id for segment in self._speech_segments(plan.id)
+        }
+        if segment_run_ids != {run.id}:
+            raise VoicePlanRequired("VOICE_PLAN_STALE_TRANSLATION")
+
+    def _tts_for_preset(self, preset: VoicePreset) -> TtsAdapter:
+        if self.tts is not None:
+            self._require_verified_voice_preset(preset)
+            return self.tts
+        self._require_verified_voice_preset(preset)
+        settings = preset.settings_json or {}
+        provider = str(settings.get("provider") or "").lower()
+        if provider == "piper":
+            return PiperTtsAdapter(
+                binary_path=self._settings_path(settings, "binary_path"),
+                model_path=self._settings_path(settings, "model_path"),
+                config_path=self._settings_path(settings, "config_path"),
+                model_sha256=preset.model_snapshot_hash or "",
+            )
+        if provider == "vieneu":
+            return VieNeuTtsAdapter(
+                binary_path=self._settings_path(settings, "binary_path"),
+                model_path=self._settings_path(settings, "model_path"),
+                model_sha256=preset.model_snapshot_hash or "",
+            )
+        raise TtsUnavailable("LOCAL_TTS_ADAPTER_REQUIRED")
+
+    def _require_verified_voice_preset(self, preset: VoicePreset) -> None:
+        if self.allow_fake_tts:
+            return
+        if (
+            not preset.model_snapshot_hash
+            or preset.license_snapshot_artifact_id is None
+        ):
+            raise TtsUnavailable("VOICE_MODEL_LICENSE_UNVERIFIED")
+        license_artifact = self.session.get(
+            Artifact, preset.license_snapshot_artifact_id
+        )
+        if (
+            license_artifact is None
+            or license_artifact.status != ArtifactStatus.READY.value
+        ):
+            raise TtsUnavailable("VOICE_MODEL_LICENSE_UNVERIFIED")
+        if (preset.settings_json or {}).get("engine") == "fake" or (
+            preset.provider_voice_id or ""
+        ).startswith("fake"):
+            raise TtsUnavailable("FAKE_TTS_NOT_ALLOWED")
+
+    def _settings_path(self, settings: dict[str, object], key: str) -> Path:
+        value = settings.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise TtsUnavailable("LOCAL_TTS_ADAPTER_REQUIRED")
+        path = Path(value)
+        if not path.is_absolute():
+            path = self.artifact_root.parent / path
+        return path
+
     def _voice_preset(self, preset_id: str) -> VoicePreset:
         preset = self.session.get(VoicePreset, preset_id)
         if preset is None:
@@ -731,7 +823,9 @@ class SpeechWorkflow:
 
     def _next_plan_revision(self, chapter_id: str) -> int:
         current = self.session.scalar(
-            select(func.max(VoicePlan.revision_no)).where(VoicePlan.chapter_id == chapter_id)
+            select(func.max(VoicePlan.revision_no)).where(
+                VoicePlan.chapter_id == chapter_id
+            )
         )
         return int(current or 0) + 1
 
@@ -784,7 +878,9 @@ def _srt_text(
 ) -> str:
     lines: list[str] = []
     current_ms = 0
-    for index, (segment, duration_ms) in enumerate(zip(segments, durations, strict=True), start=1):
+    for index, (segment, duration_ms) in enumerate(
+        zip(segments, durations, strict=True), start=1
+    ):
         start_ms = current_ms
         end_ms = min(master_duration_ms, current_ms + duration_ms)
         lines.extend(

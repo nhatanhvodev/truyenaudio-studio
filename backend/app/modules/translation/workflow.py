@@ -38,7 +38,6 @@ from app.db.models import (
 from app.modules.projects.state_machine import next_state
 from app.modules.translation.glossary import active_glossary
 from app.modules.translation.qa import QaIssueDraft, run_deterministic_qa
-from app.providers.fake import FakeTranslator
 
 
 PROMPT_VERSION = "translation-v1"
@@ -122,7 +121,13 @@ class TranslationWorkflow:
             "source_characters": sum(len(segment.source_text) for segment in segments),
         }
 
-    def enqueue_translation(self, chapter_id: str) -> TranslationRunView:
+    def enqueue_translation(
+        self,
+        chapter_id: str,
+        *,
+        cloud_consent_id: str | None = None,
+        budget_authorization_id: str | None = None,
+    ) -> TranslationRunView:
         chapter, revision = self._chapter_and_revision(chapter_id)
         project = self._project(chapter.project_id)
         provider = self._provider(project)
@@ -173,6 +178,8 @@ class TranslationWorkflow:
                     cache_key,
                     locked_terms,
                     memory,
+                    cloud_consent_id=cloud_consent_id,
+                    budget_authorization_id=budget_authorization_id,
                 )
                 target_text = result.target_text
                 provider_request_id = _provider_request_id(result)
@@ -259,8 +266,7 @@ class TranslationWorkflow:
             raise ValueError("SOURCE_SEGMENT_NOT_IN_RUN")
 
         previous.status = RunStatus.SUPERSEDED.value
-        chapter.approved_translation_run_id = None
-        chapter.translation_approved_at = None
+        self._invalidate_downstream(chapter)
         chapter.state = ChapterState.TRANSLATION_REVIEW.value
         self.session.flush()
         self._replace_qa_issues(new_run, self._locked_terms(project.id))
@@ -297,6 +303,8 @@ class TranslationWorkflow:
             raise ApprovalBlocked("TRANSLATION_QA_BLOCKERS_OPEN")
 
         before_hash = self._approved_translation_hash(chapter)
+        if before_hash and chapter.approved_translation_run_id != run.id:
+            self._invalidate_downstream(chapter)
         run.status = RunStatus.APPROVED.value
         chapter.approved_translation_run_id = run.id
         chapter.translation_approved_at = utc_now()
@@ -378,6 +386,8 @@ class TranslationWorkflow:
         cache_key: str,
         locked_terms: tuple[tuple[str, str], ...],
         story_memory: tuple[str, ...],
+        cloud_consent_id: str | None,
+        budget_authorization_id: str | None,
     ) -> TranslationResult:
         request = TranslationRequest(
             context=OperationContext(
@@ -385,8 +395,8 @@ class TranslationWorkflow:
                 cache_key=cache_key,
                 timeout_seconds=60,
                 estimated_units=len(source_segment.source_text),
-                budget_authorization_id=None,
-                cloud_consent_id=None,
+                budget_authorization_id=budget_authorization_id,
+                cloud_consent_id=cloud_consent_id,
             ),
             source_segment_id=source_segment.id,
             source_text=source_segment.source_text,
@@ -398,6 +408,14 @@ class TranslationWorkflow:
             story_memory=story_memory,
         )
         return asyncio.run(provider.adapter.translate(request))
+
+    def _invalidate_downstream(self, chapter: Chapter) -> None:
+        chapter.approved_translation_run_id = None
+        chapter.translation_approved_at = None
+        chapter.active_voice_plan_id = None
+        chapter.approved_master_artifact_id = None
+        chapter.audio_approved_at = None
+        chapter.last_export_id = None
 
     def _replace_qa_issues(
         self,
@@ -514,7 +532,9 @@ class TranslationWorkflow:
         )
 
     def _provider(self, project: Project) -> _ProviderSelection:
-        adapter = self.translator or FakeTranslator()
+        if self.translator is None:
+            raise ValueError("TRANSLATOR_ADAPTER_REQUIRED")
+        adapter = self.translator
         capabilities = adapter.capabilities()
         profile = self._provider_profile(project)
         provider = str(

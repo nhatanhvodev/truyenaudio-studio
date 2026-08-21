@@ -20,6 +20,7 @@ New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 
 Push-Location (Join-Path $repoRoot 'frontend')
 try {
+    $env:VITE_STUDIO_FAKE_AUDIO = '1'
     npm run build
     if ($LASTEXITCODE -ne 0) {
         throw "frontend build failed with exit code $LASTEXITCODE"

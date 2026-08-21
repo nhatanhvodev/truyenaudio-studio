@@ -11,7 +11,10 @@ param(
     [string]$ModelPath,
     [string]$OutputDir,
     [string]$ReportRoot,
-    [string]$QwenEndpoint
+    [string]$QwenEndpoint,
+    [string]$DatabasePath,
+    [string]$ProjectId,
+    [string]$ProviderProfileId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -56,6 +59,130 @@ function Write-Report([hashtable]$Payload) {
     $path = Join-Path $targetReportRoot "real-provider-smoke-$stamp.json"
     $Payload | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $path -Encoding UTF8
     Write-Host "Report: $path"
+}
+
+function Invoke-QwenDbValidation([hashtable]$Report) {
+    if (-not $DatabasePath -or -not $ProjectId -or -not $ProviderProfileId) {
+        Fail-Smoke $Report 'QWEN_DB_CONTEXT_REQUIRED'
+    }
+    if (-not (Test-Path -LiteralPath $DatabasePath -PathType Leaf)) {
+        Fail-Smoke $Report 'QWEN_DATABASE_MISSING'
+    }
+    $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+    $python = Join-Path $repoRoot '.venv\Scripts\python.exe'
+    if (-not (Test-Path -LiteralPath $python)) {
+        $python = 'py'
+    }
+    $validator = @'
+import json
+import sqlite3
+import sys
+from datetime import datetime, timezone
+
+db_path, project_id, profile_id, authorization_id, consent_id, requested_endpoint = sys.argv[1:7]
+now = datetime.now(timezone.utc).isoformat()
+
+def fail(code):
+    print(json.dumps({"ok": False, "code": code}))
+    raise SystemExit(0)
+
+try:
+    connection = sqlite3.connect(db_path)
+    connection.row_factory = sqlite3.Row
+except sqlite3.Error:
+    fail("QWEN_DATABASE_OPEN_FAILED")
+
+profile = connection.execute(
+    """
+    SELECT id, adapter_name, model, region, secret_ref, config_json, enabled
+    FROM provider_profiles
+    WHERE id = ?
+    """,
+    (profile_id,),
+).fetchone()
+if profile is None or not profile["enabled"] or profile["adapter_name"] != "qwen":
+    fail("QWEN_PROVIDER_PROFILE_INVALID")
+if not profile["model"] or not profile["region"] or not profile["secret_ref"]:
+    fail("QWEN_PROVIDER_PROFILE_INCOMPLETE")
+config = json.loads(profile["config_json"] or "{}")
+endpoint = config.get("endpoint")
+if not endpoint:
+    fail("QWEN_PROFILE_ENDPOINT_REQUIRED")
+if requested_endpoint and requested_endpoint != endpoint:
+    fail("QWEN_ENDPOINT_MISMATCH")
+
+project = connection.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+if project is None:
+    fail("QWEN_PROJECT_NOT_FOUND")
+
+consent = connection.execute(
+    """
+    SELECT policy_snapshot_artifact_id, status
+    FROM cloud_processing_consents
+    WHERE id = ? AND project_id = ? AND provider_profile_id = ?
+    """,
+    (consent_id, project_id, profile_id),
+).fetchone()
+if consent is None or consent["status"] != "GRANTED":
+    fail("QWEN_CONSENT_NOT_GRANTED")
+if not consent["policy_snapshot_artifact_id"]:
+    fail("QWEN_POLICY_SNAPSHOT_REQUIRED")
+policy = connection.execute(
+    "SELECT status FROM artifacts WHERE id = ?",
+    (consent["policy_snapshot_artifact_id"],),
+).fetchone()
+if policy is None or policy["status"] != "READY":
+    fail("QWEN_POLICY_SNAPSHOT_NOT_READY")
+
+authorization = connection.execute(
+    """
+    SELECT status, expires_at
+    FROM budget_authorizations
+    WHERE id = ?
+    """,
+    (authorization_id,),
+).fetchone()
+if authorization is None or authorization["status"] not in ("HELD", "COMMITTED"):
+    fail("QWEN_AUTHORIZATION_INVALID")
+if authorization["expires_at"] <= now:
+    fail("QWEN_AUTHORIZATION_EXPIRED")
+
+for unit in ("INPUT_TOKEN", "OUTPUT_TOKEN"):
+    row = connection.execute(
+        """
+        SELECT id
+        FROM rate_cards
+        WHERE provider = 'qwen'
+          AND model = ?
+          AND region = ?
+          AND unit = ?
+          AND verified_at IS NOT NULL
+          AND effective_from <= ?
+          AND (effective_to IS NULL OR effective_to > ?)
+        """,
+        (profile["model"], profile["region"], unit, now, now),
+    ).fetchone()
+    if row is None:
+        fail("QWEN_RATE_CARD_MISSING")
+
+print(json.dumps({
+    "ok": True,
+    "endpoint": endpoint,
+    "model": profile["model"],
+    "region": profile["region"],
+}))
+'@
+    $validationJson = $validator | & $python - $DatabasePath $ProjectId $ProviderProfileId $AuthorizationId $CloudConsentId $QwenEndpoint
+    if ($LASTEXITCODE -ne 0 -or -not $validationJson) {
+        Fail-Smoke $Report 'QWEN_DB_VALIDATION_FAILED'
+    }
+    $validation = $validationJson | ConvertFrom-Json
+    if (-not $validation.ok) {
+        Fail-Smoke $Report ([string]$validation.code)
+    }
+    $script:QwenEndpoint = [string]$validation.endpoint
+    $Report.model = [string]$validation.model
+    $Report.region = [string]$validation.region
 }
 
 function Fail-Smoke([hashtable]$Report, [string]$Code) {
@@ -138,6 +265,7 @@ function Test-WavFile([string]$Path, [int]$MinimumSeconds, [int]$MaximumSeconds)
 }
 
 function Invoke-QwenSmoke([hashtable]$Report) {
+    Invoke-QwenDbValidation $Report
     if (-not $QwenEndpoint) {
         Fail-Smoke $Report 'QWEN_ENDPOINT_REQUIRED'
     }

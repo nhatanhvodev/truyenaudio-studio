@@ -101,7 +101,10 @@ def test_publication_bundle_v1_has_exact_files_and_verified_metadata(
     assert "full_prompt" not in report_text
     assert "secret" not in report_text
     assert "evidence file contents" not in report_text
-    assert provenance["source"] == {"reference": "https://example.test/source", "type": "LICENSED_PARTNER"}
+    assert provenance["source"] == {
+        "reference": "https://example.test/source",
+        "type": "LICENSED_PARTNER",
+    }
     assert provenance["rights"]["allowed"] is True
     assert provenance["evidence"] == [
         {"display_name": "contract.txt", "sha256": "1" * 64},
@@ -109,7 +112,9 @@ def test_publication_bundle_v1_has_exact_files_and_verified_metadata(
     assert artifact_store.resolve("exports/builds").is_dir()
 
 
-def test_verify_bundle_fails_after_mp3_tamper(workflow: ExportWorkflow, cleared_chapter: Chapter) -> None:
+def test_verify_bundle_fails_after_mp3_tamper(
+    workflow: ExportWorkflow, cleared_chapter: Chapter
+) -> None:
     export = workflow.build_publication_bundle(
         cleared_chapter.id,
         PublicationMetadata("Tap mot", 1, False),
@@ -133,11 +138,44 @@ def test_publication_bundle_fails_closed_before_writing_when_rights_missing(
     )
 
     with pytest.raises(PermissionError, match="RIGHTS_NOT_CLEARED"):
-        workflow.build_publication_bundle(chapter.id, PublicationMetadata("Tap mot", 1, False))
+        workflow.build_publication_bundle(
+            chapter.id, PublicationMetadata("Tap mot", 1, False)
+        )
+
+
+def test_publication_export_rejects_audio_from_previous_translation_run(
+    workflow: ExportWorkflow,
+    db_session,
+    cleared_chapter: Chapter,
+) -> None:
+    old_run_id = cleared_chapter.approved_translation_run_id
+    next_run = TranslationRun(
+        id="018f0000-0000-7000-8000-000000009999",
+        chapter_id=cleared_chapter.id,
+        source_revision_id=cleared_chapter.active_source_revision_id,
+        prompt_version="translation-v1",
+        status=RunStatus.APPROVED.value,
+        translation_text_sha256="f" * 64,
+        estimated_cost_vnd=0,
+        actual_cost_vnd=0,
+    )
+    db_session.add(next_run)
+    db_session.flush()
+    cleared_chapter.approved_translation_run_id = next_run.id
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="MASTER_TRANSLATION_STALE"):
+        workflow.build_publication_bundle(
+            cleared_chapter.id,
+            PublicationMetadata("Tap mot", 1, False),
+        )
+    assert old_run_id != cleared_chapter.approved_translation_run_id
 
 
 class DeterministicProbe:
-    async def probe(self, path: Path, expected_sha256: str | None = None) -> MasterResult:
+    async def probe(
+        self, path: Path, expected_sha256: str | None = None
+    ) -> MasterResult:
         sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
         if expected_sha256 is not None and sha256 != expected_sha256:
             raise ValueError("MASTER_CHECKSUM_MISMATCH")
@@ -298,7 +336,14 @@ def _ready_publication_chapter(
         ArtifactKind.MASTER_MP3,
         "audio/mpeg",
         duration_ms=61_000,
-        metadata={"codec": "mp3", "sample_rate": 44100, "channels": 1, "bitrate_kbps": 128},
+        metadata={
+            "codec": "mp3",
+            "sample_rate": 44100,
+            "channels": 1,
+            "bitrate_kbps": 128,
+            "translation_run_id": run.id,
+            "voice_plan_id": plan.id,
+        },
     )
     _write_artifact(
         db_session,
