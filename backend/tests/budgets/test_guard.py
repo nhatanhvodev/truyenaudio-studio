@@ -90,6 +90,31 @@ def test_qa_reserve_counts_committed_billing_unknown_budget(db_session, guard: B
     assert exc.value.reason == "BUDGET_QA_REPAIR_RESERVE_EXCEEDED"
 
 
+def test_qa_reserve_counts_expired_committed_billing_unknown_budget(db_session, guard: BudgetGuard) -> None:
+    authorization = guard.authorize(guard.quote("qa-expired-unknown", 43_000, "QA_REPAIR"))
+    stored = db_session.get(BudgetAuthorization, authorization.id)
+    stored.status = "COMMITTED"
+    stored.expires_at = NOW - timedelta(minutes=1)
+    db_session.add(
+        UsageLedger(
+            id="018f0000-0000-7000-8000-00000000b002",
+            provider="qwen",
+            model="qwen-mt-flash",
+            region="frankfurt",
+            operation_id="qa-expired-unknown",
+            unit=UsageUnit.INPUT_TOKEN.value,
+            measured_units=1,
+            billing_confidence="UNKNOWN",
+        )
+    )
+    db_session.commit()
+
+    with pytest.raises(BudgetBlocked) as exc:
+        guard.authorize(guard.quote("qa-after-expired-unknown", 500, "QA_REPAIR"))
+
+    assert exc.value.reason == "BUDGET_QA_REPAIR_RESERVE_EXCEEDED"
+
+
 def test_warning_threshold_marks_quote_without_blocking(db_session, guard: BudgetGuard) -> None:
     _seed_confirmed_usage(db_session, 349_000)
 

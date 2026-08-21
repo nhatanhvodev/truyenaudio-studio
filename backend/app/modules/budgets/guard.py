@@ -233,35 +233,44 @@ class BudgetGuard:
 
     def _committed_vnd(self) -> int:
         ledger_rows = self.session.scalars(select(UsageLedger)).all()
-        confirmed = sum(row.actual_vnd or 0 for row in ledger_rows if row.billing_confidence in {"CONFIRMED", "ESTIMATED"})
-        ledger_operation_ids = {row.operation_id for row in ledger_rows}
-        held_rows = self.session.scalars(
-            select(BudgetAuthorizationRow).where(
-                BudgetAuthorizationRow.status.in_(("HELD", "COMMITTED")),
-                BudgetAuthorizationRow.expires_at > self.now(),
-            )
+        ledger_by_operation = _ledger_by_operation(ledger_rows)
+        authorization_rows = self.session.scalars(
+            select(BudgetAuthorizationRow).where(BudgetAuthorizationRow.status.in_(("HELD", "COMMITTED")))
         ).all()
-        held = sum(
-            row.estimate_vnd + row.contingency_vnd
-            for row in held_rows
-            if row.operation_id not in ledger_operation_ids
-        )
-        unknown = sum(
-            row.estimate_vnd + row.contingency_vnd
-            for row in held_rows
-            if any(ledger.operation_id == row.operation_id and ledger.billing_confidence == "UNKNOWN" for ledger in ledger_rows)
-        )
-        return confirmed + held + unknown
+        counted_operations: set[str] = set()
+        total = 0
+
+        for row in authorization_rows:
+            ledgers = ledger_by_operation.get(row.operation_id, ())
+            if row.status == "HELD":
+                if row.expires_at > self.now():
+                    total += _authorization_total(row)
+                continue
+            counted_operations.add(row.operation_id)
+            total += _committed_operation_total(row, ledgers)
+
+        for row in ledger_rows:
+            if row.operation_id not in counted_operations:
+                total += row.actual_vnd or 0
+        return total
 
     def _category_authorized_vnd(self, category: str) -> int:
+        ledger_rows = self.session.scalars(select(UsageLedger)).all()
+        ledger_by_operation = _ledger_by_operation(ledger_rows)
         rows = self.session.scalars(
             select(BudgetAuthorizationRow).where(
                 BudgetAuthorizationRow.category == category,
                 BudgetAuthorizationRow.status.in_(("HELD", "COMMITTED")),
-                BudgetAuthorizationRow.expires_at > self.now(),
             )
         ).all()
-        return sum(row.estimate_vnd + row.contingency_vnd for row in rows)
+        total = 0
+        for row in rows:
+            if row.status == "HELD":
+                if row.expires_at > self.now():
+                    total += _authorization_total(row)
+                continue
+            total += _committed_operation_total(row, ledger_by_operation.get(row.operation_id, ()))
+        return total
 
     def _warnings_for(self, quote_total_vnd: int) -> tuple[str, ...]:
         if self._committed_vnd() + quote_total_vnd > WARNING_THRESHOLD_VND:
@@ -296,6 +305,25 @@ def _vnd_from_usd_micros(usd_micros: int) -> int:
 
 def _ceil_div(numerator: int, denominator: int) -> int:
     return -(-numerator // denominator)
+
+
+def _authorization_total(row: BudgetAuthorizationRow) -> int:
+    return row.estimate_vnd + row.contingency_vnd
+
+
+def _ledger_by_operation(rows: list[UsageLedger]) -> dict[str, tuple[UsageLedger, ...]]:
+    result: dict[str, list[UsageLedger]] = {}
+    for row in rows:
+        result.setdefault(row.operation_id, []).append(row)
+    return {operation_id: tuple(operation_rows) for operation_id, operation_rows in result.items()}
+
+
+def _committed_operation_total(row: BudgetAuthorizationRow, ledgers: tuple[UsageLedger, ...]) -> int:
+    if not ledgers:
+        return _authorization_total(row)
+    if any(ledger.billing_confidence == "UNKNOWN" or ledger.actual_vnd is None for ledger in ledgers):
+        return _authorization_total(row)
+    return sum(ledger.actual_vnd or 0 for ledger in ledgers)
 
 
 def _require_non_negative_int(value: int, field_name: str) -> None:
