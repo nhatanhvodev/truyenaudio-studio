@@ -1,0 +1,260 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.contracts import Usage, new_id
+from app.db.models import BudgetAuthorization as BudgetAuthorizationRow
+from app.db.models import RateCard, UsageLedger
+
+
+FX_RATE_VND_PER_USD = 26_500
+CONTINGENCY_PERCENT = 15
+REGULAR_CAP_VND = 400_000
+HARD_LIMIT_VND = 500_000
+QUOTE_TTL_MINUTES = 15
+
+
+@dataclass(frozen=True)
+class CostQuote:
+    id: str
+    operation_id: str
+    estimate_vnd: int
+    contingency_vnd: int
+    category: str
+    rate_card_id: str | None
+    expires_at: datetime
+    rate_card_ids: tuple[str, ...] = ()
+
+    @property
+    def total_vnd(self) -> int:
+        return self.estimate_vnd + self.contingency_vnd
+
+
+@dataclass(frozen=True)
+class BudgetAuthorization:
+    id: str
+    operation_id: str
+    estimate_vnd: int
+    contingency_vnd: int
+    expires_at: datetime
+    status: str
+
+
+class BudgetBlocked(Exception):
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+class BudgetGuard:
+    def __init__(self, session: Session, *, now: Callable[[], datetime] | None = None) -> None:
+        self.session = session
+        self._now = now
+
+    def quote(self, operation_id: str, estimate_vnd: int, category: str) -> CostQuote:
+        _require_non_negative_int(estimate_vnd, "estimate_vnd")
+        return CostQuote(
+            id=new_id(),
+            operation_id=operation_id,
+            estimate_vnd=estimate_vnd,
+            contingency_vnd=_contingency(estimate_vnd),
+            category=category,
+            rate_card_id=None,
+            rate_card_ids=(),
+            expires_at=self.now() + timedelta(minutes=QUOTE_TTL_MINUTES),
+        )
+
+    def quote_usage(
+        self,
+        *,
+        operation_id: str,
+        provider: str,
+        model: str,
+        region: str | None,
+        usage: tuple[Usage, ...],
+        category: str,
+    ) -> CostQuote:
+        if not usage:
+            raise BudgetBlocked("BUDGET_USAGE_REQUIRED")
+
+        estimate_vnd = 0
+        rate_card_ids: list[str] = []
+        for item in usage:
+            _require_non_negative_int(item.measured_units, "measured_units")
+            rate_card = self._current_rate_card(provider, model, region, item.unit)
+            if rate_card is None:
+                raise BudgetBlocked("BUDGET_RATE_MISSING")
+            rate_card_ids.append(rate_card.id)
+            usd_micros = _usd_micros(rate_card.price_usd_micros_per_million_units, item.measured_units)
+            estimate_vnd += _vnd_from_usd_micros(usd_micros)
+
+        return CostQuote(
+            id=new_id(),
+            operation_id=operation_id,
+            estimate_vnd=estimate_vnd,
+            contingency_vnd=_contingency(estimate_vnd),
+            category=category,
+            rate_card_id=rate_card_ids[0] if len(rate_card_ids) == 1 else None,
+            rate_card_ids=tuple(rate_card_ids),
+            expires_at=self.now() + timedelta(minutes=QUOTE_TTL_MINUTES),
+        )
+
+    def authorize(self, quote: CostQuote) -> BudgetAuthorization:
+        if quote.expires_at <= self.now():
+            raise BudgetBlocked("BUDGET_QUOTE_EXPIRED")
+
+        total_after = self._committed_vnd() + quote.total_vnd
+        if quote.category == "REGULAR" and total_after > REGULAR_CAP_VND:
+            raise BudgetBlocked("BUDGET_REGULAR_CAP_EXCEEDED")
+        if total_after > HARD_LIMIT_VND:
+            raise BudgetBlocked("BUDGET_HARD_LIMIT_EXCEEDED")
+
+        row = BudgetAuthorizationRow(
+            id=quote.id,
+            operation_id=quote.operation_id,
+            estimate_vnd=quote.estimate_vnd,
+            contingency_vnd=quote.contingency_vnd,
+            expires_at=quote.expires_at,
+            status="HELD",
+        )
+        self.session.add(row)
+        self.session.commit()
+        return _authorization_view(row)
+
+    def validate_authorization(self, authorization_id: str, operation_id: str) -> BudgetAuthorization:
+        row = self.session.get(BudgetAuthorizationRow, authorization_id)
+        if row is None or row.operation_id != operation_id or row.status not in {"HELD", "COMMITTED"}:
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_INVALID")
+        if row.expires_at <= self.now():
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_EXPIRED")
+        return _authorization_view(row)
+
+    def commit_usage(
+        self,
+        authorization_id: str,
+        *,
+        provider: str,
+        model: str,
+        region: str | None,
+        usage: tuple[Usage, ...],
+    ) -> None:
+        row = self.session.get(BudgetAuthorizationRow, authorization_id)
+        if row is None:
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_INVALID")
+        if row.status != "HELD":
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_NOT_HELD")
+        if row.expires_at <= self.now():
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_EXPIRED")
+
+        for item in usage:
+            rate_card = self._current_rate_card(provider, model, region, item.unit)
+            if rate_card is None:
+                raise BudgetBlocked("BUDGET_RATE_MISSING")
+            usd_micros = _usd_micros(rate_card.price_usd_micros_per_million_units, item.measured_units)
+            self.session.add(
+                UsageLedger(
+                    id=new_id(),
+                    provider=provider,
+                    model=model,
+                    region=region,
+                    operation_id=row.operation_id,
+                    unit=item.unit,
+                    measured_units=item.measured_units,
+                    rate_card_id=rate_card.id,
+                    actual_usd_micros=usd_micros,
+                    fx_rate=FX_RATE_VND_PER_USD,
+                    actual_vnd=_vnd_from_usd_micros(usd_micros),
+                    billing_confidence="CONFIRMED",
+                )
+            )
+        row.status = "COMMITTED"
+        self.session.commit()
+
+    def release_authorization(self, authorization_id: str) -> None:
+        row = self.session.get(BudgetAuthorizationRow, authorization_id)
+        if row is None:
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_INVALID")
+        if row.status == "HELD":
+            row.status = "RELEASED"
+            self.session.commit()
+
+    def now(self) -> datetime:
+        if self._now is not None:
+            return self._now()
+        from app.db.base import utc_now
+
+        return utc_now()
+
+    def _current_rate_card(self, provider: str, model: str, region: str | None, unit: str) -> RateCard | None:
+        now = self.now()
+        return self.session.scalar(
+            select(RateCard)
+            .where(
+                RateCard.provider == provider,
+                RateCard.model == model,
+                RateCard.region == region,
+                RateCard.unit == unit,
+                RateCard.effective_from <= now,
+                (RateCard.effective_to.is_(None) | (RateCard.effective_to > now)),
+            )
+            .order_by(RateCard.effective_from.desc())
+        )
+
+    def _committed_vnd(self) -> int:
+        ledger_rows = self.session.scalars(select(UsageLedger)).all()
+        confirmed = sum(row.actual_vnd or 0 for row in ledger_rows if row.billing_confidence in {"CONFIRMED", "ESTIMATED"})
+        ledger_operation_ids = {row.operation_id for row in ledger_rows}
+        held_rows = self.session.scalars(
+            select(BudgetAuthorizationRow).where(
+                BudgetAuthorizationRow.status.in_(("HELD", "COMMITTED")),
+                BudgetAuthorizationRow.expires_at > self.now(),
+            )
+        ).all()
+        held = sum(
+            row.estimate_vnd + row.contingency_vnd
+            for row in held_rows
+            if row.operation_id not in ledger_operation_ids
+        )
+        unknown = sum(
+            row.estimate_vnd + row.contingency_vnd
+            for row in held_rows
+            if any(ledger.operation_id == row.operation_id and ledger.billing_confidence == "UNKNOWN" for ledger in ledger_rows)
+        )
+        return confirmed + held + unknown
+
+
+def _authorization_view(row: BudgetAuthorizationRow) -> BudgetAuthorization:
+    return BudgetAuthorization(
+        id=row.id,
+        operation_id=row.operation_id,
+        estimate_vnd=row.estimate_vnd,
+        contingency_vnd=row.contingency_vnd,
+        expires_at=row.expires_at,
+        status=row.status,
+    )
+
+
+def _contingency(estimate_vnd: int) -> int:
+    return _ceil_div(estimate_vnd * CONTINGENCY_PERCENT, 100)
+
+
+def _usd_micros(price_usd_micros_per_million_units: int, measured_units: int) -> int:
+    return _ceil_div(price_usd_micros_per_million_units * measured_units, 1_000_000)
+
+
+def _vnd_from_usd_micros(usd_micros: int) -> int:
+    return _ceil_div(usd_micros * FX_RATE_VND_PER_USD, 1_000_000)
+
+
+def _ceil_div(numerator: int, denominator: int) -> int:
+    return -(-numerator // denominator)
+
+
+def _require_non_negative_int(value: int, field_name: str) -> None:
+    if type(value) is not int or value < 0:
+        raise BudgetBlocked(f"{field_name.upper()}_INVALID")

@@ -1,0 +1,15 @@
+{
+  "request_id": "qwen-req-001",
+  "translations": [
+    {
+      "segment_id": "seg-001",
+      "target_text": "Co ay mo cua."
+    }
+  ],
+  "usage": {
+    "input_tokens": 21,
+    "output_tokens": 9
+  },
+  "model": "qwen-mt-flash",
+  "provider_version": "2026-08-19"
+}
