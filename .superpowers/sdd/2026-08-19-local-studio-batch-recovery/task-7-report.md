@@ -69,6 +69,68 @@ npm exec playwright test e2e/batch-recovery.spec.ts
 1 passed
 ```
 
+## Fix round 3
+
+### RED evidence
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests/api/test_diagnostics_recovery.py -q
+FAILED backend\tests\api\test_diagnostics_recovery.py::test_fake_recovery_run_uses_worker_recovery_path
+AssertionError: assert returned recoveredJobId == queued batch job id
+1 failed in 1.18s
+```
+
+Expected failure: the fake recovery endpoint accepted only `projectId`, created a diagnostics-only synthetic EXPORT job, and returned a different `recoveredJobId` from the real queued batch job supplied by the test.
+
+### Changes
+
+- Changed `POST /api/diagnostics/fake-recovery/run` to require `projectId`, `chapterId`, and `jobId`.
+- The fake/test-mode endpoint now validates that the supplied job is the queued EXPORT job for that project/chapter, forces that job into an expired `RUNNING` lease, runs real `Worker.run_once()` to recover it, then advances the fake clock and runs `Worker.run_once()` again to claim and complete the same job.
+- The recovery handler now uses `RecoveryJobContext` to checkpoint a READY publication-bundle artifact/export for the target chapter, without including source text or secrets.
+- Updated Playwright to enqueue an actual `/api/batches` EXPORT job for the browser-created first chapter and assert the recovered job/project/chapter/kind match that workload.
+
+Ruling: literal OS process kill remains outside the current Playwright harness because it owns a single uvicorn web server and no separate worker process. The fallback endpoint is still fake-mode-only (`STUDIO_FAKE_AUDIO=1`), but now operates on the browser-created batch job and exercises real `Worker.run_once()`/`JobRunner.recover_expired()`/`RecoveryJobContext` code rather than a diagnostics-only synthetic job.
+
+### Verification
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests/api/test_diagnostics_recovery.py -q
+1 passed in 0.96s
+```
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests/api/test_diagnostics_recovery.py backend/tests/api/test_sse_resume.py backend/tests/diagnostics -q
+7 passed in 2.53s
+```
+
+```text
+cd frontend
+npm exec playwright test e2e/batch-recovery.spec.ts
+1 passed
+```
+
+```text
+.\.venv\Scripts\ruff check backend/app/api/diagnostics.py backend/tests/api/test_diagnostics_recovery.py
+All checks passed
+```
+
+```text
+cd frontend
+npm test -- --run
+7 passed, 15 tests passed
+```
+
+```text
+cd frontend
+npm run build
+✓ built
+```
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests -q
+346 passed, 1 warning in 76.48s
+```
+
 ```text
 .\.venv\Scripts\python -m pytest backend/tests -q
 341 passed, 1 warning in 55.58s

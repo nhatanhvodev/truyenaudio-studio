@@ -73,13 +73,33 @@ test('50 chapter batch list stays paged and fake recovery path exports clean dia
   await page.getByRole('button', { name: 'Tạo bundle publication' }).click();
   await expect(page.getByText('Đã verify checksum')).toBeVisible();
 
-  const recoveryResponse = await request.post(`/api/diagnostics/fake-recovery/run?projectId=${project.id}`, {
+  const batchResponse = await request.post('/api/batches', {
+    headers,
+    data: {
+      projectId: project.id,
+      chapterIds: [firstChapterId],
+      stage: 'EXPORT',
+      quoteId: 'fake-export-recovery',
+    },
+  });
+  expect(batchResponse.ok()).toBeTruthy();
+  const batch = (await batchResponse.json()) as { jobIds: string[]; projectId: string; stage: string };
+  expect(batch.projectId).toBe(project.id);
+  expect(batch.stage).toBe('EXPORT');
+  expect(batch.jobIds).toHaveLength(1);
+  const recoveryJobId = batch.jobIds[0];
+
+  const recoveryResponse = await request.post(`/api/diagnostics/fake-recovery/run?projectId=${project.id}&chapterId=${firstChapterId}&jobId=${recoveryJobId}`, {
     headers,
   });
   expect(recoveryResponse.ok()).toBeTruthy();
   const recovery = (await recoveryResponse.json()) as {
     workerRunCount: number;
     workerDrivenRecoveryCount: number;
+    recoveredJobId: string;
+    recoveredProjectId: string;
+    recoveredChapterId: string;
+    recoveredJobKind: string;
     recoveredJobStatus: string;
     duplicateReadyCacheKeysAfter: string[];
     duplicateReadyExportManifestsAfter: string[];
@@ -87,6 +107,10 @@ test('50 chapter batch list stays paged and fake recovery path exports clean dia
   };
   expect(recovery.workerRunCount).toBeGreaterThanOrEqual(2);
   expect(recovery.workerDrivenRecoveryCount).toBe(1);
+  expect(recovery.recoveredJobId).toBe(recoveryJobId);
+  expect(recovery.recoveredProjectId).toBe(project.id);
+  expect(recovery.recoveredChapterId).toBe(firstChapterId);
+  expect(recovery.recoveredJobKind).toBe('EXPORT');
   expect(recovery.recoveredJobStatus).toBe('SUCCEEDED');
   expect(recovery.duplicateReadyCacheKeysAfter).toEqual([]);
   expect(recovery.duplicateReadyExportManifestsAfter).toEqual([]);
