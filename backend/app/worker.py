@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from app.contracts import JobKind, JobStatus
 from app.db.base import create_engine_for
+from app.modules.jobs.recovery import recover_expired
 from app.modules.jobs.runner import HEARTBEAT_INTERVAL_SECONDS, ErrorRecord, JobLease, JobRunner
 from app.settings.config import Settings
 from app.settings.startup_lock import AlreadyRunning, StartupLock
@@ -30,7 +31,9 @@ class Worker:
     process_heartbeat_path: Path | None = None
 
     async def run_once(self) -> bool:
-        lease = self.runner.claim(self.worker_id, self.clock())
+        now = self.clock()
+        recover_expired(self.runner, now)
+        lease = self.runner.claim(self.worker_id, now)
         if lease is None:
             self.refresh_process_heartbeat("idle")
             return False
