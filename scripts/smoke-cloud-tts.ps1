@@ -30,12 +30,12 @@ $report = [ordered]@{
   cloudConsentId = $CloudConsentId
   expectedMaxVnd = $ExpectedMaxVnd
   textChars = 62
-  status = 'DRY_RUN_PLACEHOLDER'
-  note = 'Wire this to a configured local API profile before running real paid smoke.'
+  status = 'NOT_RUN'
+  note = 'Preflight gates passed. Real provider invocation must be wired to the configured local API before marking PASS.'
 }
 
 $outDir = Join-Path (Get-Location) 'data\smoke'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $path = Join-Path $outDir "cloud-tts-$Provider-redacted.json"
 $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $path -Encoding UTF8
-Write-Host "PASS: wrote redacted smoke report $path"
+Write-Host "NOT_RUN: wrote redacted preflight report $path"

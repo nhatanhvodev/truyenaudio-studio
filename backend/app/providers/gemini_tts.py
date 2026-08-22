@@ -38,6 +38,7 @@ class GeminiTtsAdapter:
         endpoint: str = GEMINI_TTS_ENDPOINT,
         model: str = "gemini-flash-tts",
         provider_version: str = "v1beta",
+        region: str = "global",
         api_key: str | None = None,
     ) -> None:
         self.project_id = project_id
@@ -47,6 +48,7 @@ class GeminiTtsAdapter:
         self.endpoint = endpoint
         self.model = model
         self.provider_version = provider_version
+        self.region = region
         self.api_key = api_key
 
     def capabilities(self) -> dict[str, object]:
@@ -122,6 +124,7 @@ class GeminiTtsAdapter:
             Usage(UsageUnit.INPUT_TOKEN.value, input_tokens, request_id),
             Usage(UsageUnit.AUDIO_TOKEN.value, audio_tokens, request_id),
         )
+        _commit_usage(self.cloud_guard, decision.authorization_id, measured_usage, self.model, self.region)
         return SynthesisResult(
             provider="gemini",
             model=self.model,
@@ -166,3 +169,21 @@ def _raise_for_status(status_code: int) -> None:
 def _request_id(response: object) -> str | None:
     headers = getattr(response, "headers", {}) or {}
     return headers.get("x-request-id") or headers.get("X-Request-Id")
+
+
+def _commit_usage(
+    cloud_guard: object,
+    authorization_id: str | None,
+    usage: tuple[Usage, ...],
+    model: str,
+    region: str,
+) -> None:
+    if authorization_id is None or not hasattr(cloud_guard, "budget_guard"):
+        return
+    cloud_guard.budget_guard.commit_usage(
+        authorization_id,
+        provider="gemini",
+        model=model,
+        region=region,
+        usage=usage,
+    )

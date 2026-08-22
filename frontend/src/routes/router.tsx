@@ -7,9 +7,7 @@ import ImportPreview, { type ImportCandidate } from '../features/import/ImportPr
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { apiForm, apiJson } from '../shared/api';
-import RoleAssignment from '../features/voices/RoleAssignment';
-import VoiceComparison from '../features/voices/VoiceComparison';
-import ProviderSettings from '../features/providers/ProviderSettings';
+import MultiVoiceCloudDemo from '../features/voices/MultiVoiceCloudDemo';
 
 const fakePresetId = '018f0000-0000-7000-8000-000000000001';
 const fakeAudioEnabled = ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_STUDIO_FAKE_AUDIO) === '1';
@@ -86,7 +84,10 @@ export const router = createBrowserRouter([
       { path: 'chapters/:chapterId/export', element: <ExportScreen /> },
       { path: 'jobs', element: <JobsScreen /> },
       { path: 'diagnostics', element: <Diagnostics /> },
-      { path: 'multivoice-cloud-demo', element: <MultiVoiceCloudDemo /> },
+      {
+        path: 'multivoice-cloud-demo',
+        element: <MultiVoiceCloudDemo />,
+      },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
@@ -627,79 +628,6 @@ function JobsScreen() {
     <section style={styles.panel}>
       <h1 style={styles.title}>Jobs</h1>
       <JobProgress />
-    </section>
-  );
-}
-
-function MultiVoiceCloudDemo() {
-  const [enabled, setEnabled] = useState(false);
-  const [consent, setConsent] = useState(false);
-  const [roleName, setRoleName] = useState('');
-  const [selectedVoice, setSelectedVoice] = useState('');
-  const [renderSummary, setRenderSummary] = useState('');
-  const roles = [
-    { id: 'role-narrator', roleKey: 'narrator', displayName: 'Narrator', voicePresetId: 'local-1', isNarrator: true },
-    ...(roleName.trim()
-      ? [{ id: 'role-hero', roleKey: 'hero', displayName: roleName.trim(), voicePresetId: selectedVoice || 'google-neural2', isNarrator: false }]
-      : []),
-  ];
-  return (
-    <section style={styles.panel} aria-label="Multi voice cloud demo">
-      <h1 style={styles.title}>Multi-voice cloud demo</h1>
-      <button type="button" onClick={() => setEnabled(true)} style={styles.primaryButton}>
-        Đa giọng có hỗ trợ
-      </button>
-      {enabled ? (
-        <>
-          <button type="button" onClick={() => setRoleName('Nữ chính')} style={styles.secondaryButton}>
-            Thêm vai
-          </button>
-          <label style={styles.label}>
-            Tên vai
-            <input value={roleName} onChange={(event) => setRoleName(event.target.value)} style={styles.input} />
-          </label>
-          <ProviderSettings
-            provider="google"
-            model="Neural2"
-            region="asia-southeast1"
-            policySha256={'a'.repeat(64)}
-            quotaLabel="1.000 ký tự miễn phí trong tháng"
-            committedVnd={0}
-            availableVnd={500000}
-            onGrantFakeConsent={() => setConsent(true)}
-          />
-          <VoiceComparison
-            sampleText="Nàng khẽ nói rằng mình sẽ quay lại sau khi trời sáng, còn người kể giữ nhịp chậm để người nghe không bỏ lỡ bối cảnh."
-            consentGranted={consent}
-            voices={[
-              {
-                id: 'google-neural2',
-                provider: 'google',
-                model: 'Neural2',
-                region: 'asia-southeast1',
-                license: 'policy snapshot',
-                costTier: 'paid',
-                online: true,
-                quotaLabel: '1.000 ký tự miễn phí',
-              },
-            ]}
-            onSelect={setSelectedVoice}
-          />
-          <RoleAssignment
-            roles={roles}
-            segments={[
-              { id: 'seg-1', text: 'Người kể mở đầu cảnh.', roleKey: 'narrator' },
-              { id: 'seg-2', text: 'Ta sẽ quay lại.', roleKey: 'narrator' },
-              { id: 'seg-3', text: 'Người kể kết cảnh.', roleKey: 'narrator' },
-            ]}
-            onSave={() => setRenderSummary('Tái sử dụng 2 đoạn; render lại 1 đoạn')}
-          />
-          <button type="button" onClick={() => setRenderSummary('Tái sử dụng 2 đoạn; render lại 1 đoạn')} style={styles.primaryButton}>
-            Đổi giọng hero và render
-          </button>
-          {renderSummary ? <p role="status" style={styles.success}>{renderSummary}</p> : null}
-        </>
-      ) : null}
     </section>
   );
 }

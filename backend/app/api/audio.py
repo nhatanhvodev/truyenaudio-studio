@@ -37,6 +37,13 @@ class ApproveAudioRequest(BaseModel):
     expected_sha256: str = Field(alias="expectedSha256")
 
 
+class RenderAudioRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
+    budget_authorization_id: str | None = Field(default=None, alias="budgetAuthorizationId")
+
+
 def create_audio_router(settings: Settings | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/chapters/{chapter_id}/audio")
     active_settings = settings or Settings()
@@ -73,10 +80,18 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
     @router.post("/render")
     def render_audio(
         chapter_id: str,
+        request: RenderAudioRequest | None = None,
         workflow: SpeechWorkflow = Depends(workflow_dependency),
     ) -> dict[str, object]:
+        render_request = request or RenderAudioRequest()
         try:
-            return _camel_payload(workflow.enqueue_render(chapter_id))
+            return _camel_payload(
+                workflow.enqueue_render(
+                    chapter_id,
+                    cloud_consent_id=render_request.cloud_consent_id,
+                    budget_authorization_id=render_request.budget_authorization_id,
+                )
+            )
         except VoicePlanRequired as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TranslationApprovalRequired as exc:

@@ -61,6 +61,8 @@ class AssistedVoicePlanService:
         run = self._approved_run(chapter)
         narrator = self._voice_preset(narrator_preset_id, field="NARRATOR_REQUIRED")
         normalized_roles = self._normalize_extra_roles(tuple(_role_spec(role) for role in roles))
+        if not normalized_roles:
+            raise VoicePlanInvalid("EXTRA_ROLE_REQUIRED")
         if 1 + len(normalized_roles) > 4:
             raise VoicePlanInvalid("MAX_FOUR_ROLES")
 

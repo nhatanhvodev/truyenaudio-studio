@@ -18,6 +18,8 @@ def test_multi_voice_requires_one_narrator_and_at_most_four_roles(
 
     with pytest.raises(VoicePlanInvalid, match="NARRATOR_REQUIRED"):
         service.create_multi(fixture.chapter_id, narrator_preset_id="", roles=())
+    with pytest.raises(VoicePlanInvalid, match="EXTRA_ROLE_REQUIRED"):
+        service.create_multi(fixture.chapter_id, narrator_preset_id=narrator.id, roles=())
 
     extra_presets = tuple(_extra_preset(db_session, index) for index in range(2, 6))
     with pytest.raises(VoicePlanInvalid, match="MAX_FOUR_ROLES"):

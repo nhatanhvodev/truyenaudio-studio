@@ -11,6 +11,6 @@ Required gate:
 - `-ExpectedMaxVnd <int>` no higher than 5,000 VND
 - interactive confirmation: `RUN <provider>`
 
-Expected report fields: provider, authorization id, consent id, expected max VND, text chars, status, and redacted note. Never paste or commit API keys. Disable a profile by setting `provider_profiles.enabled=false`; consent revocation blocks new cloud calls but does not delete old local artifacts.
+Expected report fields: provider, authorization id, consent id, expected max VND, text chars, status, and redacted note. The current script records a gated `NOT_RUN` preflight; do not treat it as provider PASS until it is wired to a real configured local profile and verifies WAV, usage, and ledger. Never paste or commit API keys. Disable a profile by setting `provider_profiles.enabled=false`; consent revocation blocks new cloud calls but does not delete old local artifacts.
 
 Provider error mapping: 401/403 => `PROVIDER_AUTH`, 429 => `PROVIDER_RATE_LIMIT`, provider quota => `PROVIDER_QUOTA`, timeout/connect => `PROVIDER_NETWORK`, malformed payload => `PROVIDER_SCHEMA`, request sent with unknown result => `BILLING_UNKNOWN`.

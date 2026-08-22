@@ -146,6 +146,8 @@ class SpeechWorkflow:
         self.artifact_root = Path(artifact_root or Path("data") / "artifacts")
         self.id_factory = id_factory
         self.allow_fake_tts = allow_fake_tts
+        self._render_cloud_consent_id: str | None = None
+        self._render_budget_authorization_id: str | None = None
 
     def preview(self, *args: object, **kwargs: object) -> object:
         raise NotImplementedError("voice preview is owned by VoiceCatalog")
@@ -208,8 +210,20 @@ class SpeechWorkflow:
         self.session.commit()
         return self._plan_view(plan.id)
 
-    def enqueue_render(self, chapter_id: str) -> RenderedChapterView:
-        return self._render(chapter_id, force_segment_ids=frozenset())
+    def enqueue_render(
+        self,
+        chapter_id: str,
+        *,
+        cloud_consent_id: str | None = None,
+        budget_authorization_id: str | None = None,
+    ) -> RenderedChapterView:
+        self._render_cloud_consent_id = cloud_consent_id
+        self._render_budget_authorization_id = budget_authorization_id
+        try:
+            return self._render(chapter_id, force_segment_ids=frozenset())
+        finally:
+            self._render_cloud_consent_id = None
+            self._render_budget_authorization_id = None
 
     def regenerate_segments(
         self,
@@ -527,8 +541,8 @@ class SpeechWorkflow:
                 cache_key=cache_key,
                 timeout_seconds=120,
                 estimated_units=len(segment.narration_text),
-                budget_authorization_id=None,
-                cloud_consent_id=None,
+                budget_authorization_id=self._render_budget_authorization_id,
+                cloud_consent_id=self._render_cloud_consent_id,
             ),
             speech_segment_id=segment.id,
             narration_text=segment.narration_text,

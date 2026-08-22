@@ -99,7 +99,10 @@ def test_audio_render_route_refuses_implicit_fake_tts(
         json={"presetId": preset.id},
     )
     rendered = client.post(f"/api/chapters/{fixture.chapter_id}/audio/render", json={})
+    rendered_without_body = client.post(f"/api/chapters/{fixture.chapter_id}/audio/render")
 
     assert configured.status_code == 200
     assert rendered.status_code == 409
     assert rendered.json()["detail"] == "LOCAL_TTS_ADAPTER_REQUIRED"
+    assert rendered_without_body.status_code == 409
+    assert rendered_without_body.json()["detail"] == "LOCAL_TTS_ADAPTER_REQUIRED"

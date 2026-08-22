@@ -72,6 +72,23 @@ def test_cloud_call_reports_remaining_quota_and_authorizes_billable_overage(db_s
     assert decision.remaining_quota == (Usage(UsageUnit.CHARACTER.value, 1_000, "quota:2026-08"),)
 
 
+def test_tts_cloud_call_requires_explicit_budget_authorization(db_session) -> None:
+    _seed_valid_tts_case(db_session)
+    guard = CloudCallGuard(db_session, BudgetGuard(db_session, now=lambda: NOW), now=lambda: NOW)
+
+    decision = guard.evaluate(
+        project_id=PROJECT_ID,
+        provider_profile_id=PROFILE_ID,
+        operation_id="tts-segment-001",
+        estimated_usage=(Usage(UsageUnit.CHARACTER.value, 1_500),),
+        category="REGULAR",
+        cloud_consent_id=CONSENT_ID,
+    )
+
+    assert not decision.allowed
+    assert decision.reasons == ("BUDGET_AUTHORIZATION_REQUIRED",)
+
+
 def test_private_attestation_allows_processing_not_publication(db_session, tmp_path) -> None:
     _seed_valid_tts_case(db_session, source_type=SourceType.USER_SUPPLIED_PRIVATE)
     guard = CloudCallGuard(db_session, BudgetGuard(db_session, now=lambda: NOW), now=lambda: NOW)

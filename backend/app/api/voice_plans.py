@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import asdict
-from enum import Enum
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.payload import camel_payload
 from app.db.base import create_engine_for, session_factory
 from app.modules.voices.roles import AssistedVoicePlanService, RoleSpec, VoicePlanConflict, VoicePlanInvalid
 from app.settings.config import Settings
@@ -94,27 +92,4 @@ def create_voice_plans_router(settings: Settings | None = None) -> APIRouter:
 
 
 def _payload(value: object) -> dict[str, object]:
-    return _camelize(_convert(asdict(value)))
-
-
-def _convert(value: object) -> object:
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, dict):
-        return {key: _convert(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_convert(item) for item in value]
-    return value
-
-
-def _camelize(value: object) -> object:
-    if isinstance(value, dict):
-        return {_camel_key(key): _camelize(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_camelize(item) for item in value]
-    return value
-
-
-def _camel_key(value: str) -> str:
-    parts = value.split("_")
-    return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
+    return camel_payload(value)

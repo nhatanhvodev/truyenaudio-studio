@@ -79,6 +79,8 @@ class CloudCallGuard:
             return _deny("RIGHTS_CLOUD_NOT_PERMITTED")
 
         provider = _provider_name(profile)
+        if profile.provider_kind == ProviderKind.TTS.value and budget_authorization_id is None:
+            return _deny("BUDGET_AUTHORIZATION_REQUIRED")
         try:
             quota = evaluate_profile_quota(
                 self.session,
