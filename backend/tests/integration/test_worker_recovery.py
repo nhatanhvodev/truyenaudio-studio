@@ -28,6 +28,23 @@ async def test_restart_resumes_without_duplicate_artifacts(studio_process: Studi
     assert run.duplicate_ready_export_manifests() == []
     assert run.provider_calls[f"{stage}:segment:1"] == 1
     assert run.provider_calls[f"{stage}:segment:2"] == 1
+    assert run.worker_driven_recovery_count == 1
+
+
+@pytest.mark.asyncio
+async def test_unclear_cloud_provider_sent_attempt_recovers_to_billing_unknown(
+    studio_process: StudioProcessFixture,
+) -> None:
+    run = studio_process.start_fake_chapter(stage="SYNTHESIZE")
+
+    await run.run_until_cloud_unclear_after_provider_sent()
+    run.kill_worker()
+    await run.restart_worker_for_recovery_only()
+
+    view = run.runner.get(run.job_id)
+    assert view.status is JobStatus.BILLING_UNKNOWN
+    assert view.error_code == "BILLING_UNKNOWN"
+    assert run.provider_calls["SYNTHESIZE:segment:1"] == 1
 
 
 @pytest.mark.asyncio
@@ -40,3 +57,13 @@ async def test_cancel_preserves_ready_artifacts_and_leaves_no_missing_ready_file
 
     assert run.runner.get(run.job_id).status is JobStatus.CANCELED
     assert run.missing_ready_artifacts() == []
+    assert run.partial_artifacts() == []
+
+
+def test_ready_export_checkpoint_keeps_single_ready_manifest(studio_process: StudioProcessFixture) -> None:
+    run = studio_process.start_fake_chapter(stage="EXPORT")
+
+    run.seed_duplicate_ready_exports()
+    run.coalesce_ready_export_checkpoint()
+
+    assert run.duplicate_ready_export_manifests() == []
