@@ -18,7 +18,6 @@ from app.contracts import (
     SourceType,
 )
 from app.db.base import session_factory
-from app.db.models import Export
 from app.modules.jobs.recovery import ArtifactPayload, RecoveryArtifactWriter, RecoveryJobContext
 from app.modules.jobs.runner import JobLease, JobRunner
 from app.worker import Worker
@@ -147,6 +146,15 @@ class StageRun:
     def partial_artifacts(self) -> list[str]:
         return sorted(str(path.relative_to(self.artifact_root)) for path in self.artifact_root.rglob("*.partial"))
 
+    def ready_artifact_count(self) -> int:
+        with self.runner.engine.connect() as connection:
+            return int(
+                connection.execute(
+                    text("SELECT COUNT(*) FROM artifacts WHERE status = :ready"),
+                    {"ready": ArtifactStatus.READY.value},
+                ).scalar_one()
+            )
+
     async def run_until_crash(self, kill_after: str) -> None:
         worker = self._worker(kill_after=kill_after)
         try:
@@ -168,37 +176,10 @@ class StageRun:
             return
         raise AssertionError("worker did not crash after cloud provider send")
 
-    def seed_duplicate_ready_exports(self) -> None:
-        manifest_sha256 = _hash(f"{self.stage.value}:manifest")
-        with session_factory(self.runner.engine)() as session:
-            session.add_all(
-                (
-                    Export(
-                        id="018f0000-0000-7000-8000-910000000901",
-                        chapter_id=CHAPTER_ID,
-                        kind=ExportKind.PUBLICATION_BUNDLE.value,
-                        status=ExportStatus.READY.value,
-                        bundle_artifact_id=None,
-                        manifest_sha256=manifest_sha256,
-                        rights_evaluation_json={"allowed": True},
-                    ),
-                    Export(
-                        id="018f0000-0000-7000-8000-910000000902",
-                        chapter_id=CHAPTER_ID,
-                        kind=ExportKind.PUBLICATION_BUNDLE.value,
-                        status=ExportStatus.READY.value,
-                        bundle_artifact_id=None,
-                        manifest_sha256=manifest_sha256,
-                        rights_evaluation_json={"allowed": True},
-                    ),
-                )
-            )
-            session.commit()
-
-    def coalesce_ready_export_checkpoint(self) -> None:
+    def create_ready_export_checkpoint(self) -> str:
         with session_factory(self.runner.engine)() as session:
             writer = RecoveryArtifactWriter(session, self.artifact_root)
-            writer.checkpoint_ready_export(
+            export = writer.checkpoint_ready_export(
                 chapter_id=CHAPTER_ID,
                 kind=ExportKind.PUBLICATION_BUNDLE,
                 manifest_sha256=_hash(f"{self.stage.value}:manifest"),
@@ -206,6 +187,7 @@ class StageRun:
                 rights_evaluation={"allowed": True},
             )
             session.commit()
+            return export.id
 
     def _worker(
         self,
@@ -293,7 +275,6 @@ def _stage_handler(
                 mime_type=_mime_type(stage),
                 provider=provider,
                 provider_request_id=f"provider-{segment_id}" if cloud_unclear_segment == segment_number else None,
-                cancel_after_temp_write=cancel_after_partial_segment == segment_number,
             )
             artifact_id = checkpoint.artifact_id
             recovery.commit()

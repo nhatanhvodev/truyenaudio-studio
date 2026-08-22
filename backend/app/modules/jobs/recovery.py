@@ -20,7 +20,13 @@ class RecoverableRunner(Protocol):
 
     def get(self, job_id: str): ...
 
-    def mark_provider_sent(self, job_id: str, provider_request_id: str) -> None: ...
+    def mark_provider_sent(
+        self,
+        job_id: str,
+        worker_id: str,
+        attempt_id: str,
+        provider_request_id: str,
+    ) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -251,7 +257,6 @@ class RecoveryJobContext:
         authorize: Callable[[], None] | None = None,
         commit_usage: Callable[[ArtifactPayload], None] | None = None,
         provider_request_id: str | None = None,
-        cancel_after_temp_write: bool = False,
     ) -> SegmentCheckpoint:
         self.raise_if_cancel_requested()
         cached = self.artifacts.lookup_ready_artifact(kind, input_hash, settings_hash)
@@ -269,11 +274,11 @@ class RecoveryJobContext:
         self.session.commit()
 
         if provider_request_id is not None:
-            self.runner.mark_provider_sent(self.lease.job_id, provider_request_id)
+            self.mark_provider_sent(provider_request_id)
         result = provider()
         sent_request_id = provider_request_id or result.provider_request_id
         if sent_request_id is not None:
-            self.runner.mark_provider_sent(self.lease.job_id, sent_request_id)
+            self.mark_provider_sent(sent_request_id)
 
         artifact_id = self.id_factory()
         relative_path = _artifact_relative_path(chapter_id, kind, artifact_id, mime_type)
@@ -284,16 +289,10 @@ class RecoveryJobContext:
             settings_hash=settings_hash,
             mime_type=mime_type,
         )
-        if cancel_after_temp_write:
-            try:
-                with ArtifactStore(self.artifacts.artifact_root).begin(write) as writer:
-                    writer.file.write(result.payload)
-                    self.raise_if_cancel_requested()
-            finally:
-                self.session.rollback()
-            raise RecoveryCanceled(segment_id)
-
-        stored = self.artifacts.write_payload(write, result.payload)
+        with ArtifactStore(self.artifacts.artifact_root).begin(write) as writer:
+            writer.file.write(result.payload)
+            self.raise_if_cancel_requested()
+            stored = writer.commit()
         if result.expected_sha256 is not None and stored.sha256 != result.expected_sha256:
             Path(self.artifacts.artifact_root, stored.relative_path).unlink(missing_ok=True)
             raise ValueError("ARTIFACT_CHECKSUM_MISMATCH")
@@ -326,6 +325,14 @@ class RecoveryJobContext:
     def raise_if_cancel_requested(self) -> None:
         if self.cancel_requested():
             raise RecoveryCanceled(self.lease.job_id)
+
+    def mark_provider_sent(self, provider_request_id: str) -> None:
+        self.runner.mark_provider_sent(
+            self.lease.job_id,
+            self.lease.worker_id,
+            self.lease.attempt_id,
+            provider_request_id,
+        )
 
     def commit(self) -> None:
         self.session.commit()

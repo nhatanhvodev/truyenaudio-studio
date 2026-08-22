@@ -604,6 +604,7 @@ def test_required_indexes_and_unique_constraints_exist(migrated_engine) -> None:
         False,
     ) in indexes["artifacts"]
     assert ("uq_ready_artifact_cache", ("kind", "input_hash", "settings_hash"), True) in indexes["artifacts"]
+    assert ("uq_ready_export_manifest", ("chapter_id", "kind", "manifest_sha256"), True) in indexes["exports"]
     assert ("ix_qa_issues_chapter_status_severity", ("chapter_id", "status", "severity"), False) in indexes["qa_issues"]
     assert ("ix_usage_ledger_created_provider_model", ("created_at", "provider", "model"), False) in indexes[
         "usage_ledger"
@@ -644,6 +645,17 @@ def test_ready_artifact_cache_index_is_partial_for_ready_status(migrated_engine)
 
     assert "UNIQUE INDEX uq_ready_artifact_cache" in sql
     assert "kind, input_hash, settings_hash" in sql
+    assert "WHERE status = 'READY'" in sql
+
+
+def test_ready_export_manifest_index_is_partial_for_ready_status(migrated_engine) -> None:
+    with migrated_engine.connect() as connection:
+        sql = connection.execute(
+            text("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'uq_ready_export_manifest'")
+        ).scalar_one()
+
+    assert "UNIQUE INDEX uq_ready_export_manifest" in sql
+    assert "chapter_id, kind, manifest_sha256" in sql
     assert "WHERE status = 'READY'" in sql
 
 

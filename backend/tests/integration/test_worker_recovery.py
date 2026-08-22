@@ -58,12 +58,16 @@ async def test_cancel_preserves_ready_artifacts_and_leaves_no_missing_ready_file
     assert run.runner.get(run.job_id).status is JobStatus.CANCELED
     assert run.missing_ready_artifacts() == []
     assert run.partial_artifacts() == []
+    assert run.ready_artifact_count() == 1
 
 
-def test_ready_export_checkpoint_keeps_single_ready_manifest(studio_process: StudioProcessFixture) -> None:
+def test_ready_export_checkpoint_keeps_single_ready_manifest_without_coalescing_duplicates(
+    studio_process: StudioProcessFixture,
+) -> None:
     run = studio_process.start_fake_chapter(stage="EXPORT")
 
-    run.seed_duplicate_ready_exports()
-    run.coalesce_ready_export_checkpoint()
+    first_id = run.create_ready_export_checkpoint()
+    second_id = run.create_ready_export_checkpoint()
 
+    assert second_id == first_id
     assert run.duplicate_ready_export_manifests() == []

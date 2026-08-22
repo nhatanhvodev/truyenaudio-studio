@@ -388,7 +388,7 @@ def test_complete_cannot_overwrite_terminal_or_billing_unknown_jobs(
     if terminal_status is JobStatus.SUCCEEDED:
         runner.complete(job.id, first_artifact_id, lease.worker_id, lease.attempt_id, NOW + timedelta(seconds=1))
     elif terminal_status is JobStatus.BILLING_UNKNOWN:
-        runner.mark_provider_sent(job.id, "provider-request-1")
+        runner.mark_provider_sent(job.id, lease.worker_id, lease.attempt_id, "provider-request-1")
         runner.fail(
             job.id,
             ErrorRecord(code="PROVIDER_NETWORK", summary="timeout", retryable=True),
@@ -664,7 +664,7 @@ def test_expired_cloud_sent_attempt_becomes_billing_unknown_and_never_auto_retri
     job = runner.enqueue(JobKind.SYNTHESIZE, PROJECT_ID, CHAPTER_ID, "expired-cloud")
     lease = runner.claim("worker-a", NOW)
     assert lease is not None
-    runner.mark_provider_sent(job.id, "provider-request-1")
+    runner.mark_provider_sent(job.id, lease.worker_id, lease.attempt_id, "provider-request-1")
     recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
 
     recovered = runner.recover_expired(recovery_now)
@@ -712,7 +712,7 @@ def test_expired_cancel_requested_provider_sent_attempt_becomes_billing_unknown(
     job = runner.enqueue(JobKind.SYNTHESIZE, PROJECT_ID, CHAPTER_ID, "recover-cancel-provider")
     lease = runner.claim("worker-a", NOW)
     assert lease is not None
-    runner.mark_provider_sent(job.id, "provider-request-2")
+    runner.mark_provider_sent(job.id, lease.worker_id, lease.attempt_id, "provider-request-2")
     runner.request_cancel(job.id, NOW + timedelta(seconds=1))
     recovery_now = NOW + timedelta(seconds=LEASE_SECONDS + RECOVERY_THRESHOLD_SECONDS + 1)
 
@@ -729,6 +729,32 @@ def test_expired_cancel_requested_provider_sent_attempt_becomes_billing_unknown(
         "BILLING_UNKNOWN",
         "provider-request-2",
     )
+
+
+def test_provider_sent_marker_is_scoped_to_current_attempt_and_cannot_mark_replacement(
+    runner: JobRunner,
+    migrated_engine: Engine,
+) -> None:
+    job = runner.enqueue(JobKind.SYNTHESIZE, PROJECT_ID, CHAPTER_ID, "provider-sent-stale-attempt")
+    stale_lease = runner.claim("worker-a", NOW)
+    assert stale_lease is not None
+    recovered_at = stale_lease.lease_expires_at + timedelta(seconds=RECOVERY_THRESHOLD_SECONDS + 1)
+    runner.recover_expired(recovered_at)
+    replacement_lease = runner.claim("worker-b", recovered_at + timedelta(seconds=2))
+    assert replacement_lease is not None
+
+    with pytest.raises(LeaseLost, match="provider-sent"):
+        runner.mark_provider_sent(
+            job.id,
+            stale_lease.worker_id,
+            stale_lease.attempt_id,
+            "stale-provider-request",
+        )
+
+    assert _attempt_rows(migrated_engine, job.id) == [
+        (1, recovered_at.isoformat(), "EXPIRED_RETRY", None),
+        (2, None, None, None),
+    ]
 
 
 def test_runner_rejects_naive_now_values(runner: JobRunner) -> None:

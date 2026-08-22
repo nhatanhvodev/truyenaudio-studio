@@ -395,26 +395,45 @@ class JobRunner:
             row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
         return _job_view(row)
 
-    def mark_provider_sent(self, job_id: str, provider_request_id: str) -> None:
+    def mark_provider_sent(
+        self,
+        job_id: str,
+        worker_id: str,
+        attempt_id: str,
+        provider_request_id: str,
+    ) -> None:
         timestamp = datetime.now(UTC)
         with self.engine.begin() as connection:
-            connection.execute(
+            result = connection.execute(
                 text(
                     """
                     UPDATE job_attempts
                     SET provider_request_id = :provider_request_id,
                         updated_at = :now
-                    WHERE id = (
-                        SELECT id
-                        FROM job_attempts
-                        WHERE job_id = :job_id AND finished_at IS NULL
-                        ORDER BY attempt_no DESC
-                        LIMIT 1
-                    )
+                    WHERE id = :attempt_id
+                      AND job_id = :job_id
+                      AND finished_at IS NULL
+                      AND EXISTS (
+                        SELECT 1
+                        FROM jobs
+                        WHERE jobs.id = job_attempts.job_id
+                          AND jobs.status IN (:running, :cancel_requested)
+                          AND jobs.lease_owner = :worker_id
+                      )
                     """
                 ),
-                {"job_id": job_id, "provider_request_id": provider_request_id, "now": timestamp.isoformat()},
+                {
+                    "job_id": job_id,
+                    "worker_id": worker_id,
+                    "attempt_id": attempt_id,
+                    "provider_request_id": provider_request_id,
+                    "running": JobStatus.RUNNING.value,
+                    "cancel_requested": JobStatus.CANCEL_REQUESTED.value,
+                    "now": timestamp.isoformat(),
+                },
             )
+            if result.rowcount != 1:
+                raise LeaseLost(f"provider-sent marker rejected for attempt {attempt_id} on job {job_id}")
 
     def recover_expired(self, now: datetime) -> list[str]:
         _require_aware(now)

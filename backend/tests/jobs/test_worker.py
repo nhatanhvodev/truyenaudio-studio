@@ -8,7 +8,7 @@ from sqlalchemy import Engine, text
 
 from app.contracts import JobKind, JobStatus, RightsStatus, SourceType
 from app.modules.jobs.runner import JobLease, JobRunner
-from app.worker import Worker
+from app.worker import Worker, build_default_handlers
 
 
 NOW = datetime(2026, 8, 19, 3, 0, 0, tzinfo=UTC)
@@ -80,6 +80,14 @@ async def test_run_once_returns_false_when_no_job_is_available(runner: JobRunner
     worker = Worker(runner, handlers={}, worker_id="worker-a", clock=ManualClock(NOW))
 
     assert await worker.run_once() is False
+
+
+def test_default_handler_registry_uses_recovery_context_for_production_stage_paths() -> None:
+    handlers = build_default_handlers()
+
+    assert {JobKind.TRANSLATE, JobKind.SYNTHESIZE, JobKind.MASTER, JobKind.EXPORT} <= set(handlers)
+    for stage in (JobKind.TRANSLATE, JobKind.SYNTHESIZE, JobKind.MASTER, JobKind.EXPORT):
+        assert tuple(handlers[stage].__code__.co_varnames[:2]) == ("lease", "recovery")
 
 
 @pytest.mark.asyncio

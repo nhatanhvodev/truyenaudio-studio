@@ -542,6 +542,14 @@ class Export(CreatedAtMixin, Base):
         enum_constraint("kind", ExportKind),
         enum_constraint("status", ExportStatus),
         hash_constraint("manifest_sha256"),
+        Index(
+            "uq_ready_export_manifest",
+            "chapter_id",
+            "kind",
+            "manifest_sha256",
+            unique=True,
+            sqlite_where=text("status = 'READY' AND manifest_sha256 IS NOT NULL"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)

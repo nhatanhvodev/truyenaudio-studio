@@ -23,6 +23,12 @@ from app.settings.startup_lock import AlreadyRunning, StartupLock
 Handler = Callable[..., Awaitable[str | None]]
 
 
+class HandlerUnavailable(Exception):
+    def __init__(self, kind: JobKind) -> None:
+        self.code = f"{kind.value}_HANDLER_NOT_CONFIGURED"
+        super().__init__(f"{kind.value} handler is not configured for the local worker")
+
+
 @dataclass
 class Worker:
     runner: JobRunner
@@ -70,6 +76,20 @@ class Worker:
                 result_artifact_id = await self._run_handler(handler, lease)
             except RecoveryCanceled:
                 self.runner.acknowledge_cancel(lease.job_id, lease.worker_id, lease.attempt_id, self.clock())
+                self.refresh_process_heartbeat("idle")
+                return True
+            except HandlerUnavailable as error:
+                self.runner.fail(
+                    lease.job_id,
+                    ErrorRecord(
+                        code=error.code,
+                        summary=str(error),
+                        retryable=False,
+                    ),
+                    lease.worker_id,
+                    lease.attempt_id,
+                    now=self.clock(),
+                )
                 self.refresh_process_heartbeat("idle")
                 return True
             except Exception as error:
@@ -162,11 +182,20 @@ def build_default_worker(settings: Settings | None = None) -> Worker:
     runner = JobRunner(engine)
     return Worker(
         runner,
-        handlers={},
+        handlers=build_default_handlers(),
         worker_id="studio-worker-1",
         artifact_root=settings.data_root / "artifacts",
         process_heartbeat_path=settings.data_root / "worker-heartbeat.json",
     )
+
+
+def build_default_handlers() -> dict[JobKind, Handler]:
+    return {kind: _unconfigured_recovery_handler for kind in JobKind}
+
+
+async def _unconfigured_recovery_handler(lease: JobLease, recovery: RecoveryJobContext) -> str | None:
+    recovery.raise_if_cancel_requested()
+    raise HandlerUnavailable(lease.kind)
 
 
 def main() -> int:
