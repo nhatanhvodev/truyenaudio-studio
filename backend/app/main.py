@@ -10,6 +10,8 @@ from app.api.storage import create_storage_router
 from app.api.batches import create_batches_router
 from app.api.cloud_consents import create_cloud_consents_router
 from app.api.audio import create_audio_router
+from app.api.diagnostics import create_diagnostics_router
+from app.api.events import create_events_router
 from app.api.exports import create_exports_router
 from app.api.health import create_health_router
 from app.api.glossary import create_glossary_router
@@ -66,6 +68,8 @@ def create_app(
     app.include_router(create_audio_router(active_settings))
     app.include_router(create_exports_router(active_settings))
     app.include_router(create_storage_router(active_settings))
+    app.include_router(create_events_router(active_settings))
+    app.include_router(create_diagnostics_router(active_settings))
     _register_frontend(app, frontend_dist or DEFAULT_FRONTEND_DIST)
     return app
 

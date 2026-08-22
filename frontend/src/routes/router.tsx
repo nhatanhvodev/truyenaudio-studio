@@ -1,6 +1,7 @@
 import { createBrowserRouter, Link, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { BatchQueue } from '../features/batch/BatchQueue';
+import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
@@ -80,6 +81,7 @@ export const router = createBrowserRouter([
       { path: 'chapters/:chapterId/audio', element: <AudioScreen /> },
       { path: 'chapters/:chapterId/export', element: <ExportScreen /> },
       { path: 'jobs', element: <JobsScreen /> },
+      { path: 'diagnostics', element: <Diagnostics /> },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },
@@ -91,6 +93,7 @@ function Shell() {
       <nav style={styles.nav} aria-label="Workflow">
         <Link to="/projects/new" style={styles.navLink}>Dự án</Link>
         <Link to="/jobs" style={styles.navLink}>Jobs</Link>
+        <Link to="/diagnostics" style={styles.navLink}>Diagnostics</Link>
       </nav>
       <Outlet />
       <JobProgress />

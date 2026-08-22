@@ -14,6 +14,34 @@ export async function apiForm<T>(url: string, form: FormData, options: RequestOp
   return request<T>(url, { ...options, method: options.method ?? 'POST', body: form }, false);
 }
 
+export async function apiBlob(url: string, options: RequestOptions = {}): Promise<Blob> {
+  const method = (options.method ?? 'GET').toUpperCase();
+  const stateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const headers = new Headers(options.headers);
+  let body = options.body;
+
+  if (body !== undefined && !(body instanceof FormData) && typeof body !== 'string') {
+    headers.set('Content-Type', 'application/json');
+    body = JSON.stringify(body);
+  }
+  if (stateChanging) {
+    headers.set('X-CSRF-Token', await bootstrapCsrf());
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    method,
+    headers,
+    body: body as BodyInit | undefined,
+    cache: method === 'GET' ? 'no-store' : options.cache,
+  });
+  if (!response.ok) {
+    const payload = await parsePayload(response);
+    throw new Error(String((payload as { detail?: unknown })?.detail ?? 'REQUEST_FAILED'));
+  }
+  return response.blob();
+}
+
 async function request<T>(url: string, options: RequestOptions, retried: boolean): Promise<T> {
   const method = (options.method ?? 'GET').toUpperCase();
   const stateChanging = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);

@@ -16,6 +16,7 @@ from app.modules.artifacts.store import ArtifactStore, UnsafeArtifactPath
 
 PARTIAL_AGE = timedelta(hours=24)
 WAV_AGE = timedelta(days=7)
+DIAGNOSTIC_LOG_RETENTION = timedelta(days=30)
 PROTECTED_KINDS = {
     "SOURCE_SNAPSHOT",
     "TRANSLATION_MARKDOWN",
@@ -75,7 +76,7 @@ class CleanupService:
 
     def preview(self) -> CleanupPlan:
         candidates = sorted(
-            [*self._artifact_candidates(), *self._partial_candidates()],
+            [*self._artifact_candidates(), *self._partial_candidates(), *self._diagnostic_log_candidates()],
             key=lambda candidate: (candidate.relative_path, candidate.candidate_type),
         )
         snapshot_hash = _snapshot_hash(candidates)
@@ -196,6 +197,23 @@ class CleanupService:
             candidates.append(CleanupCandidate("partial", relative_path, byte_size, sha256))
         return candidates
 
+    def _diagnostic_log_candidates(self) -> list[CleanupCandidate]:
+        now = self.clock()
+        log_root = self.artifact_store.resolve("diagnostics/logs")
+        if not log_root.is_dir():
+            return []
+        candidates: list[CleanupCandidate] = []
+        for path in log_root.glob("diagnostics-*.jsonl"):
+            if not path.is_file():
+                continue
+            age = now - datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+            if age <= DIAGNOSTIC_LOG_RETENTION:
+                continue
+            relative_path = path.relative_to(self.artifact_store.resolve()).as_posix()
+            sha256, byte_size = _sha256_file(path)
+            candidates.append(CleanupCandidate("diagnostic_log", relative_path, byte_size, sha256))
+        return candidates
+
     def _candidate_type_for_artifact(self, row, approved_mp3_chapter_ids: set[str]) -> str | None:
         kind = str(row["kind"])
         status = str(row["status"])
@@ -223,7 +241,7 @@ class CleanupService:
         if actual_sha256 != candidate.sha256 or byte_size != candidate.byte_size:
             return False
         if candidate.artifact_id is None:
-            return candidate.candidate_type == "partial"
+            return candidate.candidate_type in {"partial", "diagnostic_log"}
         row = self.session.execute(
             text(
                 """
