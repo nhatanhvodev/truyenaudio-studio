@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.security import create_security_router, install_csrf_middleware
+from app.api.storage import create_storage_router
 from app.api.batches import create_batches_router
 from app.api.cloud_consents import create_cloud_consents_router
 from app.api.audio import create_audio_router
@@ -64,6 +65,7 @@ def create_app(
     app.include_router(create_voices_router(active_settings))
     app.include_router(create_audio_router(active_settings))
     app.include_router(create_exports_router(active_settings))
+    app.include_router(create_storage_router(active_settings))
     _register_frontend(app, frontend_dist or DEFAULT_FRONTEND_DIST)
     return app
 

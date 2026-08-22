@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
+from dataclasses import asdict, is_dataclass
+from enum import Enum
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.db.base import create_engine_for, session_factory
+from app.modules.artifacts.store import ArtifactStore
+from app.modules.storage.backup import BackupService, BackupVerificationError, RestoreLockRequired
+from app.modules.storage.cleanup import CleanupPlan, CleanupPlanStale, CleanupService
+from app.modules.storage.disk import DiskGuard
+from app.settings.config import Settings
+from app.settings.startup_lock import AlreadyRunning
+
+
+class CleanupExecuteRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    plan_id: str = Field(alias="planId")
+    snapshot_hash: str = Field(alias="snapshotHash")
+
+
+def create_storage_router(settings: Settings | None = None) -> APIRouter:
+    router = APIRouter(prefix="/api/storage")
+    active_settings = settings or Settings()
+    cleanup_plans: dict[str, CleanupPlan] = {}
+
+    def backup_service() -> BackupService:
+        return BackupService(
+            db_path=active_settings.data_root / "studio.sqlite3",
+            backup_root=active_settings.data_root / "backups",
+            artifact_root=active_settings.data_root / "artifacts",
+        )
+
+    def cleanup_service() -> Iterator[CleanupService]:
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        factory = session_factory(engine)
+        try:
+            with factory() as session:
+                yield CleanupService(
+                    session,
+                    ArtifactStore(active_settings.data_root / "artifacts"),
+                    plan_store=cleanup_plans,
+                )
+        finally:
+            engine.dispose()
+
+    @router.get("/disk")
+    def disk(estimated_bytes: int = Query(default=0, alias="estimatedBytes")) -> dict[str, object]:
+        return _camel_payload(DiskGuard(active_settings.data_root).can_create(estimated_bytes))
+
+    @router.post("/backups")
+    def create_backup(service: BackupService = Depends(backup_service)) -> dict[str, object]:
+        try:
+            return _camel_payload(service.create())
+        except BackupVerificationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/backups/{backup_id}/restore")
+    def restore_backup(backup_id: str, service: BackupService = Depends(backup_service)) -> dict[str, object]:
+        try:
+            with service.acquire_restore_locks() as token:
+                return _camel_payload(service.restore_to(backup_id, lock_token=token))
+        except (AlreadyRunning, RestoreLockRequired) as exc:
+            raise HTTPException(status_code=409, detail="RESTORE_REQUIRES_STOPPED_API_AND_WORKER") from exc
+        except BackupVerificationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.get("/cleanup/preview")
+    def cleanup_preview(service: CleanupService = Depends(cleanup_service)) -> dict[str, object]:
+        return _camel_payload(service.preview())
+
+    @router.post("/cleanup/execute")
+    def cleanup_execute(
+        request: CleanupExecuteRequest,
+        service: CleanupService = Depends(cleanup_service),
+    ) -> dict[str, object]:
+        try:
+            return _camel_payload(service.execute(request.plan_id, request.snapshot_hash))
+        except CleanupPlanStale as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    return router
+
+
+def _camel_payload(value: object) -> dict[str, object]:
+    return _camelize(_convert(value))
+
+
+def _convert(value: object) -> object:
+    if is_dataclass(value) and not isinstance(value, type):
+        return {key: _convert(item) for key, item in asdict(value).items()}
+    if isinstance(value, Enum):
+        return value.value
+    if hasattr(value, "as_posix"):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _convert(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_convert(item) for item in value]
+    return value
+
+
+def _camelize(value: object) -> object:
+    if isinstance(value, dict):
+        return {_camel_key(key): _camelize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_camelize(item) for item in value]
+    return value
+
+
+def _camel_key(value: str) -> str:
+    head, *tail = value.split("_")
+    return head + "".join(part[:1].upper() + part[1:] for part in tail)
