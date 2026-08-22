@@ -60,7 +60,7 @@ describe('JobProgress', () => {
 
     expect(await screen.findByText('job-1')).toBeVisible();
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    expect(FakeEventSource.instances[0].url).toBe('/api/jobs/events?after=001');
+    expect(FakeEventSource.instances[0].url).toBe('/api/events?after=001');
 
     act(() => {
       FakeEventSource.instances[0].dispatchJob({

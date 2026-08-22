@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from app.contracts import OperationContext, TranslationRequest, UsageUnit
@@ -149,6 +150,29 @@ async def test_qwen_timeout_after_send_marks_billing_unknown_without_retry(trans
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("exception", [httpx.ReadTimeout("read timed out"), httpx.ConnectError("transport unclear")])
+async def test_qwen_httpx_timeout_or_transport_after_dispatch_marks_billing_unknown(
+    translation_request,
+    exception: Exception,
+) -> None:
+    http = HttpxExceptionHttp(exception)
+    adapter = QwenMtAdapter(
+        http,
+        "qwen-mt-flash",
+        "frankfurt",
+        Secret("secret-value"),
+        cloud_guard=AllowingGuard(),
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+
+    with pytest.raises(ProviderBillingUnknown):
+        await adapter.translate(translation_request)
+
+    assert http.calls == 1
+
+
+@pytest.mark.asyncio
 async def test_qwen_rejects_empty_source_before_http(http_fixture, translation_request) -> None:
     empty = TranslationRequest(
         context=translation_request.context,
@@ -197,6 +221,16 @@ class TimeoutAfterSendHttp:
         self.calls += 1
         self.last_json = json
         raise TimeoutError("provider timed out after request dispatch")
+
+
+class HttpxExceptionHttp:
+    def __init__(self, exception: Exception) -> None:
+        self.exception = exception
+        self.calls = 0
+
+    async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str], timeout: int):
+        self.calls += 1
+        raise self.exception
 
 
 class StubResponse:

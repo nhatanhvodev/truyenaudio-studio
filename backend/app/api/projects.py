@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import tempfile
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.contracts import ChapterState, ImportKind, RightsStatus, SourceType
 from app.db.base import create_engine_for, session_factory
+from app.db.models import Project
 from app.modules.artifacts.store import ArtifactStore
 from app.modules.projects.queries import ChapterQueries, InvalidCursor
 from app.modules.projects.state_machine import InvalidChapterTransition
 from app.modules.projects.workflow import CreateProject, ImportChapters, ProjectWorkflow
+from app.modules.sources.archive_guard import ImportCandidate
+from app.modules.sources.docx import read_docx
+from app.modules.sources.epub import read_epub
+from app.modules.sources.folder import InputPathUnsafe, read_folder
 from app.settings.config import Settings
 
 
@@ -92,6 +99,21 @@ def create_projects_router(settings: Settings | None = None, *, cursor_secret: s
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"chapters": [_dataclass_dict(chapter) for chapter in chapters]}
 
+    @router.post("/{project_id}/chapters/import/preview")
+    async def preview_import(
+        project_id: str,
+        kind: ImportKind = Form(...),
+        file: UploadFile | None = File(default=None),
+        local_folder_path: str | None = Form(default=None, alias="localFolderPath"),
+        subfolder: str | None = Form(default=None),
+    ) -> dict[str, object]:
+        _ensure_project_exists(active_settings, project_id)
+        try:
+            candidates = await _preview_candidates(kind, file, local_folder_path, subfolder)
+        except (InputPathUnsafe, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"candidates": [_candidate_dict(candidate) for candidate in candidates]}
+
     @router.get("/{project_id}/chapters")
     def list_chapters(
         project_id: str,
@@ -147,6 +169,58 @@ def _import_command(request: ImportChaptersRequest) -> ImportChapters:
             ),
         )
     raise ValueError("IMPORT_KIND_UNSUPPORTED")
+
+
+def _ensure_project_exists(settings: Settings, project_id: str) -> None:
+    engine = create_engine_for(settings.data_root / "studio.sqlite3")
+    factory = session_factory(engine)
+    try:
+        with factory() as session:
+            if session.get(Project, project_id) is None:
+                raise HTTPException(status_code=404, detail="PROJECT_NOT_FOUND")
+    finally:
+        engine.dispose()
+
+
+async def _preview_candidates(
+    kind: ImportKind,
+    file: UploadFile | None,
+    local_folder_path: str | None,
+    subfolder: str | None,
+) -> tuple[ImportCandidate, ...]:
+    if kind is ImportKind.LOCAL_FOLDER:
+        if not local_folder_path or not local_folder_path.strip():
+            raise ValueError("LOCAL_FOLDER_PATH_REQUIRED")
+        return read_folder(local_folder_path, subfolder)
+    if kind in {ImportKind.EPUB, ImportKind.DOCX}:
+        if file is None:
+            raise ValueError("IMPORT_FILE_REQUIRED")
+        return await _preview_uploaded_file(kind, file)
+    raise ValueError("IMPORT_PREVIEW_KIND_UNSUPPORTED")
+
+
+async def _preview_uploaded_file(kind: ImportKind, file: UploadFile) -> tuple[ImportCandidate, ...]:
+    suffix = PureWindowsPath(file.filename or "").suffix or f".{kind.value.lower()}"
+    temp_path = Path(tempfile.gettempdir()) / f"truyenaudio-import-{uuid4().hex}{suffix}"
+    try:
+        with temp_path.open("xb") as output:
+            while chunk := await file.read(1024 * 1024):
+                output.write(chunk)
+        if kind is ImportKind.EPUB:
+            return read_epub(temp_path)
+        return read_docx(temp_path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def _candidate_dict(candidate: ImportCandidate) -> dict[str, object]:
+    return {
+        "ordinal": candidate.ordinal,
+        "title": candidate.title,
+        "text": candidate.text,
+        "sourcePath": candidate.source_path,
+        "warnings": list(candidate.warnings),
+    }
 
 
 def _dataclass_dict(value: object) -> dict[str, object]:

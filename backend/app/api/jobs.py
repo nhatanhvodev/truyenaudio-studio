@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Header, Query
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
+from app.api.events import _events, _parse_cursor
 from app.db.base import create_engine_for, session_factory
-from app.db.models import Job
 from app.settings.config import Settings
+import json
 
 
 def create_jobs_router(settings: Settings | None = None) -> APIRouter:
@@ -24,7 +21,7 @@ def create_jobs_router(settings: Settings | None = None) -> APIRouter:
         factory = session_factory(engine)
         try:
             with factory() as session:
-                return {"events": _job_events(session, after=after)}
+                return {"events": _job_events_from_durable_log(session, after=after)}
         finally:
             engine.dispose()
 
@@ -40,7 +37,7 @@ def create_jobs_router(settings: Settings | None = None) -> APIRouter:
             factory = session_factory(engine)
             try:
                 with factory() as session:
-                    for event in _job_events(session, after=cursor):
+                    for event in _job_events_from_durable_log(session, after=cursor):
                         yield {
                             "id": str(event["sequenceId"]),
                             "event": "job",
@@ -54,28 +51,6 @@ def create_jobs_router(settings: Settings | None = None) -> APIRouter:
     return router
 
 
-def _job_events(session: Session, *, after: str | None) -> list[dict[str, object]]:
-    jobs = session.execute(select(Job).order_by(Job.updated_at.asc(), Job.id.asc())).scalars().all()
-    events = [_to_event(job) for job in jobs]
-    if after:
-        normalized_after = after.replace(" ", "+")
-        return [event for event in events if str(event["sequenceId"]) > normalized_after]
-    return events
-
-
-def _to_event(job: Job) -> dict[str, object]:
-    return {
-        "sequenceId": _sequence_id(job),
-        "jobId": job.id,
-        "status": job.status,
-        "current": job.progress_current,
-        "total": job.progress_total,
-        "errorCode": job.error_code,
-    }
-
-
-def _sequence_id(job: Job) -> str:
-    updated_at = job.updated_at
-    if not isinstance(updated_at, datetime):
-        updated_at = datetime.now(UTC)
-    return f"{updated_at.astimezone(UTC).isoformat()}:{job.id}"
+def _job_events_from_durable_log(session, *, after: str | None) -> list[dict[str, object]]:
+    cursor = _parse_cursor(after) if after else None
+    return [event for event in _events(session, after=cursor) if event["type"] == "job"]

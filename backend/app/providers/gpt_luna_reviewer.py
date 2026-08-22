@@ -4,6 +4,8 @@ from inspect import isawaitable
 import json
 from typing import Any
 
+import httpx
+
 from app.contracts import QaCategory, QaSeverity, ReviewFinding, ReviewRequest, ReviewResult, Usage, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked
 from app.providers.qwen_mt import ProviderBillingUnknown, Secret, _non_negative_usage
@@ -39,8 +41,10 @@ class GptLunaReviewer:
         payload = _payload(request)
         headers = {"Authorization": f"Bearer {self.secret.value}", "Content-Type": "application/json"}
 
+        request_started = False
         response_sent = False
         try:
+            request_started = True
             response = self.http_client.post(
                 self.endpoint,
                 json=payload,
@@ -65,9 +69,13 @@ class GptLunaReviewer:
                     Usage(UsageUnit.INPUT_TOKEN.value, _non_negative_usage(usage.get("prompt_tokens")), provider_request_id),
                     Usage(UsageUnit.OUTPUT_TOKEN.value, _non_negative_usage(usage.get("completion_tokens")), provider_request_id),
                 ),
-            )
+                )
         except TimeoutError as exc:
             raise ProviderBillingUnknown("LUNA_BILLING_UNKNOWN") from exc
+        except (httpx.TimeoutException, httpx.TransportError) as exc:
+            if request_started:
+                raise ProviderBillingUnknown("LUNA_BILLING_UNKNOWN") from exc
+            raise
         except Exception as exc:
             if response_sent:
                 raise ProviderBillingUnknown("LUNA_BILLING_UNKNOWN") from exc

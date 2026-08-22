@@ -41,6 +41,36 @@ def test_online_backup_restores_pointers(migrated_engine, tmp_path: Path) -> Non
         assert connection.execute("SELECT relative_path FROM artifacts").fetchone()[0] == "chapters/one/master.mp3"
 
 
+def test_restore_verifies_rows_under_data_root_artifacts_when_paths_are_artifact_relative(
+    migrated_engine,
+    tmp_path: Path,
+) -> None:
+    db_path = Path(migrated_engine.url.database)
+    data_root = tmp_path
+    artifact_path = data_root / "artifacts" / "audio" / "chapter-1.mp3"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_bytes(b"speech artifact")
+    _seed_artifact_row(
+        migrated_engine,
+        "audio/chapter-1.mp3",
+        _sha256_bytes(b"speech artifact"),
+    )
+
+    service = BackupService(
+        db_path=db_path,
+        backup_root=data_root / "backups",
+        artifact_root=data_root,
+        api_lock_path=data_root / "studio-api.lock",
+        worker_lock_path=data_root / "studio-worker.lock",
+    )
+    backup = service.create()
+
+    with service.acquire_restore_locks() as token:
+        restored = service.restore_to(backup.id, data_root / "restored.sqlite3", lock_token=token)
+
+    assert restored.artifact_pointer_count == 1
+
+
 def test_restore_requires_api_and_worker_startup_locks(migrated_engine, tmp_path: Path) -> None:
     db_path = Path(migrated_engine.url.database)
     service = BackupService(

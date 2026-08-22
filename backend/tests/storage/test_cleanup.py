@@ -107,6 +107,31 @@ def test_cleanup_deletes_reviewed_candidates_and_reports_exact_freed_bytes(db_se
     assert db_session.execute(text("SELECT COUNT(*) FROM audit_events")).scalar_one() == 2
 
 
+def test_cleanup_resolves_artifact_relative_rows_under_data_root_artifacts(db_session, tmp_path: Path) -> None:
+    from app.modules.artifacts.store import ArtifactStore
+
+    data_root_store = ArtifactStore(tmp_path)
+    artifact_path = tmp_path / "artifacts" / "audio" / "preview.wav"
+    _write_artifact(artifact_path, b"preview audio")
+    _insert_artifact(
+        db_session,
+        artifact_id="018f0000-0000-7000-8000-000000030101",
+        kind="VOICE_PREVIEW",
+        status="READY",
+        relative_path="audio/preview.wav",
+        payload=b"preview audio",
+    )
+    db_session.commit()
+    service = CleanupService(db_session, data_root_store, clock=lambda: NOW)
+
+    plan = service.preview()
+    result = service.execute(plan.plan_id, plan.snapshot_hash)
+
+    assert [candidate.relative_path for candidate in plan.candidates] == ["audio/preview.wav"]
+    assert result.deleted_paths == ("audio/preview.wav",)
+    assert not artifact_path.exists()
+
+
 def test_cleanup_mid_plan_unlink_failure_leaves_no_deleted_file_without_audit_status(
     db_session,
     artifact_store,

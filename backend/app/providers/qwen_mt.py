@@ -5,6 +5,8 @@ from inspect import isawaitable
 import os
 from typing import Any
 
+import httpx
+
 from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked
 
@@ -83,7 +85,9 @@ class QwenMtAdapter:
         payload = self._payload(request)
         headers = {"Authorization": f"Bearer {self.secret.value}", "Content-Type": "application/json"}
 
+        request_started = False
         try:
+            request_started = True
             response = self.http_client.post(
                 self.endpoint,
                 json=payload,
@@ -92,8 +96,10 @@ class QwenMtAdapter:
             )
             if isawaitable(response):
                 response = await response
-        except TimeoutError as exc:
-            raise ProviderBillingUnknown("QWEN_BILLING_UNKNOWN") from exc
+        except (TimeoutError, httpx.TimeoutException, httpx.TransportError) as exc:
+            if request_started:
+                raise ProviderBillingUnknown("QWEN_BILLING_UNKNOWN") from exc
+            raise
 
         response.raise_for_status()
         body = response.json()

@@ -52,7 +52,8 @@ def test_jobs_snapshot_maps_persisted_jobs_and_after_cursor(settings: Settings, 
 
     assert snapshot == [
         {
-            "sequenceId": "2026-08-21T01:00:00+00:00:018f0000-0000-7000-8000-000000000201",
+            "sequenceId": 1,
+            "type": "job",
             "jobId": first.id,
             "status": "RUNNING",
             "current": 1,
@@ -60,7 +61,8 @@ def test_jobs_snapshot_maps_persisted_jobs_and_after_cursor(settings: Settings, 
             "errorCode": None,
         },
         {
-            "sequenceId": "2026-08-21T01:01:00+00:00:018f0000-0000-7000-8000-000000000202",
+            "sequenceId": 2,
+            "type": "job",
             "jobId": second.id,
             "status": "FAILED",
             "current": 2,
@@ -105,7 +107,7 @@ def test_jobs_events_replays_after_last_event_id_header(settings: Settings, db_s
     db_session.commit()
 
     client = TestClient(create_app(settings=settings, acquire_lock=False), base_url=LOOPBACK_ORIGIN)
-    after = "2026-08-21T02:00:00+00:00:018f0000-0000-7000-8000-000000000401"
+    after = "1"
 
     response = client.get("/api/jobs/events", headers={"Last-Event-ID": after})
 
@@ -113,3 +115,4 @@ def test_jobs_events_replays_after_last_event_id_header(settings: Settings, db_s
     assert response.headers["content-type"].startswith("text/event-stream")
     assert second.id in response.text
     assert first.id not in response.text
+    assert "2026-08-21T02:00:00+00:00" not in response.text

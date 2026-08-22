@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 
 from app.contracts import OperationContext, QaSeverity, ReviewRequest, UsageUnit
@@ -97,6 +98,28 @@ async def test_luna_timeout_after_send_marks_billing_unknown_without_retry(revie
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("exception", [httpx.ReadTimeout("read timed out"), httpx.ConnectError("transport unclear")])
+async def test_luna_httpx_timeout_or_transport_after_dispatch_marks_billing_unknown(
+    review_request,
+    exception: Exception,
+) -> None:
+    guard = RecordingGuard()
+    http = HttpxExceptionHttp(exception)
+    luna = GptLunaReviewer(
+        http,
+        Secret("secret-value"),
+        cloud_guard=guard,
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+
+    with pytest.raises(ProviderBillingUnknown):
+        await luna.review(review_request)
+
+    assert http.calls == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "response",
     [
@@ -149,6 +172,16 @@ class TimeoutAfterSendHttp:
     async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str], timeout: int):
         self.calls += 1
         raise TimeoutError("provider timed out after request dispatch")
+
+
+class HttpxExceptionHttp:
+    def __init__(self, exception: Exception) -> None:
+        self.exception = exception
+        self.calls = 0
+
+    async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str], timeout: int):
+        self.calls += 1
+        raise self.exception
 
 
 class AmbiguousResultHttp:

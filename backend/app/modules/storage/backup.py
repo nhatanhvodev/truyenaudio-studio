@@ -206,15 +206,35 @@ class BackupService:
             ).fetchall()
 
         for relative_path, expected_sha256 in rows:
-            path = (self.artifact_root / relative_path).resolve()
+            path = self._resolve_artifact_pointer(str(relative_path), str(expected_sha256))
+            if path is None:
+                raise BackupVerificationError(f"artifact pointer missing: {relative_path}")
+        return len(rows)
+
+    def _resolve_artifact_pointer(self, relative_path: str, expected_sha256: str) -> Path | None:
+        candidates = self._artifact_pointer_candidates(relative_path)
+        found_file = False
+        for path in candidates:
             if not path.is_relative_to(self.artifact_root):
                 raise BackupVerificationError(f"artifact pointer escapes root: {relative_path}")
             if not path.is_file():
-                raise BackupVerificationError(f"artifact pointer missing: {relative_path}")
+                continue
+            found_file = True
             actual_sha256, _ = _sha256_file(path)
-            if actual_sha256 != expected_sha256:
-                raise BackupVerificationError(f"artifact pointer checksum mismatch: {relative_path}")
-        return len(rows)
+            if actual_sha256 == expected_sha256:
+                return path
+        if found_file:
+            raise BackupVerificationError(f"artifact pointer checksum mismatch: {relative_path}")
+        return None
+
+    def _artifact_pointer_candidates(self, relative_path: str) -> tuple[Path, ...]:
+        primary = (self.artifact_root / relative_path).resolve()
+        if self.artifact_root.name == "artifacts":
+            return (primary,)
+        secondary = (self.artifact_root / "artifacts" / relative_path).resolve()
+        if secondary == primary:
+            return (primary,)
+        return (primary, secondary)
 
     def _prune_backups(self) -> None:
         manifests = sorted(self.backup_root.glob("*.manifest.json"), key=lambda path: path.stat().st_mtime, reverse=True)

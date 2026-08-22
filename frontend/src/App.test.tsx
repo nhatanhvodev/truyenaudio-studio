@@ -104,6 +104,54 @@ describe('App', () => {
     expect(screen.getByText('Qwen target')).toBeVisible();
   });
 
+  it('previews folder imports and confirms only after mapping review', async () => {
+    window.history.replaceState(null, '', '/projects/project-1/import');
+    vi.stubGlobal('EventSource', undefined);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/projects/project-1/chapters/import/preview' && init?.method === 'POST') {
+        return jsonResponse({
+          candidates: [
+            {
+              ordinal: 1,
+              title: 'Chuong 1',
+              text: 'Chuong 1\nPreview body.',
+              sourcePath: 'chapter-1.txt',
+              warnings: [],
+            },
+          ],
+        });
+      }
+      if (url === '/api/security/bootstrap') {
+        return jsonResponse({ csrfToken: 'token-1' });
+      }
+      if (url === '/api/projects/project-1/chapters/import' && init?.method === 'POST') {
+        return jsonResponse({ chapters: [] });
+      }
+      if (url === '/api/jobs/snapshot') {
+        return jsonResponse({ events: [] });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { default: App } = await import('./App');
+
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText('Local folder path'), { target: { value: 'D:\\books\\one' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview folder' }));
+
+    expect(await screen.findByText('chapter-1.txt')).toBeVisible();
+    expect(fetchSpy.mock.calls.some(([url]) => url === '/api/projects/project-1/chapters/import')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm import mapping' }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/projects/project-1/chapters/import', expect.anything()));
+    const importCall = fetchSpy.mock.calls.find(([url]) => url === '/api/projects/project-1/chapters/import');
+    expect(JSON.parse(String(importCall?.[1]?.body))).toEqual({
+      kind: 'PASTE',
+      items: [{ ordinal: 1, title: 'Chuong 1', text: 'Chuong 1\nPreview body.' }],
+    });
+  });
+
   it('builds a private archive from the export screen and displays checksum result', async () => {
     window.history.replaceState(null, '', '/chapters/chapter-1/export');
     vi.stubGlobal('EventSource', undefined);

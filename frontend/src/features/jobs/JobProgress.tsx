@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiJson } from '../../shared/api';
 
 type JobEvent = {
-  sequenceId: string;
+  sequenceId: string | number;
   jobId: string;
   status: string;
   current: number;
@@ -41,7 +41,7 @@ export function JobProgress({ events = [] }: Props) {
         return;
       }
       const lastEventId = lastSequenceRef.current;
-      const url = lastEventId ? `/api/jobs/events?after=${encodeURIComponent(lastEventId)}` : '/api/jobs/events';
+      const url = lastEventId ? `/api/events?after=${encodeURIComponent(lastEventId)}` : '/api/events';
       source = new EventSource(url);
       setStreamState('connecting');
       source.onopen = () => setStreamState('connected');
@@ -60,7 +60,8 @@ export function JobProgress({ events = [] }: Props) {
       if (nextEvents.length === 0) {
         return;
       }
-      lastSequenceRef.current = nextEvents.at(-1)?.sequenceId ?? lastSequenceRef.current;
+      const nextSequence = nextEvents.at(-1)?.sequenceId;
+      lastSequenceRef.current = nextSequence === undefined ? lastSequenceRef.current : String(nextSequence);
       setStreamEvents((current) => [...current, ...nextEvents].slice(-6));
     }
 

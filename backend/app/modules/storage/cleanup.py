@@ -98,10 +98,10 @@ class CleanupService:
         skipped_paths: list[str] = []
         freed_bytes = 0
         for candidate in plan.candidates:
-            if not self._candidate_still_deletable(candidate):
+            path = self._candidate_deletable_path(candidate)
+            if path is None:
                 skipped_paths.append(candidate.relative_path)
                 continue
-            path = self.artifact_store.resolve(candidate.relative_path)
             size = self._delete_with_durable_audit(candidate, path)
             freed_bytes += size
             deleted_paths.append(candidate.relative_path)
@@ -164,10 +164,10 @@ class CleanupService:
             if candidate_type is None:
                 continue
             try:
-                path = self.artifact_store.resolve(str(row["relative_path"]))
+                path = self._resolve_artifact_path(str(row["relative_path"]), str(row["sha256"]))
             except UnsafeArtifactPath:
                 continue
-            if not path.is_file():
+            if path is None:
                 continue
             actual_sha256, byte_size = _sha256_file(path)
             if actual_sha256 != row["sha256"]:
@@ -231,17 +231,20 @@ class CleanupService:
         return None
 
     def _candidate_still_deletable(self, candidate: CleanupCandidate) -> bool:
+        return self._candidate_deletable_path(candidate) is not None
+
+    def _candidate_deletable_path(self, candidate: CleanupCandidate) -> Path | None:
         try:
-            path = self.artifact_store.resolve(candidate.relative_path)
+            path = self._resolve_candidate_path(candidate)
         except UnsafeArtifactPath:
-            return False
+            return None
         if not path.is_file():
-            return False
+            return None
         actual_sha256, byte_size = _sha256_file(path)
         if actual_sha256 != candidate.sha256 or byte_size != candidate.byte_size:
-            return False
+            return None
         if candidate.artifact_id is None:
-            return candidate.candidate_type in {"partial", "diagnostic_log"}
+            return path if candidate.candidate_type in {"partial", "diagnostic_log"} else None
         row = self.session.execute(
             text(
                 """
@@ -253,11 +256,33 @@ class CleanupService:
             {"id": candidate.artifact_id},
         ).mappings().one_or_none()
         if row is None or row["relative_path"] != candidate.relative_path:
-            return False
+            return None
         if self._is_protected_artifact(row, self._approved_master_ids()):
-            return False
+            return None
         expected_type = self._candidate_type_for_artifact(row, self._approved_mp3_chapter_ids())
-        return expected_type == candidate.candidate_type and row["sha256"] == candidate.sha256
+        if expected_type != candidate.candidate_type or row["sha256"] != candidate.sha256:
+            return None
+        return path
+
+    def _resolve_candidate_path(self, candidate: CleanupCandidate) -> Path:
+        if candidate.artifact_id is None:
+            return self.artifact_store.resolve(candidate.relative_path)
+        path = self._resolve_artifact_path(candidate.relative_path, candidate.sha256)
+        if path is None:
+            return self.artifact_store.resolve(candidate.relative_path)
+        return path
+
+    def _resolve_artifact_path(self, relative_path: str, expected_sha256: str) -> Path | None:
+        candidates = [self.artifact_store.resolve(relative_path)]
+        if self.artifact_store.resolve().name != "artifacts":
+            candidates.append(self.artifact_store.resolve(f"artifacts/{relative_path}"))
+        for path in candidates:
+            if not path.is_file():
+                continue
+            actual_sha256, _ = _sha256_file(path)
+            if actual_sha256 == expected_sha256:
+                return path
+        return None
 
     def _is_protected_artifact(self, row, approved_master_ids: set[str]) -> bool:
         return str(row["kind"]) in PROTECTED_KINDS or str(row["id"]) in approved_master_ids
