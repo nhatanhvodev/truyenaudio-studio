@@ -107,6 +107,59 @@ def test_cleanup_deletes_reviewed_candidates_and_reports_exact_freed_bytes(db_se
     assert db_session.execute(text("SELECT COUNT(*) FROM audit_events")).scalar_one() == 2
 
 
+def test_cleanup_mid_plan_unlink_failure_leaves_no_deleted_file_without_audit_status(
+    db_session,
+    artifact_store,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_path = artifact_store.resolve("previews/first.wav")
+    second_path = artifact_store.resolve("previews/second.wav")
+    _write_artifact(first_path, b"first")
+    _write_artifact(second_path, b"second")
+    _insert_artifact(
+        db_session,
+        artifact_id="018f0000-0000-7000-8000-000000040001",
+        kind="VOICE_PREVIEW",
+        status="READY",
+        relative_path="previews/first.wav",
+        payload=b"first",
+    )
+    _insert_artifact(
+        db_session,
+        artifact_id="018f0000-0000-7000-8000-000000040002",
+        kind="VOICE_PREVIEW",
+        status="READY",
+        relative_path="previews/second.wav",
+        payload=b"second",
+    )
+    db_session.commit()
+    service = CleanupService(db_session, artifact_store, clock=lambda: NOW)
+    plan = service.preview()
+    original_replace = Path.replace
+
+    def fail_second_replace(path: Path, target: Path) -> Path:
+        if path == second_path:
+            raise PermissionError("simulated second delete failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_second_replace)
+
+    with pytest.raises(PermissionError, match="simulated second delete failure"):
+        service.execute(plan.plan_id, plan.snapshot_hash)
+    db_session.rollback()
+
+    assert not first_path.exists()
+    first_status = db_session.execute(
+        text("SELECT status FROM artifacts WHERE id = '018f0000-0000-7000-8000-000000040001'")
+    ).scalar_one()
+    first_audits = db_session.execute(
+        text("SELECT COUNT(*) FROM audit_events WHERE entity_id = '018f0000-0000-7000-8000-000000040001'")
+    ).scalar_one()
+    assert first_status == "DELETED"
+    assert first_audits == 1
+    assert second_path.exists()
+
+
 def test_disk_guard_warns_at_15_gib_and_hard_blocks_at_20_gib_or_low_free(tmp_path: Path) -> None:
     gib = 1024**3
     warning = DiskGuard(tmp_path, usage_provider=lambda _path: DiskUsage(30 * gib, 15 * gib, 15 * gib))
@@ -147,8 +200,8 @@ def _insert_artifact(
             "relative_path": relative_path,
             "sha256": _sha256_bytes(payload),
             "byte_size": len(payload),
-            "input_hash": HASH_B,
-            "settings_hash": HASH_C,
+            "input_hash": _sha256_bytes(artifact_id.encode("ascii")),
+            "settings_hash": _sha256_bytes(relative_path.encode("utf-8")),
         },
     )
 

@@ -32,7 +32,7 @@ def create_storage_router(settings: Settings | None = None) -> APIRouter:
         return BackupService(
             db_path=active_settings.data_root / "studio.sqlite3",
             backup_root=active_settings.data_root / "backups",
-            artifact_root=active_settings.data_root / "artifacts",
+            artifact_root=active_settings.data_root,
         )
 
     def cleanup_service() -> Iterator[CleanupService]:
@@ -42,7 +42,7 @@ def create_storage_router(settings: Settings | None = None) -> APIRouter:
             with factory() as session:
                 yield CleanupService(
                     session,
-                    ArtifactStore(active_settings.data_root / "artifacts"),
+                    ArtifactStore(active_settings.data_root),
                     plan_store=cleanup_plans,
                 )
         finally:

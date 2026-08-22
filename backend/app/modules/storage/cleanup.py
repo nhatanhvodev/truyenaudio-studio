@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import json
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -100,10 +101,23 @@ class CleanupService:
                 skipped_paths.append(candidate.relative_path)
                 continue
             path = self.artifact_store.resolve(candidate.relative_path)
-            size = path.stat().st_size
-            path.unlink()
+            size = self._delete_with_durable_audit(candidate, path)
             freed_bytes += size
             deleted_paths.append(candidate.relative_path)
+        return CleanupResult(
+            plan_id,
+            len(deleted_paths),
+            len(skipped_paths),
+            freed_bytes,
+            tuple(deleted_paths),
+            tuple(skipped_paths),
+        )
+
+    def _delete_with_durable_audit(self, candidate: CleanupCandidate, path: Path) -> int:
+        size = path.stat().st_size
+        quarantine_path = self._quarantine_path(path)
+        path.replace(quarantine_path)
+        try:
             self._audit_delete(candidate, size)
             if candidate.artifact_id is not None:
                 self.session.execute(
@@ -116,15 +130,18 @@ class CleanupService:
                     ),
                     {"id": candidate.artifact_id, "updated_at": self._now_iso()},
                 )
-        self.session.commit()
-        return CleanupResult(
-            plan_id,
-            len(deleted_paths),
-            len(skipped_paths),
-            freed_bytes,
-            tuple(deleted_paths),
-            tuple(skipped_paths),
-        )
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            if quarantine_path.exists() and not path.exists():
+                quarantine_path.replace(path)
+            raise
+
+        quarantine_path.unlink(missing_ok=True)
+        return size
+
+    def _quarantine_path(self, path: Path) -> Path:
+        return path.with_name(f".{path.name}.{uuid4().hex}.cleanup-delete")
 
     def _artifact_candidates(self) -> list[CleanupCandidate]:
         approved_master_ids = self._approved_master_ids()

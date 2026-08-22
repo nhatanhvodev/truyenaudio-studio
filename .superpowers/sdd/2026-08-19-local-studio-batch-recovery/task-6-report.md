@@ -138,3 +138,49 @@ SAWarning in backend/tests/db/test_schema.py for existing cyclic FK sort during 
 - `backend/tests/api/test_storage_api.py`
 - `frontend/src/features/storage/CleanupPreview.tsx`
 - `frontend/src/features/storage/CleanupPreview.test.tsx`
+
+## Fix Round 1
+
+### Findings Addressed
+
+- Fixed storage API artifact-root wiring so `BackupService` and `CleanupService` use the same `data_root` root as existing `ArtifactStore(active_settings.data_root)` project/source flows.
+- Added backup ID validation and resolved containment checks before manifest/database path creation.
+- Changed cleanup execution from direct unlink plus final commit to per-file quarantine, audit/status commit, and purge. If DB audit/status commit fails, the quarantined file is restored before the exception is raised. If a later candidate fails, earlier deletions already have durable audit/status.
+
+### RED Evidence
+
+Command:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/storage backend/tests/api/test_storage_api.py -q
+```
+
+Result:
+
+```text
+FAILED test_backup_id_cannot_escape_backup_root - DID NOT RAISE BackupVerificationError
+FAILED test_cleanup_mid_plan_unlink_failure_leaves_no_deleted_file_without_audit_status - first_status was READY
+FAILED test_storage_restore_uses_project_artifact_root - restore returned 409 for normal projects/... artifact
+```
+
+### GREEN Evidence
+
+Commands:
+
+```powershell
+.\.venv\Scripts\python -m pytest backend/tests/storage backend/tests/api/test_storage_api.py -q
+.\.venv\Scripts\python -m ruff check backend/app/modules/storage backend/app/api/storage.py backend/tests/storage backend/tests/api/test_storage_api.py
+.\.venv\Scripts\python -m pytest backend/tests/db/test_schema.py backend/tests/artifacts backend/tests/storage backend/tests/api/test_storage_api.py -q
+```
+
+Results:
+
+```text
+11 passed in 3.53s
+All checks passed!
+51 passed, 1 warning in 10.60s
+```
+
+Known warning remains the existing SQLAlchemy cyclic-FK `compare_metadata` warning in `backend/tests/db/test_schema.py`.
+
+Frontend was not touched in fix round 1, so frontend verification was not rerun.

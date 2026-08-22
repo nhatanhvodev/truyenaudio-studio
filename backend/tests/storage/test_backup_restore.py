@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 from sqlalchemy import text
 
-from app.modules.storage.backup import BackupService, RestoreLockRequired
+from app.modules.storage.backup import BackupService, BackupVerificationError, RestoreLockRequired
 
 
 HASH_B = "b" * 64
@@ -74,6 +74,32 @@ def test_backup_manifest_is_verified_and_retains_newest_seven(migrated_engine, t
     assert len(list((tmp_path / "backups").glob("*.sqlite3"))) == 7
 
 
+def test_backup_id_cannot_escape_backup_root(migrated_engine, tmp_path: Path) -> None:
+    backup_root = tmp_path / "backups"
+    backup_root.mkdir()
+    escape_id = r"..\escape"
+    escape_db = tmp_path / "escape.sqlite3"
+    with sqlite3.connect(escape_db) as connection:
+        connection.execute("CREATE TABLE escaped (id INTEGER PRIMARY KEY)")
+    escape_sha256 = _sha256_file(escape_db)
+    (tmp_path / "escape.manifest.json").write_text(
+        (
+            '{"id":"..\\\\escape","schema_version":"truyenaudio-studio.backup.v1",'
+            f'"database":"escape.sqlite3","sha256":"{escape_sha256[0]}",'
+            f'"byte_size":{escape_sha256[1]},"integrity_check":"ok"}}'
+        ),
+        encoding="utf-8",
+    )
+    service = BackupService(
+        db_path=Path(migrated_engine.url.database),
+        backup_root=backup_root,
+        artifact_root=tmp_path,
+    )
+
+    with pytest.raises(BackupVerificationError, match="invalid backup id"):
+        service.verify(escape_id)
+
+
 def _seed_artifact_row(engine, relative_path: str, sha256: str) -> None:
     with engine.begin() as connection:
         connection.execute(
@@ -109,6 +135,18 @@ def _sha256_bytes(payload: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(payload).hexdigest()
+
+
+def _sha256_file(path: Path) -> tuple[str, int]:
+    import hashlib
+
+    sha256 = hashlib.sha256()
+    byte_size = 0
+    with path.open("rb") as file:
+        while chunk := file.read(1024 * 1024):
+            byte_size += len(chunk)
+            sha256.update(chunk)
+    return sha256.hexdigest(), byte_size
 
 
 class _IncrementingClock:

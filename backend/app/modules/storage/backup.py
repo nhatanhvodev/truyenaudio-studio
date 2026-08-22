@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 from uuid import uuid4
 
@@ -15,6 +16,7 @@ from app.settings.startup_lock import StartupLock
 
 
 CHUNK_SIZE = 1024 * 1024
+BACKUP_ID_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z_.-]*$")
 
 
 class BackupError(RuntimeError):
@@ -94,7 +96,7 @@ class BackupService:
         if retention_count < 1:
             raise ValueError("retention_count must be positive")
         self.db_path = Path(db_path)
-        self.backup_root = Path(backup_root)
+        self.backup_root = Path(backup_root).resolve()
         self.artifact_root = Path(artifact_root).resolve()
         self.retention_count = retention_count
         self.api_lock_path = Path(api_lock_path) if api_lock_path is not None else self.db_path.parent / "studio-api.lock"
@@ -229,10 +231,18 @@ class BackupService:
             return json.load(file)
 
     def _backup_path(self, backup_id: str) -> Path:
-        return self.backup_root / f"{backup_id}.sqlite3"
+        return self._contained_backup_path(backup_id, ".sqlite3")
 
     def _manifest_path(self, backup_id: str) -> Path:
-        return self.backup_root / f"{backup_id}.manifest.json"
+        return self._contained_backup_path(backup_id, ".manifest.json")
+
+    def _contained_backup_path(self, backup_id: str, suffix: str) -> Path:
+        if not BACKUP_ID_PATTERN.fullmatch(backup_id) or ".." in backup_id:
+            raise BackupVerificationError(f"invalid backup id: {backup_id}")
+        path = (self.backup_root / f"{backup_id}{suffix}").resolve()
+        if not path.is_relative_to(self.backup_root):
+            raise BackupVerificationError(f"backup path escapes root: {backup_id}")
+        return path
 
 
 def _utc_stamp() -> str:
