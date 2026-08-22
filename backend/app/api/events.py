@@ -6,6 +6,7 @@ import json
 
 from fastapi import APIRouter, Header, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
@@ -76,7 +77,10 @@ def _sync_event_log(session: Session) -> None:
         existing.add((entity_type, entity_id))
         created = True
     if created:
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
 
 
 def _event_payload(session: Session, row: EventLog) -> dict[str, object] | None:

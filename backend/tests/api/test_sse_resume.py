@@ -6,10 +6,13 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 from sse_starlette.sse import AppStatus
 
+import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 
 from app.contracts import JobKind, JobStatus, RightsStatus, SourceType
-from app.db.models import Job, Project
+from app.db.base import session_factory
+from app.db.models import EventLog, Job, Project
 from app.main import create_app
 from app.settings.config import Settings
 
@@ -173,6 +176,62 @@ def test_events_include_audit_and_usage_without_secret_details(settings: Setting
     assert events[2]["measuredUnits"] == 123
     assert "sk-test-1234567890abcdef" not in response.text
     assert "秘密全文" not in response.text
+
+
+def test_event_log_backfill_ignores_row_inserted_by_concurrent_stream(
+    db_session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.api.events import _sync_event_log
+
+    project = Project(
+        id="018f0000-0000-7000-8000-000000007401",
+        title="Concurrent SSE",
+        slug="concurrent-sse",
+        source_type=SourceType.SELF_AUTHORED.value,
+        rights_status=RightsStatus.CLEARED.value,
+    )
+    job = Job(
+        id="018f0000-0000-7000-8000-000000007411",
+        kind=JobKind.EXPORT.value,
+        status=JobStatus.QUEUED.value,
+        project_id=project.id,
+        idempotency_key="concurrent-job",
+        created_at=datetime(2026, 8, 19, 6, 0, tzinfo=UTC),
+        updated_at=datetime(2026, 8, 19, 6, 0, tzinfo=UTC),
+    )
+    db_session.add(project)
+    db_session.flush()
+    db_session.add(job)
+    db_session.commit()
+    original_add = db_session.add
+    raced = False
+
+    def add_after_concurrent_insert(instance: object, *args: object, **kwargs: object) -> None:
+        nonlocal raced
+        if isinstance(instance, EventLog) and not raced:
+            raced = True
+            factory = session_factory(db_session.get_bind())
+            with factory() as concurrent:
+                concurrent.add(
+                    EventLog(
+                        entity_type=instance.entity_type,
+                        entity_id=instance.entity_id,
+                        created_at=instance.created_at,
+                    )
+                )
+                concurrent.commit()
+        original_add(instance, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "add", add_after_concurrent_insert)
+
+    try:
+        _sync_event_log(db_session)
+    except IntegrityError as exc:
+        raise AssertionError("event backfill should ignore rows inserted by a concurrent stream") from exc
+
+    assert raced
+    assert db_session.query(EventLog).filter_by(entity_type="job", entity_id=job.id).count() == 1
 
 
 def _parse_sse(body: str) -> list[dict[str, object]]:

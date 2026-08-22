@@ -73,16 +73,24 @@ test('50 chapter batch list stays paged and fake recovery path exports clean dia
   await page.getByRole('button', { name: 'Tạo bundle publication' }).click();
   await expect(page.getByText('Đã verify checksum')).toBeVisible();
 
-  const recoveryResponse = await request.get(`/api/diagnostics/fake-recovery/check?projectId=${project.id}`);
+  const recoveryResponse = await request.post(`/api/diagnostics/fake-recovery/run?projectId=${project.id}`, {
+    headers,
+  });
   expect(recoveryResponse.ok()).toBeTruthy();
   const recovery = (await recoveryResponse.json()) as {
-    duplicateReadyCacheKeys: string[];
-    duplicateReadyExportManifests: string[];
-    missingReadyArtifactCount: number;
+    workerRunCount: number;
+    workerDrivenRecoveryCount: number;
+    recoveredJobStatus: string;
+    duplicateReadyCacheKeysAfter: string[];
+    duplicateReadyExportManifestsAfter: string[];
+    missingReadyArtifactCountAfter: number;
   };
-  expect(recovery.duplicateReadyCacheKeys).toEqual([]);
-  expect(recovery.duplicateReadyExportManifests).toEqual([]);
-  expect(recovery.missingReadyArtifactCount).toBe(0);
+  expect(recovery.workerRunCount).toBeGreaterThanOrEqual(2);
+  expect(recovery.workerDrivenRecoveryCount).toBe(1);
+  expect(recovery.recoveredJobStatus).toBe('SUCCEEDED');
+  expect(recovery.duplicateReadyCacheKeysAfter).toEqual([]);
+  expect(recovery.duplicateReadyExportManifestsAfter).toEqual([]);
+  expect(recovery.missingReadyArtifactCountAfter).toBe(0);
 
   const diagnosticsResponse = await request.post('/api/diagnostics/export', {
     headers,

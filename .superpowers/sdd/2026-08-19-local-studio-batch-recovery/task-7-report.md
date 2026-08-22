@@ -145,3 +145,66 @@ cd frontend
 npm exec playwright test e2e/batch-recovery.spec.ts
 1 passed
 ```
+
+## Fix round 2
+
+### RED evidence
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests/api/test_sse_resume.py backend/tests/api/test_diagnostics_recovery.py backend/tests/diagnostics -q
+2 failed, 5 passed in 2.91s
+```
+
+Expected failures:
+
+- Event-log backfill raised `UNIQUE constraint failed: event_log.entity_type, event_log.entity_id` when another stream inserted the same event row between read and commit.
+- `POST /api/diagnostics/fake-recovery/run` returned 405 because the E2E-visible worker recovery endpoint did not exist.
+
+### Changes
+
+- Made event-log backfill tolerate concurrent first-stream races by rolling back duplicate insert `IntegrityError` instead of failing the SSE response.
+- Added fake/test-mode `POST /api/diagnostics/fake-recovery/run`, guarded by `STUDIO_FAKE_AUDIO=1`.
+- The endpoint creates an expired `RUNNING` job with an open attempt, runs real `Worker.run_once()` once to execute `recover_expired()`, advances a fake clock past retry delay, runs `Worker.run_once()` again to claim and complete the recovered job, then returns worker-run count, worker-driven recovery count, recovered job status, and before/after duplicate/missing artifact invariants.
+- Updated Playwright to call `/api/diagnostics/fake-recovery/run` and assert `workerDrivenRecoveryCount == 1`, `recoveredJobStatus == "SUCCEEDED"`, and no duplicate READY cache keys/export manifests after recovery.
+
+Ruling: literal OS process kill remains outside the current Playwright harness because it owns a single uvicorn web server and no separate worker process. The browser-visible endpoint now exercises the same backend `Worker.run_once()` and `JobRunner.recover_expired()` path over an expired RUNNING lease, so the E2E observes worker-driven recovery rather than only static invariant checking.
+
+### Verification
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests/api/test_sse_resume.py backend/tests/api/test_diagnostics_recovery.py backend/tests/diagnostics -q
+7 passed in 2.50s
+```
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests/api/test_sse_resume.py backend/tests/api/test_diagnostics_recovery.py backend/tests/diagnostics backend/tests/db/test_schema.py -q
+25 passed, 1 warning in 8.20s
+```
+
+```text
+.\.venv\Scripts\python -m ruff check backend/app/api/events.py backend/app/api/diagnostics.py backend/tests/api/test_sse_resume.py backend/tests/api/test_diagnostics_recovery.py backend/tests/diagnostics
+All checks passed
+```
+
+```text
+cd frontend
+npm test -- --run
+7 passed, 15 tests passed
+```
+
+```text
+cd frontend
+npm run build
+✓ built
+```
+
+```text
+.\.venv\Scripts\python -m pytest backend/tests -q
+346 passed, 1 warning in 64.76s
+```
+
+```text
+cd frontend
+npm exec playwright test e2e/batch-recovery.spec.ts
+1 passed
+```
