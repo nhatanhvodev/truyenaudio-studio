@@ -682,6 +682,9 @@ class SpeechWorkflow:
         )
 
     def _plan_hash(self, plan_id: str, run: TranslationRun) -> str:
+        plan = self.session.get(VoicePlan, plan_id)
+        if plan is None:
+            raise ValueError("VOICE_PLAN_NOT_FOUND")
         segments = self._speech_segments(plan_id)
         return _canonical_sha256(
             {

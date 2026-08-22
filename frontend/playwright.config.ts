@@ -7,6 +7,7 @@ const repoRoot = path.resolve(frontendRoot, '..');
 
 export default defineConfig({
   testDir: './e2e',
+  workers: 1,
   use: {
     baseURL: 'http://127.0.0.1:8765',
     trace: 'retain-on-failure',
