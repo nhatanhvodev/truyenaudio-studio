@@ -11,6 +11,7 @@ from app.api.batches import create_batches_router
 from app.api.cloud_consents import create_cloud_consents_router
 from app.api.cloud_profiles import create_cloud_profiles_router
 from app.api.audio import create_audio_router
+from app.api.asr_qa import create_asr_qa_router
 from app.api.diagnostics import create_diagnostics_router
 from app.api.events import create_events_router
 from app.api.exports import create_exports_router
@@ -70,6 +71,7 @@ def create_app(
     app.include_router(create_voices_router(active_settings))
     app.include_router(create_voice_plans_router(active_settings))
     app.include_router(create_audio_router(active_settings))
+    app.include_router(create_asr_qa_router())
     app.include_router(create_exports_router(active_settings))
     app.include_router(create_storage_router(active_settings))
     app.include_router(create_events_router(active_settings))

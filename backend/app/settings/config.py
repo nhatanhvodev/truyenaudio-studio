@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     port: Literal[8765] = 8765
     worker_concurrency: Literal[1] = 1
     data_root: Path = Path(r"D:\truyenaudio-studio\data")
+    enable_asr_backcheck: bool = False
 
     @field_validator("host", mode="before")
     @classmethod
