@@ -23,7 +23,6 @@ JSONL_FIELDS = (
     "units",
     "costVnd",
     "errorCode",
-    "errorSummary",
 )
 
 SECRET_PATTERNS = (
@@ -75,7 +74,6 @@ class DiagnosticsLogger:
             units=units,
             cost_vnd=cost_vnd,
             error_code=error_code,
-            error_summary=summarize_error(error),
         )
         self.write(record)
         self.stream_logger.error(json.dumps(record, ensure_ascii=False, separators=(",", ":")))

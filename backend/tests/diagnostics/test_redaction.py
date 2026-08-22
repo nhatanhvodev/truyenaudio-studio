@@ -5,7 +5,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.modules.diagnostics.logging import DiagnosticsLogger
+from app.modules.diagnostics.logging import DiagnosticsLogger, summarize_error
 
 
 def test_job_error_writes_allowlisted_jsonl_without_secret_or_full_text(
@@ -57,15 +57,20 @@ def test_job_error_writes_allowlisted_jsonl_without_secret_or_full_text(
         "units",
         "costVnd",
         "errorCode",
-        "errorSummary",
     }
     assert record["timestamp"] == "2026-08-19T01:02:03+00:00"
     assert record["level"] == "ERROR"
-    assert record["errorSummary"] == "failed with [REDACTED] and [REDACTED]"
-    assert len(record["errorSummary"]) <= 500
     assert "sk-test-1234567890abcdef" not in payload
     assert "sk-test-1234567890abcdef" not in rendered
     assert "秘密全文" not in payload
     assert "秘密全文" not in rendered
     assert "ban dich day du" not in payload
     assert "ban dich day du" not in rendered
+
+
+def test_sanctioned_error_summary_is_scrubbed_and_capped() -> None:
+    summary = summarize_error(RuntimeError("sk-test-1234567890abcdef " + ("x" * 700)))
+
+    assert "sk-test-1234567890abcdef" not in summary
+    assert summary.startswith("[REDACTED] ")
+    assert len(summary) <= 500

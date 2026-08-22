@@ -578,3 +578,12 @@ class AuditEvent(CreatedAtMixin, Base):
     before_hash: Mapped[str | None] = mapped_column(String(64))
     after_hash: Mapped[str | None] = mapped_column(String(64))
     redacted_details: Mapped[str | None] = mapped_column(Text)
+
+
+class EventLog(CreatedAtMixin, Base):
+    __tablename__ = "event_log"
+    __table_args__ = (UniqueConstraint("entity_type", "entity_id", name="uq_event_log_entity"),)
+
+    sequence_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    entity_id: Mapped[str] = mapped_column(UUID, nullable=False)

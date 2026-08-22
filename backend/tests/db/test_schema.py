@@ -61,6 +61,7 @@ EXPECTED_TABLES = {
     "usage_ledger",
     "exports",
     "audit_events",
+    "event_log",
 }
 
 
@@ -530,6 +531,12 @@ EXPECTED_COLUMNS = {
         "before_hash",
         "after_hash",
         "redacted_details",
+        "created_at",
+    },
+    "event_log": {
+        "sequence_id",
+        "entity_type",
+        "entity_id",
         "created_at",
     },
 }

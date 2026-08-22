@@ -73,6 +73,17 @@ test('50 chapter batch list stays paged and fake recovery path exports clean dia
   await page.getByRole('button', { name: 'Tạo bundle publication' }).click();
   await expect(page.getByText('Đã verify checksum')).toBeVisible();
 
+  const recoveryResponse = await request.get(`/api/diagnostics/fake-recovery/check?projectId=${project.id}`);
+  expect(recoveryResponse.ok()).toBeTruthy();
+  const recovery = (await recoveryResponse.json()) as {
+    duplicateReadyCacheKeys: string[];
+    duplicateReadyExportManifests: string[];
+    missingReadyArtifactCount: number;
+  };
+  expect(recovery.duplicateReadyCacheKeys).toEqual([]);
+  expect(recovery.duplicateReadyExportManifests).toEqual([]);
+  expect(recovery.missingReadyArtifactCount).toBe(0);
+
   const diagnosticsResponse = await request.post('/api/diagnostics/export', {
     headers,
     data: { includeSample: false, sampleText: `${fixtureSecret} explicit sample` },
