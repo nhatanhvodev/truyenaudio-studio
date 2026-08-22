@@ -95,6 +95,8 @@ class SpeechSegmentView:
     narration_diff: str
     estimated_duration_ms: int
     synthesis_cache_key: str | None
+    role_id: str | None = None
+    role_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -693,6 +695,8 @@ class SpeechWorkflow:
         plan = self.session.get(VoicePlan, plan_id)
         if plan is None:
             raise ValueError("VOICE_PLAN_NOT_FOUND")
+        roles = self._roles(plan.id)
+        role_by_id = {role.id: role for role in roles}
         return VoicePlanView(
             id=plan.id,
             chapter_id=plan.chapter_id,
@@ -707,7 +711,7 @@ class SpeechWorkflow:
                     voice_preset_id=role.voice_preset_id,
                     is_narrator=role.is_narrator,
                 )
-                for role in self._roles(plan.id)
+                for role in roles
             ),
             segments=tuple(
                 SpeechSegmentView(
@@ -723,6 +727,10 @@ class SpeechWorkflow:
                     ).diff,
                     estimated_duration_ms=segment.estimated_duration_ms or 0,
                     synthesis_cache_key=segment.synthesis_cache_key,
+                    role_id=segment.role_id,
+                    role_key=role_by_id[segment.role_id].role_key
+                    if segment.role_id in role_by_id
+                    else None,
                 )
                 for segment in self._speech_segments(plan.id)
             ),

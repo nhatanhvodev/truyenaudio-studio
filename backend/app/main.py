@@ -21,6 +21,7 @@ from app.api.projects import create_projects_router
 from app.api.review import create_review_router
 from app.api.rights import create_rights_router
 from app.api.translation import create_translation_router
+from app.api.voice_plans import create_voice_plans_router
 from app.api.voices import create_voices_router
 from app.settings.config import Settings
 from app.settings.csrf import CsrfService
@@ -65,6 +66,7 @@ def create_app(
     app.include_router(create_rights_router(active_settings))
     app.include_router(create_cloud_consents_router(active_settings))
     app.include_router(create_voices_router(active_settings))
+    app.include_router(create_voice_plans_router(active_settings))
     app.include_router(create_audio_router(active_settings))
     app.include_router(create_exports_router(active_settings))
     app.include_router(create_storage_router(active_settings))
