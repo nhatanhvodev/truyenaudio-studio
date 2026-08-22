@@ -10,12 +10,14 @@ from sqlalchemy.orm import Session
 from app.contracts import (
     ArtifactStatus,
     CloudConsentStatus,
+    ProviderKind,
     RightsScope,
     SourceType,
     Usage,
 )
 from app.db.models import Artifact, CloudProcessingConsent, Project, ProviderProfile, RightsGrant
 from app.modules.budgets.guard import BudgetBlocked, BudgetGuard
+from app.modules.budgets.quota import QuotaUnavailable, evaluate_profile_quota
 
 
 @dataclass(frozen=True)
@@ -78,12 +80,23 @@ class CloudCallGuard:
 
         provider = _provider_name(profile)
         try:
+            quota = evaluate_profile_quota(
+                self.session,
+                profile,
+                estimated_usage,
+                provider=provider,
+                now=self.now(),
+                require_config=profile.provider_kind == ProviderKind.TTS.value,
+            )
+        except QuotaUnavailable as exc:
+            return _deny(str(exc))
+        try:
             quote = self.budget_guard.quote_usage(
                 operation_id=operation_id,
                 provider=provider,
                 model=profile.model or "",
                 region=profile.region,
-                usage=estimated_usage,
+                usage=quota.billable_usage,
                 category=category,
             )
             if budget_authorization_id is None:
@@ -98,7 +111,7 @@ class CloudCallGuard:
             cloud_consent_id=consent.id,
             authorization_id=authorization.id,
             rate_card_ids=quote.rate_card_ids,
-            remaining_quota=(),
+            remaining_quota=quota.remaining_quota,
             reasons=(),
             warnings=quote.warnings,
         )

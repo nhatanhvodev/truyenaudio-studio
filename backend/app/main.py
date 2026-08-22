@@ -9,6 +9,7 @@ from app.api.security import create_security_router, install_csrf_middleware
 from app.api.storage import create_storage_router
 from app.api.batches import create_batches_router
 from app.api.cloud_consents import create_cloud_consents_router
+from app.api.cloud_profiles import create_cloud_profiles_router
 from app.api.audio import create_audio_router
 from app.api.diagnostics import create_diagnostics_router
 from app.api.events import create_events_router
@@ -65,6 +66,7 @@ def create_app(
     app.include_router(create_review_router(active_settings))
     app.include_router(create_rights_router(active_settings))
     app.include_router(create_cloud_consents_router(active_settings))
+    app.include_router(create_cloud_profiles_router(active_settings))
     app.include_router(create_voices_router(active_settings))
     app.include_router(create_voice_plans_router(active_settings))
     app.include_router(create_audio_router(active_settings))

@@ -7,6 +7,9 @@ type CloudConsentProps = {
   policyText: string;
   policySha256: string;
   dataRegion: string;
+  model?: string;
+  retention?: string;
+  quotaLabel?: string;
   onGranted?: (consentId: string) => void;
 };
 
@@ -19,6 +22,9 @@ export function CloudConsent({
   policyText,
   policySha256,
   dataRegion,
+  model,
+  retention = 'Theo policy snapshot đã chấp nhận',
+  quotaLabel = 'Quota chưa cấu hình',
   onGranted,
 }: CloudConsentProps) {
   const [accepted, setAccepted] = useState(false);
@@ -61,11 +67,22 @@ export function CloudConsent({
         <div>
           <h2 style={styles.title}>{providerName}</h2>
           <p style={styles.meta}>Policy hash {shortHash}</p>
+          {model ? <p style={styles.meta}>Model {model}</p> : null}
         </div>
         <span style={styles.region}>{dataRegion}</span>
       </div>
 
       <p style={styles.notice}>Du lieu nguon va ban dich nhap se roi may local de xu ly tren nha cung cap nay.</p>
+      <dl style={styles.facts}>
+        <div>
+          <dt>Retention</dt>
+          <dd>{retention}</dd>
+        </div>
+        <div>
+          <dt>Quota</dt>
+          <dd>{quotaLabel}</dd>
+        </div>
+      </dl>
 
       <label style={styles.check}>
         <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />
@@ -120,6 +137,12 @@ const styles: Record<string, React.CSSProperties> = {
   notice: {
     margin: '0 0 14px',
     lineHeight: 1.45,
+  },
+  facts: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: 10,
+    margin: '0 0 14px',
   },
   check: {
     display: 'flex',
