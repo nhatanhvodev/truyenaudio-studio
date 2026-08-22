@@ -136,6 +136,33 @@ class AssistedVoicePlanService:
         expected_hash: str,
         assignments: Mapping[str, str],
     ) -> VoicePlanView:
+        return self._revise(
+            plan_id,
+            expected_hash=expected_hash,
+            assignments=assignments,
+            role_voice_changes={},
+            action="ASSIGN_VOICE_ROLES",
+        )
+
+    def change_role_voice(self, plan_id: str, role_key: str, voice_preset_id: str) -> VoicePlanView:
+        source_plan = self._voice_plan(plan_id)
+        return self._revise(
+            plan_id,
+            expected_hash=source_plan.plan_sha256,
+            assignments={},
+            role_voice_changes={_normalize_role_key(role_key): voice_preset_id},
+            action="CHANGE_ROLE_VOICE",
+        )
+
+    def _revise(
+        self,
+        plan_id: str,
+        *,
+        expected_hash: str,
+        assignments: Mapping[str, str],
+        role_voice_changes: Mapping[str, str],
+        action: str,
+    ) -> VoicePlanView:
         source_plan = self._voice_plan(plan_id)
         if source_plan.plan_sha256 != expected_hash:
             raise VoicePlanConflict("VOICE_PLAN_HASH_STALE")
@@ -153,6 +180,14 @@ class AssistedVoicePlanService:
         unknown_roles = {_normalize_role_key(role_key) for role_key in assignments.values()} - source_role_keys
         if unknown_roles:
             raise VoicePlanInvalid("ROLE_NOT_IN_PLAN")
+        normalized_voice_changes = {
+            _normalize_role_key(role_key): preset_id
+            for role_key, preset_id in role_voice_changes.items()
+        }
+        if set(normalized_voice_changes) - source_role_keys:
+            raise VoicePlanInvalid("ROLE_NOT_IN_PLAN")
+        for preset_id in normalized_voice_changes.values():
+            self._voice_preset(preset_id)
 
         revised = VoicePlan(
             id=self.id_factory(),
@@ -175,7 +210,7 @@ class AssistedVoicePlanService:
                     voice_plan_id=revised.id,
                     role_key=role.role_key,
                     display_name=role.display_name,
-                    voice_preset_id=role.voice_preset_id,
+                    voice_preset_id=normalized_voice_changes.get(role.role_key, role.voice_preset_id),
                     is_narrator=role.is_narrator,
                 )
             )
@@ -206,12 +241,16 @@ class AssistedVoicePlanService:
         revised.plan_sha256 = self._plan_hash(revised.id, run)
         chapter.active_voice_plan_id = revised.id
         self._audit(
-            "ASSIGN_VOICE_ROLES",
+            action,
             "VoicePlan",
             revised.id,
             source_plan.plan_sha256,
             revised.plan_sha256,
-            {"source_plan_id": source_plan.id, "assigned_count": len(assignments)},
+            {
+                "source_plan_id": source_plan.id,
+                "assigned_count": len(assignments),
+                "role_voice_change_count": len(normalized_voice_changes),
+            },
         )
         self.session.commit()
         return self._plan_view(revised.id)

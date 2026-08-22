@@ -297,11 +297,14 @@ class SpeechWorkflow:
             raise VoicePlanRequired("VOICE_PLAN_REQUIRED")
         run = self._approved_run(chapter)
         self._require_current_voice_plan(plan, run)
-        preset = self._voice_preset(plan.narrator_preset_id)
-        tts = self._tts_for_preset(preset)
         segments = self._speech_segments(plan.id)
         if not segments:
             raise VoicePlanRequired("SPEECH_SEGMENTS_REQUIRED")
+        roles_by_id = {role.id: role for role in self._roles(plan.id)}
+        preset_by_role_id = {
+            role.id: self._voice_preset(role.voice_preset_id)
+            for role in roles_by_id.values()
+        }
 
         if chapter.state == ChapterState.VOICE_CONFIGURED.value:
             chapter.state = next_state(chapter.state, ChapterState.TTS_QUEUED).value
@@ -313,8 +316,12 @@ class SpeechWorkflow:
         artifact_ids: list[str] = []
         audio_paths: list[Path] = []
         durations: list[int] = []
-        settings_hash = self._settings_hash(preset)
         for segment in segments:
+            if segment.role_id not in preset_by_role_id:
+                raise VoicePlanRequired("VOICE_ROLE_NOT_FOUND")
+            preset = preset_by_role_id[segment.role_id]
+            tts = self._tts_for_preset(preset)
+            settings_hash = self._settings_hash(preset)
             cache_key = self._synthesis_cache_key(segment, preset)
             segment.synthesis_cache_key = cache_key
             cached = None
@@ -654,6 +661,7 @@ class SpeechWorkflow:
                 "narration": segment.narration_sha256,
                 "provider": str(capabilities.get("provider") or "unknown"),
                 "model": str(capabilities.get("model") or "unknown"),
+                "provider_version": str(capabilities.get("provider_version") or "unknown"),
                 "voice": preset.provider_voice_id or preset.id,
                 "settings": self._settings_hash(preset),
                 "pronunciation": segment.pronunciation_revision_hash or ZERO_HASH,
@@ -677,14 +685,24 @@ class SpeechWorkflow:
         segments = self._speech_segments(plan_id)
         return _canonical_sha256(
             {
-                "mode": VoiceMode.SINGLE_NARRATOR.value,
+                "mode": plan.mode,
                 "translation_run_id": run.id,
                 "translation_hash": run.translation_text_sha256,
+                "roles": [
+                    {
+                        "role_key": role.role_key,
+                        "voice_preset_id": role.voice_preset_id,
+                        "is_narrator": role.is_narrator,
+                    }
+                    for role in self._roles(plan_id)
+                ],
                 "segments": [
                     {
-                        "id": segment.id,
+                        "segment_index": segment.segment_index,
+                        "translation_segment_id": segment.translation_segment_id,
                         "narration_sha256": segment.narration_sha256,
                         "pronunciation_hash": segment.pronunciation_revision_hash,
+                        "role_id": segment.role_id,
                     }
                     for segment in segments
                 ],
