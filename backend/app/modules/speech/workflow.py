@@ -95,6 +95,8 @@ class SpeechSegmentView:
     narration_diff: str
     estimated_duration_ms: int
     synthesis_cache_key: str | None
+    role_id: str | None = None
+    role_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +146,8 @@ class SpeechWorkflow:
         self.artifact_root = Path(artifact_root or Path("data") / "artifacts")
         self.id_factory = id_factory
         self.allow_fake_tts = allow_fake_tts
+        self._render_cloud_consent_id: str | None = None
+        self._render_budget_authorization_id: str | None = None
 
     def preview(self, *args: object, **kwargs: object) -> object:
         raise NotImplementedError("voice preview is owned by VoiceCatalog")
@@ -206,8 +210,20 @@ class SpeechWorkflow:
         self.session.commit()
         return self._plan_view(plan.id)
 
-    def enqueue_render(self, chapter_id: str) -> RenderedChapterView:
-        return self._render(chapter_id, force_segment_ids=frozenset())
+    def enqueue_render(
+        self,
+        chapter_id: str,
+        *,
+        cloud_consent_id: str | None = None,
+        budget_authorization_id: str | None = None,
+    ) -> RenderedChapterView:
+        self._render_cloud_consent_id = cloud_consent_id
+        self._render_budget_authorization_id = budget_authorization_id
+        try:
+            return self._render(chapter_id, force_segment_ids=frozenset())
+        finally:
+            self._render_cloud_consent_id = None
+            self._render_budget_authorization_id = None
 
     def regenerate_segments(
         self,
@@ -295,11 +311,14 @@ class SpeechWorkflow:
             raise VoicePlanRequired("VOICE_PLAN_REQUIRED")
         run = self._approved_run(chapter)
         self._require_current_voice_plan(plan, run)
-        preset = self._voice_preset(plan.narrator_preset_id)
-        tts = self._tts_for_preset(preset)
         segments = self._speech_segments(plan.id)
         if not segments:
             raise VoicePlanRequired("SPEECH_SEGMENTS_REQUIRED")
+        roles_by_id = {role.id: role for role in self._roles(plan.id)}
+        preset_by_role_id = {
+            role.id: self._voice_preset(role.voice_preset_id)
+            for role in roles_by_id.values()
+        }
 
         if chapter.state == ChapterState.VOICE_CONFIGURED.value:
             chapter.state = next_state(chapter.state, ChapterState.TTS_QUEUED).value
@@ -311,8 +330,12 @@ class SpeechWorkflow:
         artifact_ids: list[str] = []
         audio_paths: list[Path] = []
         durations: list[int] = []
-        settings_hash = self._settings_hash(preset)
         for segment in segments:
+            if segment.role_id not in preset_by_role_id:
+                raise VoicePlanRequired("VOICE_ROLE_NOT_FOUND")
+            preset = preset_by_role_id[segment.role_id]
+            tts = self._tts_for_preset(preset)
+            settings_hash = self._settings_hash(preset)
             cache_key = self._synthesis_cache_key(segment, preset)
             segment.synthesis_cache_key = cache_key
             cached = None
@@ -518,8 +541,8 @@ class SpeechWorkflow:
                 cache_key=cache_key,
                 timeout_seconds=120,
                 estimated_units=len(segment.narration_text),
-                budget_authorization_id=None,
-                cloud_consent_id=None,
+                budget_authorization_id=self._render_budget_authorization_id,
+                cloud_consent_id=self._render_cloud_consent_id,
             ),
             speech_segment_id=segment.id,
             narration_text=segment.narration_text,
@@ -652,6 +675,7 @@ class SpeechWorkflow:
                 "narration": segment.narration_sha256,
                 "provider": str(capabilities.get("provider") or "unknown"),
                 "model": str(capabilities.get("model") or "unknown"),
+                "provider_version": str(capabilities.get("provider_version") or "unknown"),
                 "voice": preset.provider_voice_id or preset.id,
                 "settings": self._settings_hash(preset),
                 "pronunciation": segment.pronunciation_revision_hash or ZERO_HASH,
@@ -672,17 +696,30 @@ class SpeechWorkflow:
         )
 
     def _plan_hash(self, plan_id: str, run: TranslationRun) -> str:
+        plan = self.session.get(VoicePlan, plan_id)
+        if plan is None:
+            raise ValueError("VOICE_PLAN_NOT_FOUND")
         segments = self._speech_segments(plan_id)
         return _canonical_sha256(
             {
-                "mode": VoiceMode.SINGLE_NARRATOR.value,
+                "mode": plan.mode,
                 "translation_run_id": run.id,
                 "translation_hash": run.translation_text_sha256,
+                "roles": [
+                    {
+                        "role_key": role.role_key,
+                        "voice_preset_id": role.voice_preset_id,
+                        "is_narrator": role.is_narrator,
+                    }
+                    for role in self._roles(plan_id)
+                ],
                 "segments": [
                     {
-                        "id": segment.id,
+                        "segment_index": segment.segment_index,
+                        "translation_segment_id": segment.translation_segment_id,
                         "narration_sha256": segment.narration_sha256,
                         "pronunciation_hash": segment.pronunciation_revision_hash,
+                        "role_id": segment.role_id,
                     }
                     for segment in segments
                 ],
@@ -693,6 +730,8 @@ class SpeechWorkflow:
         plan = self.session.get(VoicePlan, plan_id)
         if plan is None:
             raise ValueError("VOICE_PLAN_NOT_FOUND")
+        roles = self._roles(plan.id)
+        role_by_id = {role.id: role for role in roles}
         return VoicePlanView(
             id=plan.id,
             chapter_id=plan.chapter_id,
@@ -707,7 +746,7 @@ class SpeechWorkflow:
                     voice_preset_id=role.voice_preset_id,
                     is_narrator=role.is_narrator,
                 )
-                for role in self._roles(plan.id)
+                for role in roles
             ),
             segments=tuple(
                 SpeechSegmentView(
@@ -723,6 +762,10 @@ class SpeechWorkflow:
                     ).diff,
                     estimated_duration_ms=segment.estimated_duration_ms or 0,
                     synthesis_cache_key=segment.synthesis_cache_key,
+                    role_id=segment.role_id,
+                    role_key=role_by_id[segment.role_id].role_key
+                    if segment.role_id in role_by_id
+                    else None,
                 )
                 for segment in self._speech_segments(plan.id)
             ),

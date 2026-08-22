@@ -7,6 +7,7 @@ import ImportPreview, { type ImportCandidate } from '../features/import/ImportPr
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { apiForm, apiJson } from '../shared/api';
+import MultiVoiceCloudDemo from '../features/voices/MultiVoiceCloudDemo';
 
 const fakePresetId = '018f0000-0000-7000-8000-000000000001';
 const fakeAudioEnabled = ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_STUDIO_FAKE_AUDIO) === '1';
@@ -83,6 +84,10 @@ export const router = createBrowserRouter([
       { path: 'chapters/:chapterId/export', element: <ExportScreen /> },
       { path: 'jobs', element: <JobsScreen /> },
       { path: 'diagnostics', element: <Diagnostics /> },
+      {
+        path: 'multivoice-cloud-demo',
+        element: <MultiVoiceCloudDemo />,
+      },
       { path: '*', element: <Navigate to="/" replace /> },
     ],
   },

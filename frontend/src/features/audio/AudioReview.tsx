@@ -7,13 +7,23 @@ type RenderedAudio = {
   renderedSegmentIds: string[];
 };
 
+type AsrIssue = {
+  id: string;
+  category: string;
+  severity: string;
+  segmentId: string;
+  evidence: string;
+};
+
 type Props = {
   chapterId: string;
   presetId: string;
+  initialRendered?: RenderedAudio | null;
+  asrIssues?: AsrIssue[];
 };
 
-export default function AudioReview({ chapterId, presetId }: Props) {
-  const [rendered, setRendered] = useState<RenderedAudio | null>(null);
+export default function AudioReview({ chapterId, presetId, initialRendered = null, asrIssues = [] }: Props) {
+  const [rendered, setRendered] = useState<RenderedAudio | null>(initialRendered);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -88,6 +98,21 @@ export default function AudioReview({ chapterId, presetId }: Props) {
           <dd>{rendered?.masterSha256.slice(0, 12) ?? '-'}</dd>
         </div>
       </dl>
+
+      {asrIssues.length > 0 ? (
+        <section aria-label="ASR advisory" style={styles.asrBox}>
+          <h3 style={styles.asrTitle}>ASR advisory</h3>
+          <p style={styles.meta}>Các issue này chỉ ưu tiên nghe lại, không tự approve hoặc tự sửa.</p>
+          <ul style={styles.issueList}>
+            {asrIssues.map((issue) => (
+              <li key={issue.id}>
+                <strong>{issue.category} · {issue.severity} · {issue.segmentId}</strong>
+                <span>{issue.evidence}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </section>
   );
 }
@@ -155,5 +180,22 @@ const styles: Record<string, React.CSSProperties> = {
     gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
     gap: 12,
     margin: '18px 0 0',
+  },
+  asrBox: {
+    marginTop: 18,
+    padding: 14,
+    border: '1px solid #f2c94c',
+    borderRadius: 8,
+    background: '#fff9db',
+  },
+  asrTitle: {
+    margin: 0,
+    fontSize: 18,
+  },
+  issueList: {
+    display: 'grid',
+    gap: 8,
+    margin: '12px 0 0',
+    paddingLeft: 20,
   },
 };

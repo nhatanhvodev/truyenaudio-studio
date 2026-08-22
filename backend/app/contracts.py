@@ -335,6 +335,27 @@ class TtsAdapter(Protocol):
     async def synthesize(self, request: SynthesisRequest, output_path: Path) -> SynthesisResult: ...
 
 
+@dataclass(frozen=True)
+class AsrRequest:
+    context: OperationContext
+    audio_path: Path
+    expected_text: str
+    locale: str = "vi-VN"
+
+
+@dataclass(frozen=True)
+class AsrResult:
+    transcript: str
+    provider: str
+    model: str
+    provider_version: str
+    usage: tuple[Usage, ...]
+
+
+class AsrAdapter(Protocol):
+    async def transcribe(self, request: AsrRequest) -> AsrResult: ...
+
+
 class AudioProcessor(Protocol):
     async def master(self, request: MasterRequest, output_path: Path) -> MasterResult: ...
     async def probe(self, path: Path) -> MasterResult: ...
