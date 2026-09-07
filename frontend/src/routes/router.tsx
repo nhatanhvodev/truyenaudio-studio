@@ -3,10 +3,12 @@ import { useEffect, useState } from 'react';
 import { BatchQueue } from '../features/batch/BatchQueue';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { ExportGate } from '../features/exports/ExportGate';
-import ImportPreview, { type ImportCandidate } from '../features/import/ImportPreview';
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
+import { WenkuImport } from '../features/import/WenkuImport';
+import { WenkuCrawlProvider } from '../features/import/WenkuCrawlContext';
 import { apiForm, apiJson } from '../shared/api';
+import ImportPreview, { type ImportCandidate } from '../features/import/ImportPreview';
 import MultiVoiceCloudDemo from '../features/voices/MultiVoiceCloudDemo';
 
 const fakePresetId = '018f0000-0000-7000-8000-000000000001';
@@ -21,6 +23,16 @@ type Chapter = {
   sourceTitle?: string | null;
 };
 
+type TranslationIssue = {
+  id: string;
+  category: string;
+  severity: string;
+  status: string;
+  evidence?: string | null;
+  suggestion?: string | null;
+  sourceSegmentId?: string | null;
+};
+
 type TranslationPayload = {
   run: {
     id: string;
@@ -32,6 +44,7 @@ type TranslationPayload = {
     sourceText: string;
     targetText: string;
   }[];
+  issues: TranslationIssue[];
 };
 
 type RenderedAudio = {
@@ -95,48 +108,31 @@ export const router = createBrowserRouter([
 
 function Shell() {
   return (
-    <main style={styles.shell}>
-      <nav style={styles.nav} aria-label="Workflow">
-        <Link to="/projects/new" style={styles.navLink}>Dự án</Link>
-        <Link to="/jobs" style={styles.navLink}>Jobs</Link>
-        <Link to="/diagnostics" style={styles.navLink}>Diagnostics</Link>
-      </nav>
-      <Outlet />
-      <JobProgress />
-    </main>
+    <WenkuCrawlProvider>
+      <main style={styles.shell}>
+        <nav style={styles.nav} aria-label="Workflow">
+          <Link to="/" style={styles.navLink}>Dự án</Link>
+          <Link to="/jobs" style={styles.navLink}>Jobs</Link>
+          <Link to="/diagnostics" style={styles.navLink}>Diagnostics</Link>
+        </nav>
+        <Outlet />
+        <JobProgress />
+      </main>
+    </WenkuCrawlProvider>
   );
 }
 
 function ImportScreen() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const [text, setText] = useState('');
   const [folderPath, setFolderPath] = useState('');
   const [bookFile, setBookFile] = useState<File | null>(null);
   const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  async function importSource() {
-    if (!projectId) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const payload = await apiJson<{ chapters: Chapter[] }>(`/api/projects/${projectId}/chapters/import`, {
-        method: 'POST',
-        body: {
-          kind: 'PASTE',
-          items: [{ ordinal: 1, title: 'Chương 1', text }],
-        },
-      });
-      navigate(`/chapters/${payload.chapters[0].id}/translation`);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'IMPORT_FAILED');
-    } finally {
-      setBusy(false);
-    }
+  if (!projectId) {
+    return <Navigate to="/" replace />;
   }
 
   async function previewFolder() {
@@ -212,43 +208,50 @@ function ImportScreen() {
   return (
     <section style={styles.panel} aria-label="Nhập nội dung">
       <h1 style={styles.title}>Nhập nội dung</h1>
-      <label style={styles.label}>
-        Văn bản Trung
-        <textarea value={text} onChange={(event) => setText(event.target.value)} style={styles.textarea} />
-      </label>
-      <button type="button" onClick={() => void importSource()} disabled={busy || !text.trim()} style={styles.primaryButton}>
-        Xác nhận snapshot
-      </button>
-      <section style={styles.guardBox} aria-label="Book import preview">
-        <label style={styles.label}>
-          EPUB or DOCX file
-          <input
-            type="file"
-            accept=".epub,.docx,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            onChange={(event) => setBookFile(event.target.files?.[0] ?? null)}
-            style={styles.input}
-          />
-        </label>
-        <div style={styles.actions}>
-          <button type="button" onClick={() => void previewBook('EPUB')} disabled={busy || !bookFile} style={styles.secondaryButton}>
-            Preview EPUB
-          </button>
-          <button type="button" onClick={() => void previewBook('DOCX')} disabled={busy || !bookFile} style={styles.secondaryButton}>
-            Preview DOCX
-          </button>
+      <WenkuImport
+        projectId={projectId}
+        onImportSuccess={(firstChapterId) => {
+          navigate(`/chapters/${firstChapterId}/translation`);
+        }}
+      />
+
+      <div style={{ marginTop: 24, borderTop: '1px solid #e2e8f0', paddingTop: 20 }}>
+        <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#334155' }}>Hoặc nhập từ File / Thư mục máy tính</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+          <section style={styles.guardBox} aria-label="Folder import preview">
+            <label style={styles.label}>
+              Local folder path
+              <input value={folderPath} onChange={(event) => setFolderPath(event.target.value)} style={styles.input} />
+            </label>
+            <button type="button" onClick={() => void previewFolder()} disabled={busy || !folderPath.trim()} style={styles.secondaryButton}>
+              Preview folder
+            </button>
+          </section>
+
+          <section style={styles.guardBox} aria-label="Book import preview">
+            <label style={styles.label}>
+              EPUB or DOCX file
+              <input
+                type="file"
+                accept=".epub,.docx,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={(event) => setBookFile(event.target.files?.[0] ?? null)}
+                style={styles.input}
+              />
+            </label>
+            <div style={styles.actions}>
+              <button type="button" onClick={() => void previewBook('EPUB')} disabled={busy || !bookFile} style={styles.secondaryButton}>
+                Preview EPUB
+              </button>
+              <button type="button" onClick={() => void previewBook('DOCX')} disabled={busy || !bookFile} style={styles.secondaryButton}>
+                Preview DOCX
+              </button>
+            </div>
+          </section>
         </div>
-      </section>
-      <section style={styles.guardBox} aria-label="Folder import preview">
-        <label style={styles.label}>
-          Local folder path
-          <input value={folderPath} onChange={(event) => setFolderPath(event.target.value)} style={styles.input} />
-        </label>
-        <button type="button" onClick={() => void previewFolder()} disabled={busy || !folderPath.trim()} style={styles.secondaryButton}>
-          Preview folder
-        </button>
-      </section>
-      {candidates.length > 0 ? <ImportPreview candidates={candidates} onConfirm={(mapped) => void confirmPreview(mapped)} /> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+
+        {candidates.length > 0 ? <ImportPreview candidates={candidates} onConfirm={(mapped) => void confirmPreview(mapped)} /> : null}
+        {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      </div>
     </section>
   );
 }
@@ -265,9 +268,38 @@ function TranslationScreen() {
   const { chapterId } = useParams();
   const navigate = useNavigate();
   const [data, setData] = useState<TranslationPayload | null>(null);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<'ALL' | 'ISSUES_ONLY' | 'BLOCKERS_ONLY'>('ALL');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') ?? '');
+  const GEMINI_PRESET_MODELS = [
+    { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash (Khuyên dùng - Nhanh, mượt, ít bị 503 quá tải)' },
+    { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro (Chất lượng cao nhất - Dịch chuyên sâu)' },
+    { value: 'gemini-2.5-flash-lite', label: 'gemini-2.5-flash-lite (Siêu nhẹ, tốc độ cao)' },
+    { value: 'gemini-flash-latest', label: 'gemini-flash-latest (Bản Flash tự động cập nhật)' },
+    { value: 'gemini-pro-latest', label: 'gemini-pro-latest (Bản Pro tự động cập nhật)' },
+    { value: 'gemini-flash-lite-latest', label: 'gemini-flash-lite-latest (Bản Flash Lite mới nhất)' },
+    { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash (Bản 1.5 Flash)' },
+    { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro (Bản 1.5 Pro)' },
+    { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash (Bản 2.0 Flash)' },
+    { value: 'gemini-2.0-flash-lite', label: 'gemini-2.0-flash-lite (Bản 2.0 Flash Lite)' },
+    { value: 'custom', label: '✏️ Nhập tên model tùy chỉnh khác...' },
+  ];
+
+  const [geminiModel, setGeminiModel] = useState(() => {
+    const saved = localStorage.getItem('gemini_model');
+    return saved || 'gemini-2.5-flash';
+  });
+  const [customModel, setCustomModel] = useState(() => localStorage.getItem('gemini_custom_model') ?? '');
+  const [isCustomModel, setIsCustomModel] = useState(() => {
+    const saved = localStorage.getItem('gemini_model');
+    return saved === 'custom';
+  });
+  const [showKey, setShowKey] = useState(false);
   const [cloudConsentId, setCloudConsentId] = useState('');
   const [budgetAuthorizationId, setBudgetAuthorizationId] = useState('');
 
@@ -280,7 +312,8 @@ function TranslationScreen() {
       .then((payload) => {
         if (!cancelled) {
           setData(payload);
-          setMessage('Chờ duyệt bản dịch');
+          setDrafts(Object.fromEntries(payload.segments.map((s) => [s.sourceSegmentId, s.targetText])));
+          setMessage('Đã tải bản dịch hiện tại');
         }
       })
       .catch(() => undefined);
@@ -289,19 +322,57 @@ function TranslationScreen() {
     };
   }, [chapterId]);
 
+  async function translateGemini() {
+    if (!chapterId) {
+      return;
+    }
+    const key = geminiApiKey.trim();
+    if (!key) {
+      setError('Vui lòng nhập Google AI Studio API Key. Bạn có thể lấy Key miễn phí tại: https://aistudio.google.com/app/apikey');
+      return;
+    }
+    const activeModel = (isCustomModel ? customModel : geminiModel).trim() || 'gemini-2.5-flash';
+    setBusy(true);
+    setError('');
+    setMessage(`Đang dịch chương truyện bằng Google Gemini (${activeModel})... Vui lòng chờ vài giây.`);
+    try {
+      localStorage.setItem('gemini_api_key', key);
+      localStorage.setItem('gemini_model', isCustomModel ? 'custom' : activeModel);
+      if (isCustomModel) {
+        localStorage.setItem('gemini_custom_model', activeModel);
+      }
+      const payload = await apiJson<TranslationPayload>(`/api/chapters/${chapterId}/translation/gemini`, {
+        method: 'POST',
+        body: {
+          apiKey: key,
+          model: activeModel,
+        },
+      });
+      setData(payload);
+      setDrafts(Object.fromEntries(payload.segments.map((s) => [s.sourceSegmentId, s.targetText])));
+      setMessage(`Đã dịch xong toàn bộ chương bằng Google Gemini (${activeModel})! Văn phong tiểu thuyết tự nhiên, mượt mà.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'GEMINI_TRANSLATION_FAILED');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function translateFake() {
     if (!chapterId) {
       return;
     }
     setBusy(true);
     setError('');
+    setMessage('Đang dịch nhanh bằng bộ dịch Convert / Fake nội bộ...');
     try {
       const payload = await apiJson<TranslationPayload>(`/api/chapters/${chapterId}/translation/fake`, {
         method: 'POST',
         body: {},
       });
       setData(payload);
-      setMessage('Chờ duyệt bản dịch');
+      setDrafts(Object.fromEntries(payload.segments.map((s) => [s.sourceSegmentId, s.targetText])));
+      setMessage('Đã dịch hoàn tất bằng bộ dịch Convert / Fake nội bộ (Hán-Việt)!');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'TRANSLATION_FAILED');
     } finally {
@@ -319,6 +390,7 @@ function TranslationScreen() {
     }
     setBusy(true);
     setError('');
+    setMessage('Đang gửi bản dịch qua Qwen AI...');
     try {
       const payload = await apiJson<TranslationPayload>(`/api/chapters/${chapterId}/translation/qwen`, {
         method: 'POST',
@@ -328,7 +400,8 @@ function TranslationScreen() {
         },
       });
       setData(payload);
-      setMessage('Chờ duyệt bản dịch');
+      setDrafts(Object.fromEntries(payload.segments.map((s) => [s.sourceSegmentId, s.targetText])));
+      setMessage('Dịch qua Qwen thành công! Vui lòng duyệt bản dịch.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'QWEN_TRANSLATION_FAILED');
     } finally {
@@ -336,7 +409,36 @@ function TranslationScreen() {
     }
   }
 
-  async function approve() {
+  async function saveSegment(sourceSegmentId: string) {
+    if (!chapterId || !data) {
+      return;
+    }
+    setSavingId(sourceSegmentId);
+    setError('');
+    try {
+      const updated = await apiJson<TranslationPayload>(
+        `/api/chapters/${chapterId}/translation/segments/${sourceSegmentId}`,
+        {
+          method: 'PATCH',
+          body: {
+            runId: data.run.id,
+            targetText: drafts[sourceSegmentId] ?? '',
+            expectedRunHash: data.run.sha256,
+          },
+        }
+      );
+      setData(updated);
+      setDrafts(Object.fromEntries(updated.segments.map((s) => [s.sourceSegmentId, s.targetText])));
+      setEditingId(null);
+      setMessage('Đã cập nhật câu dịch thành công!');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'SAVE_SEGMENT_FAILED');
+    } finally {
+      setSavingId(null);
+    }
+  }
+
+  async function approve(force = false) {
     if (!chapterId || !data) {
       return;
     }
@@ -345,65 +447,437 @@ function TranslationScreen() {
     try {
       await apiJson(`/api/chapters/${chapterId}/translation/approve`, {
         method: 'POST',
-        body: { runId: data.run.id, expectedRunHash: data.run.sha256 },
+        body: { runId: data.run.id, expectedRunHash: data.run.sha256, force },
       });
       navigate(`/chapters/${chapterId}/voice`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'TRANSLATION_APPROVAL_FAILED');
+      const msg = reason instanceof Error ? reason.message : 'TRANSLATION_APPROVAL_FAILED';
+      if (msg === 'TRANSLATION_QA_BLOCKERS_OPEN') {
+        setError('Bản dịch có lỗi QA nghiêm trọng chưa được giải quyết. Bạn có thể sửa câu dịch tương ứng hoặc bấm "Bỏ qua cảnh báo & Duyệt tiếp" bên dưới.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
   }
 
+  const blockers = (data?.issues ?? []).filter(
+    (i) => i.status === 'OPEN' && (i.severity === 'MAJOR' || i.severity === 'CRITICAL')
+  );
+  const otherIssues = (data?.issues ?? []).filter(
+    (i) => !(i.status === 'OPEN' && (i.severity === 'MAJOR' || i.severity === 'CRITICAL'))
+  );
+
+  const displayedSegments = (data?.segments ?? []).filter((seg) => {
+    if (filter === 'ALL') return true;
+    const segIssues = (data?.issues ?? []).filter((i) => i.sourceSegmentId === seg.sourceSegmentId);
+    if (filter === 'BLOCKERS_ONLY') {
+      return segIssues.some((i) => i.status === 'OPEN' && (i.severity === 'MAJOR' || i.severity === 'CRITICAL'));
+    }
+    return segIssues.length > 0;
+  });
+
   return (
     <section style={styles.panel} aria-label="Dịch và duyệt">
-      <h1 style={styles.title}>Dịch</h1>
-      <section style={styles.guardBox} aria-label="Qwen translation">
-        <p style={styles.quote}>Qwen cần consent cloud và budget authorization đã tạo trước.</p>
-        <label style={styles.label}>
-          Cloud consent ID
-          <input
-            value={cloudConsentId}
-            onChange={(event) => setCloudConsentId(event.target.value)}
-            style={styles.input}
-            autoComplete="off"
-          />
-        </label>
-        <label style={styles.label}>
-          Budget authorization ID
-          <input
-            value={budgetAuthorizationId}
-            onChange={(event) => setBudgetAuthorizationId(event.target.value)}
-            style={styles.input}
-            autoComplete="off"
-          />
-        </label>
-        <button type="button" onClick={() => void translateQwen()} disabled={busy} style={styles.primaryButton}>
-          Dịch bằng Qwen
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <h1 style={styles.title}>Dịch & Hiệu đính</h1>
+        <Link to={`/chapters/${chapterId}/voice`} style={styles.secondaryButton}>
+          Chuyển sang Giọng đọc (Voice) →
+        </Link>
+      </div>
+
+      {/* 🌟 Google AI Studio Gemini Translation - Card Chính */}
+      <section
+        style={{
+          display: 'grid',
+          gap: 16,
+          padding: 20,
+          borderRadius: 10,
+          border: '2px solid #818cf8',
+          background: 'linear-gradient(135deg, #ffffff 0%, #f5f3ff 100%)',
+          boxShadow: '0 4px 16px rgba(99, 102, 241, 0.1)',
+        }}
+        aria-label="Google AI Studio Gemini translation"
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 26 }}>✨</span>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 18, color: '#312e81', fontWeight: 800 }}>
+                Dịch bằng Google AI Studio (Gemini Model)
+              </h2>
+              <p style={{ margin: '2px 0 0', fontSize: 13, color: '#4f46e5' }}>
+                Loại bỏ bản dịch test fake · Văn phong tiểu thuyết mượt mà, hỗ trợ thuật ngữ và bộ nhớ truyện
+              </p>
+            </div>
+          </div>
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              fontSize: 13,
+              color: '#4338ca',
+              fontWeight: 700,
+              textDecoration: 'none',
+              background: '#e0e7ff',
+              padding: '6px 12px',
+              borderRadius: 6,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+            }}
+          >
+            🔑 Lấy API Key miễn phí tại Google AI Studio ↗
+          </a>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 4 }}>
+              Google AI Studio API Key
+            </label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type={showKey ? 'text' : 'password'}
+                value={geminiApiKey}
+                onChange={(e) => {
+                  setGeminiApiKey(e.target.value);
+                  localStorage.setItem('gemini_api_key', e.target.value);
+                }}
+                placeholder="Dán AIzaSy... từ aistudio.google.com"
+                style={{
+                  ...styles.input,
+                  flex: 1,
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                  border: geminiApiKey ? '1px solid #818cf8' : '1px solid #f87171',
+                }}
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                style={{ ...styles.secondaryButton, padding: '6px 10px', fontSize: 12 }}
+                title={showKey ? 'Ẩn key' : 'Hiện key'}
+              >
+                {showKey ? '🙈' : '👁️'}
+              </button>
+            </div>
+            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+              {geminiApiKey ? '✓ Đã lưu key trong trình duyệt (hoặc có thể đặt GEMINI_API_KEY trong file .env)' : '⚠️ Chưa có key: Nhấn link phía trên để tạo key trong 30 giây'}
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 4 }}>
+              Mô hình Gemini (Google AI Studio)
+            </label>
+            <select
+              value={isCustomModel ? 'custom' : geminiModel}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') {
+                  setIsCustomModel(true);
+                  localStorage.setItem('gemini_model', 'custom');
+                } else {
+                  setIsCustomModel(false);
+                  setGeminiModel(val);
+                  localStorage.setItem('gemini_model', val);
+                }
+              }}
+              style={{ ...styles.input, width: '100%', fontSize: 13, fontWeight: 600 }}
+            >
+              {GEMINI_PRESET_MODELS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            {isCustomModel && (
+              <input
+                type="text"
+                value={customModel}
+                onChange={(e) => {
+                  setCustomModel(e.target.value);
+                  localStorage.setItem('gemini_custom_model', e.target.value);
+                }}
+                placeholder="Nhập mã model (VD: gemini-2.5-pro, gemma-4-31b-it...)"
+                style={{ ...styles.input, width: '100%', marginTop: 6, fontSize: 13, borderColor: '#818cf8' }}
+              />
+            )}
+            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+              Xem tất cả model tại <a href="https://aistudio.google.com/docs/models" target="_blank" rel="noreferrer" style={{ color: '#4f46e5', fontWeight: 600, textDecoration: 'underline' }}>Docs | Google AI Studio</a>. Nếu gặp lỗi 503 (quá tải), hãy đổi sang <code style={{ background: '#e2e8f0', padding: '1px 4px', borderRadius: 3 }}>gemini-2.5-flash</code> hoặc <code style={{ background: '#e2e8f0', padding: '1px 4px', borderRadius: 3 }}>gemini-2.5-pro</code>.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => void translateGemini()}
+            disabled={busy || !geminiApiKey.trim()}
+            style={{
+              ...styles.primaryButton,
+              background: busy ? '#94a3b8' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
+              fontSize: 15,
+              padding: '10px 20px',
+              cursor: busy || !geminiApiKey.trim() ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {busy ? '⏳ Đang dịch qua Gemini...' : '✨ Dịch toàn bộ chương bằng Gemini AI'}
+          </button>
+          {!geminiApiKey.trim() ? (
+            <span style={{ fontSize: 13, color: '#b91c1c', fontWeight: 600 }}>
+              ← Nhập API Key ở trên để kích hoạt nút dịch
+            </span>
+          ) : null}
+        </div>
       </section>
-      <section style={styles.guardBox} aria-label="Fake test translation">
-        <p style={styles.quote}>Fake test local: 0 VND, không gọi mạng trả phí.</p>
-        <button type="button" onClick={() => void translateFake()} disabled={busy} style={styles.secondaryButton}>
-          Dịch bằng fake
-        </button>
-      </section>
+
+      {/* ⚙️ Tùy chọn dịch khác (Collapsible) */}
+      <details open style={{ ...styles.guardBox, marginTop: 4, background: '#f8fafc' }}>
+        <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#475467', fontSize: 13 }}>
+          ⚙️ Tùy chọn dịch khác (Qwen Cloud & Bộ Convert nội bộ)
+        </summary>
+        <p style={{ ...styles.quote, fontSize: 13, marginTop: 8 }}>
+          Qwen cần consent cloud và budget authorization đã tạo trước.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 12 }}>
+          <section style={{ ...styles.guardBox, background: '#ffffff' }} aria-label="Fake test translation">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>⚡</span>
+              <strong>Dịch nhanh nội bộ (Convert Hán-Việt)</strong>
+            </div>
+            <p style={{ ...styles.quote, fontSize: 12 }}>Dịch test convert offline, không dùng AI.</p>
+            <button type="button" onClick={() => void translateFake()} disabled={busy} style={{ ...styles.secondaryButton, fontSize: 13 }}>
+              Dịch convert nội bộ
+            </button>
+          </section>
+
+          <section style={{ ...styles.guardBox, background: '#ffffff' }} aria-label="Qwen translation">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🤖</span>
+              <strong>Dịch qua Qwen AI Cloud</strong>
+            </div>
+            <label style={styles.label}>
+              Cloud consent ID
+              <input
+                value={cloudConsentId}
+                onChange={(event) => setCloudConsentId(event.target.value)}
+                style={styles.input}
+                autoComplete="off"
+                placeholder="VD: consent-123"
+              />
+            </label>
+            <label style={styles.label}>
+              Budget authorization ID
+              <input
+                value={budgetAuthorizationId}
+                onChange={(event) => setBudgetAuthorizationId(event.target.value)}
+                style={styles.input}
+                autoComplete="off"
+                placeholder="VD: budget-456"
+              />
+            </label>
+            <button type="button" onClick={() => void translateQwen()} disabled={busy} style={{ ...styles.secondaryButton, fontSize: 13 }}>
+              Dịch bằng Qwen
+            </button>
+          </section>
+        </div>
+      </details>
+
+
       {message ? <p role="status" style={styles.success}>{message}</p> : null}
+      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+
       {data ? (
         <div style={styles.reviewBox}>
-          <p>Revision {data.run.sha256.slice(0, 12)}</p>
-          {data.segments.map((segment) => (
-            <article key={segment.sourceSegmentId} style={styles.segment}>
-              <strong>{segment.sourceText}</strong>
-              <span>{segment.targetText}</span>
-            </article>
-          ))}
-          <button type="button" onClick={() => void approve()} disabled={busy} style={styles.primaryButton}>
-            Phê duyệt bản dịch
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '12px 16px', background: '#f1f5f9', borderRadius: 8, border: '1px solid #cbd5e1' }}>
+            <div>
+              <strong>Bản dịch: </strong>
+              <span>Revision {data.run.sha256.slice(0, 12)} · Trạng thái: {data.run.status}</span>
+              <div style={{ fontSize: 13, color: '#64748b', marginTop: 4 }}>
+                Tổng {data.segments.length} đoạn · {blockers.length} lỗi QA nghiêm trọng · {otherIssues.length} cảnh báo nhỏ
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>Lọc hiển thị:</span>
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value as typeof filter)}
+                style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }}
+              >
+                <option value="ALL">Tất cả ({data.segments.length})</option>
+                <option value="ISSUES_ONLY">Có vấn đề QA ({(data.issues ?? []).length})</option>
+                <option value="BLOCKERS_ONLY">Chỉ lỗi nghiêm trọng ({blockers.length})</option>
+              </select>
+            </div>
+          </div>
+
+          {blockers.length > 0 ? (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#b45309', fontWeight: 700 }}>
+                <span>⚠️</span>
+                <span>Phát hiện {blockers.length} vấn đề QA nghiêm trọng (Blocker)</span>
+              </div>
+              <p style={{ margin: '8px 0', fontSize: 14, color: '#78350f' }}>
+                Các vấn đề này có thể do chênh lệch độ dài, thiếu số liệu/đơn vị hoặc thuật ngữ khóa. Bạn có thể sửa trực tiếp câu dịch ở dưới hoặc chọn bỏ qua để duyệt tiếp sang bước lồng tiếng.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => void approve(true)}
+                  disabled={busy}
+                  style={{
+                    padding: '8px 14px',
+                    background: '#d97706',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Bỏ qua cảnh báo & Phê duyệt (Chấp nhận rủi ro)
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div style={{ display: 'grid', gap: 12 }}>
+            {displayedSegments.map((segment, index) => {
+              const segIssues = (data.issues ?? []).filter((i) => i.sourceSegmentId === segment.sourceSegmentId);
+              const isEditing = editingId === segment.sourceSegmentId;
+              const isSaving = savingId === segment.sourceSegmentId;
+
+              return (
+                <article key={segment.sourceSegmentId} style={styles.segment}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>
+                      Đoạn #{index + 1}
+                    </span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {segIssues.map((issue) => (
+                        <span
+                          key={issue.id}
+                          style={{
+                            fontSize: 11,
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontWeight: 700,
+                            background:
+                              issue.severity === 'MAJOR' || issue.severity === 'CRITICAL'
+                                ? '#fee2e2'
+                                : '#e0f2fe',
+                            color:
+                              issue.severity === 'MAJOR' || issue.severity === 'CRITICAL'
+                                ? '#991b1b'
+                                : '#075985',
+                          }}
+                          title={issue.suggestion ?? ''}
+                        >
+                          {issue.severity}: {issue.category} ({issue.evidence})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#f8fafc', padding: 10, borderRadius: 6, borderLeft: '3px solid #94a3b8', fontSize: 14 }}>
+                    <span style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 2 }}>GỐC:</span>
+                    {segment.sourceText}
+                  </div>
+
+                  {isEditing ? (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <textarea
+                        value={drafts[segment.sourceSegmentId] ?? ''}
+                        onChange={(e) =>
+                          setDrafts({ ...drafts, [segment.sourceSegmentId]: e.target.value })
+                        }
+                        rows={3}
+                        style={{
+                          width: '100%',
+                          padding: 10,
+                          borderRadius: 6,
+                          border: '1px solid #3b82f6',
+                          fontSize: 14,
+                          boxSizing: 'border-box',
+                        }}
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => void saveSegment(segment.sourceSegmentId)}
+                          disabled={isSaving}
+                          style={styles.primaryButton}
+                        >
+                          {isSaving ? 'Đang lưu...' : 'Lưu bản sửa'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDrafts({ ...drafts, [segment.sourceSegmentId]: segment.targetText });
+                            setEditingId(null);
+                          }}
+                          style={styles.secondaryButton}
+                        >
+                          Hủy
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                      <div style={{ fontSize: 15, lineHeight: 1.5, color: '#0f172a' }}>
+                        <span style={{ fontSize: 11, color: '#64748b', display: 'block', marginBottom: 2 }}>BẢN DỊCH:</span>
+                        {segment.targetText}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(segment.sourceSegmentId)}
+                        style={{ ...styles.secondaryButton, padding: '4px 10px', fontSize: 12, flexShrink: 0 }}
+                      >
+                        Sửa
+                      </button>
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 16, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => void approve(false)}
+              disabled={busy || blockers.length > 0}
+              style={{
+                ...styles.primaryButton,
+                opacity: blockers.length > 0 ? 0.6 : 1,
+                cursor: blockers.length > 0 ? 'not-allowed' : 'pointer',
+              }}
+              title={blockers.length > 0 ? 'Cần giải quyết hoặc bỏ qua các lỗi QA nghiêm trọng trước khi duyệt' : ''}
+            >
+              Phê duyệt chuẩn ({data.segments.length} đoạn)
+            </button>
+
+            {blockers.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => void approve(true)}
+                disabled={busy}
+                style={{
+                  ...styles.primaryButton,
+                  background: '#d97706',
+                  borderColor: '#b45309',
+                }}
+              >
+                Bỏ qua cảnh báo QA & Phê duyệt tiếp
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
     </section>
   );
 }

@@ -65,6 +65,12 @@ def test_empty_target_is_critical_and_blocks_approval(db_session) -> None:
     with pytest.raises(ApprovalBlocked):
         workflow.approve_revision(fixture.chapter_id, run.id, run.sha256)
 
+    # Force approval should convert blockers to ACCEPTED_RISK and succeed
+    approved = workflow.approve_revision(
+        fixture.chapter_id, run.id, run.sha256, force=True
+    )
+    assert approved.status == RunStatus.APPROVED
+
 
 def test_manual_edit_creates_new_review_run(db_session) -> None:
     fixture = _approved_chapter(db_session)
@@ -262,6 +268,106 @@ def test_translation_api_qwen_route_requires_consent_and_authorization(
 
     assert response.status_code == 422
     assert "CLOUD_CONSENT_REQUIRED" in response.json()["detail"]
+
+
+def test_translation_api_fake_and_force_approve(tmp_path: Path) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "studio.sqlite3"
+    backend_root = Path(__file__).parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+    command.upgrade(config, "head")
+
+    engine = create_engine_for(db_path)
+    with session_factory(engine)() as session:
+        fixture = _source_chapter(session)
+        chapter_id = fixture.chapter_id
+    engine.dispose()
+
+    app = FastAPI()
+    app.include_router(create_translation_router(Settings(data_root=tmp_path)))
+
+    with TestClient(app) as client:
+        # Run fake translation
+        resp = client.post(f"/api/chapters/{chapter_id}/translation/fake")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert len(payload["segments"]) > 0
+        run_id = payload["run"]["id"]
+        sha256 = payload["run"]["sha256"]
+
+        # Approve run
+        approve_resp = client.post(
+            f"/api/chapters/{chapter_id}/translation/approve",
+            json={"runId": run_id, "expectedRunHash": sha256, "force": True},
+        )
+        assert approve_resp.status_code == 200
+        assert approve_resp.json()["run"]["status"] == "APPROVED"
+
+
+def test_translation_api_gemini_route(tmp_path: Path, monkeypatch) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "studio.sqlite3"
+    backend_root = Path(__file__).parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+    command.upgrade(config, "head")
+
+    engine = create_engine_for(db_path)
+    with session_factory(engine)() as session:
+        fixture = _source_chapter(session)
+        chapter_id = fixture.chapter_id
+    engine.dispose()
+
+    app = FastAPI()
+    app.include_router(create_translation_router(Settings(data_root=tmp_path)))
+
+    # Mock httpx AsyncClient post for Gemini API
+    import httpx
+
+    async def mock_post(self, *args, **kwargs):
+        return httpx.Response(
+            200,
+            json={
+                "candidates": [
+                    {
+                        "content": {
+                            "parts": [{"text": "Bản dịch tiểu thuyết từ Gemini AI Studio"}]
+                        }
+                    }
+                ],
+                "usageMetadata": {
+                    "promptTokenCount": 120,
+                    "candidatesTokenCount": 85,
+                },
+            },
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    with TestClient(app) as client:
+        # Rejects if no key
+        resp_no_key = client.post(
+            f"/api/chapters/{chapter_id}/translation/gemini",
+            json={"apiKey": "", "model": "gemini-2.5-flash"},
+        )
+        assert resp_no_key.status_code == 422
+
+        # Translates with key
+        resp = client.post(
+            f"/api/chapters/{chapter_id}/translation/gemini",
+            json={"apiKey": "fake-gemini-key", "model": "gemini-2.5-flash"},
+        )
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert len(payload["segments"]) > 0
+        assert "Gemini AI Studio" in payload["segments"][0]["targetText"]
 
 
 def test_translation_workflow_passes_cloud_context_to_translator(db_session) -> None:

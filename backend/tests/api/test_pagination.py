@@ -109,3 +109,23 @@ def _project_with_chapters(db_session: Session) -> Project:
         chapter.active_source_revision_id = revision.id
     db_session.commit()
     return project
+
+
+def test_list_projects_returns_projects_and_chapters(settings: Settings, db_session: Session) -> None:
+    project = _project_with_chapters(db_session)
+    client = TestClient(create_app(settings=settings, acquire_lock=False), base_url=LOOPBACK_ORIGIN)
+
+    resp = client.get("/api/projects")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "projects" in data
+    assert len(data["projects"]) >= 1
+    found = next((p for p in data["projects"] if p["id"] == project.id), None)
+    assert found is not None
+    assert found["title"] == "Paged Project"
+    assert found["chapterCount"] == 50
+    assert found["firstChapterId"] is not None
+
+    single = client.get(f"/api/projects/{project.id}")
+    assert single.status_code == 200
+    assert single.json()["chapterCount"] == 50

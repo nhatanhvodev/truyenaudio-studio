@@ -14,11 +14,14 @@ from app.db.base import create_engine_for, session_factory
 from app.db.models import ProviderProfile
 from app.modules.budgets.guard import BudgetGuard
 from app.modules.compliance.cloud import CloudCallBlocked, CloudCallGuard
+from app.modules.translation.hanviet import convert_hanviet
 from app.modules.translation.workflow import (
     ApprovalBlocked,
     RevisionConflict,
     TranslationWorkflow,
 )
+import os
+from app.providers.gemini_mt import GeminiMtAdapter
 from app.providers.qwen_mt import QwenMtAdapter, Secret
 from app.settings.config import Settings
 
@@ -38,11 +41,23 @@ class ApproveTranslationRequest(BaseModel):
 
     run_id: str = Field(alias="runId")
     expected_run_hash: str = Field(alias="expectedRunHash")
+    force: bool = Field(default=False, alias="force")
 
 
 class QwenTranslationRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
+    cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
+    budget_authorization_id: str | None = Field(
+        default=None, alias="budgetAuthorizationId"
+    )
+
+
+class GeminiTranslationRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    api_key: str | None = Field(default=None, alias="apiKey")
+    model: str = Field(default="gemini-2.5-flash", alias="model")
     cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
     budget_authorization_id: str | None = Field(
         default=None, alias="budgetAuthorizationId"
@@ -94,6 +109,35 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @router.post("/gemini")
+    def run_gemini_translation(
+        chapter_id: str,
+        request: GeminiTranslationRequest,
+    ) -> dict[str, object]:
+        api_key = (request.api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
+        if not api_key:
+            raise HTTPException(status_code=422, detail="GEMINI_API_KEY_REQUIRED")
+        try:
+            with _gemini_workflow(
+                active_settings,
+                chapter_id,
+                api_key=api_key,
+                model=request.model,
+            ) as workflow:
+                return _run_payload(
+                    workflow.enqueue_translation(
+                        chapter_id,
+                        cloud_consent_id=request.cloud_consent_id or "consent:gemini-user",
+                        budget_authorization_id=request.budget_authorization_id or "budget:gemini-user",
+                    )
+                )
+        except CloudCallBlocked as exc:
+            raise HTTPException(status_code=403, detail=",".join(exc.reasons)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     @router.get("")
     def read_translation(
         chapter_id: str,
@@ -136,6 +180,7 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
                 chapter_id,
                 request.run_id,
                 request.expected_run_hash,
+                force=request.force,
             )
         except RevisionConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -211,6 +256,47 @@ class _qwen_workflow:
             self.engine.dispose()
 
 
+class _gemini_workflow:
+    def __init__(
+        self,
+        active_settings: Settings,
+        chapter_id: str,
+        *,
+        api_key: str,
+        model: str = "gemini-2.5-flash",
+    ) -> None:
+        self.active_settings = active_settings
+        self.chapter_id = chapter_id
+        self.api_key = api_key
+        self.model = model
+        self.engine = None
+        self.session_cm = None
+
+    def __enter__(self) -> TranslationWorkflow:
+        try:
+            self.engine = create_engine_for(
+                self.active_settings.data_root / "studio.sqlite3"
+            )
+            factory = session_factory(self.engine)
+            self.session_cm = factory()
+            session = self.session_cm.__enter__()
+            adapter = GeminiMtAdapter(
+                api_key=self.api_key,
+                model=self.model,
+                http_client=httpx.AsyncClient(),
+            )
+            return TranslationWorkflow(session, translator=adapter)
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self.session_cm is not None:
+            self.session_cm.__exit__(exc_type, exc, tb)
+        if self.engine is not None:
+            self.engine.dispose()
+
+
 def _chapter_project_id(session, chapter_id: str) -> str:
     from app.db.models import Chapter
 
@@ -224,18 +310,19 @@ class CleanFakeTranslator:
     def capabilities(self) -> dict[str, object]:
         return {
             "provider": "fake",
-            "model": "fake-ui-clean",
+            "model": "fake-hanviet-v2",
+            "provider_version": "2",
             "region": "local",
             "network": False,
         }
 
     async def translate(self, request: TranslationRequest) -> TranslationResult:
-        target = "Chuong 1. Lam Dong noi xin chao."
+        target = convert_hanviet(request.source_text, request.terms)
         return TranslationResult(
             target_text=target,
             provider="fake",
-            model="fake-ui-clean",
-            provider_version="1",
+            model="fake-hanviet-v2",
+            provider_version="2",
             usage=(Usage(UsageUnit.CHARACTER.value, len(request.source_text)),),
         )
 

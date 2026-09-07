@@ -6,8 +6,9 @@ Tool này chạy cá nhân trên máy local, mặc định chỉ bind `127.0.0.1
 
 ## Tool này làm gì?
 
-- Tạo project truyện và nhập chương bằng paste text, folder local, EPUB hoặc DOCX.
-- Preview nội dung trước khi import để tránh ghi nhầm dữ liệu.
+- Tạo project truyện và nhập chương trực tiếp từ **Wenku (QQ Reading)** qua URL/ID hoặc Bảng xếp hạng.
+- Xem trước thông tin truyện (bìa, tác giả, số chữ, danh mục chương) và chọn phạm vi chương cần cào.
+- Preview nội dung các chương đã cào trước khi xác nhận nhập vào dự án.
 - Dịch thử bằng fake local hoặc dịch cloud qua Qwen khi đã cấu hình consent/budget/key.
 - Duyệt bản dịch theo revision hash để tránh sửa nhầm bản cũ.
 - Chọn giọng đọc local, render audio, tạo master MP3 và SRT.
@@ -18,7 +19,7 @@ Tool này chạy cá nhân trên máy local, mặc định chỉ bind `127.0.0.1
 
 ## Nguyên tắc an toàn và bản quyền
 
-Tool không tự crawl QQ/Wenku, không bypass CAPTCHA/DRM/login, không lấy cookie hộ và không tự upload lên web app chính.
+Tool có tích hợp crawler Wenku để lấy nội dung chương công khai (miễn phí). Chương VIP/locked sẽ được đánh dấu cảnh báo và chỉ hiển thị nội dung preview. Tool không bypass CAPTCHA/DRM/login, không lấy cookie hộ và không tự upload lên web app chính.
 
 Bạn chỉ nên import nội dung bạn có quyền xử lý. Export public cần rights evidence/publication gate riêng; consent cloud chỉ cho phép gửi dữ liệu đi provider, không thay thế quyền xuất bản.
 

@@ -10,7 +10,8 @@ from pydantic import BaseModel
 
 from app.contracts import ChapterState, ImportKind, RightsStatus, SourceType
 from app.db.base import create_engine_for, session_factory
-from app.db.models import Project
+from app.db.models import Chapter, Project
+from sqlalchemy import select
 from app.modules.artifacts.store import ArtifactStore
 from app.modules.projects.queries import ChapterQueries, InvalidCursor
 from app.modules.projects.state_machine import InvalidChapterTransition
@@ -65,6 +66,76 @@ def create_projects_router(settings: Settings | None = None, *, cursor_secret: s
             yield ChapterQueries(engine, cursor_secret=cursor_secret)
         finally:
             engine.dispose()
+
+    @router.get("")
+    def list_projects(
+        workflow: ProjectWorkflow = Depends(workflow_dependency),
+    ) -> dict[str, object]:
+        projects = workflow.session.scalars(
+            select(Project).order_by(Project.created_at.desc())
+        ).all()
+        result = []
+        for p in projects:
+            chapters = workflow.session.scalars(
+                select(Chapter).where(Chapter.project_id == p.id).order_by(Chapter.ordinal)
+            ).all()
+            first_chapter_id = chapters[0].id if chapters else None
+            result.append(
+                {
+                    "id": p.id,
+                    "title": p.title,
+                    "slug": p.slug,
+                    "sourceType": p.source_type,
+                    "rightsStatus": p.rights_status,
+                    "createdAt": p.created_at.isoformat() if p.created_at else None,
+                    "updatedAt": p.updated_at.isoformat() if p.updated_at else None,
+                    "chapterCount": len(chapters),
+                    "firstChapterId": first_chapter_id,
+                    "chapters": [
+                        {
+                            "id": ch.id,
+                            "ordinal": ch.ordinal,
+                            "title": ch.source_title,
+                            "state": ch.state,
+                        }
+                        for ch in chapters[:30]
+                    ],
+                }
+            )
+        return {"projects": result}
+
+    @router.get("/{project_id}")
+    def get_project(
+        project_id: str,
+        workflow: ProjectWorkflow = Depends(workflow_dependency),
+    ) -> dict[str, object]:
+        p = workflow.session.get(Project, project_id)
+        if p is None:
+            raise HTTPException(status_code=404, detail="PROJECT_NOT_FOUND")
+        chapters = workflow.session.scalars(
+            select(Chapter).where(Chapter.project_id == p.id).order_by(Chapter.ordinal)
+        ).all()
+        first_chapter_id = chapters[0].id if chapters else None
+        return {
+            "id": p.id,
+            "title": p.title,
+            "slug": p.slug,
+            "sourceType": p.source_type,
+            "rightsStatus": p.rights_status,
+            "createdAt": p.created_at.isoformat() if p.created_at else None,
+            "updatedAt": p.updated_at.isoformat() if p.updated_at else None,
+            "chapterCount": len(chapters),
+            "firstChapterId": first_chapter_id,
+            "chapters": [
+                {
+                    "id": ch.id,
+                    "ordinal": ch.ordinal,
+                    "title": ch.source_title,
+                    "state": ch.state,
+                }
+                for ch in chapters
+            ],
+        }
 
     @router.post("")
     def create_project(

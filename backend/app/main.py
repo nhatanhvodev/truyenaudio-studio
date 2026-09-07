@@ -1,5 +1,8 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -25,6 +28,7 @@ from app.api.rights import create_rights_router
 from app.api.translation import create_translation_router
 from app.api.voice_plans import create_voice_plans_router
 from app.api.voices import create_voices_router
+from app.api.wenku import create_wenku_router
 from app.settings.config import Settings
 from app.settings.csrf import CsrfService
 from app.settings.startup_lock import StartupLock
@@ -62,6 +66,7 @@ def create_app(
     app.include_router(create_batches_router(active_settings))
     app.include_router(create_jobs_router(active_settings))
     app.include_router(create_projects_router(active_settings, cursor_secret=csrf.token))
+    app.include_router(create_wenku_router(active_settings))
     app.include_router(create_glossary_router(active_settings))
     app.include_router(create_translation_router(active_settings))
     app.include_router(create_review_router(active_settings))

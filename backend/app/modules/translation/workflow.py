@@ -281,6 +281,8 @@ class TranslationWorkflow:
         chapter_id: str,
         run_id: str,
         expected_run_hash: str,
+        *,
+        force: bool = False,
     ) -> TranslationRunView:
         run = self._run_for_chapter(chapter_id, run_id)
         if run.translation_text_sha256 != expected_run_hash:
@@ -300,7 +302,14 @@ class TranslationWorkflow:
             )
         ).all()
         if blockers:
-            raise ApprovalBlocked("TRANSLATION_QA_BLOCKERS_OPEN")
+            if force:
+                for blocker in blockers:
+                    blocker.status = QaStatus.DISMISSED.value
+                    blocker.resolved_note = "Dismissed via force approval override"
+                    blocker.resolved_at = utc_now()
+                self.session.flush()
+            else:
+                raise ApprovalBlocked("TRANSLATION_QA_BLOCKERS_OPEN")
 
         before_hash = self._approved_translation_hash(chapter)
         if before_hash and chapter.approved_translation_run_id != run.id:
