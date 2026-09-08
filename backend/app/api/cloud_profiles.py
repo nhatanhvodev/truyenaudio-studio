@@ -114,7 +114,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         profile = session.get(ProviderProfile, profile_id)
         if profile is None:
             raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
-        store = CredentialStore()
+        store = _credential_store()
         previous_ref = profile.secret_ref
         try:
             previous_secret = store.resolve(profile_id, previous_ref).value if previous_ref else None
@@ -144,7 +144,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         previous_ref = profile.secret_ref
         if previous_ref:
             try:
-                store = CredentialStore()
+                store = _credential_store()
                 previous_secret = store.resolve(profile_id, previous_ref).value
             except ValueError as exc:
                 if str(exc) != "SECRET_MISSING":
@@ -180,7 +180,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         if not profile.secret_ref:
             return {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
         try:
-            CredentialStore().resolve(profile_id, profile.secret_ref)
+            _credential_store().resolve(profile_id, profile.secret_ref)
         except ValueError as exc:
             if str(exc) == "SECRET_MISSING":
                 return {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
@@ -196,7 +196,7 @@ def _store_secret(profile_id: str, value: str | None) -> _SecretWrite:
     if value is None or value == "":
         return _SecretWrite(secret_ref=None)
     try:
-        secret_ref = CredentialStore().set(profile_id, value)
+        secret_ref = _credential_store().set(profile_id, value)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
     return _SecretWrite(secret_ref=secret_ref)
@@ -220,7 +220,14 @@ def _commit_with_compensation(session, compensate) -> None:
 
 def _delete_secret(profile_id: str, secret_ref: str | None) -> None:
     if secret_ref:
-        CredentialStore().delete(profile_id, secret_ref)
+        _credential_store().delete(profile_id, secret_ref)
+
+
+def _credential_store() -> CredentialStore:
+    try:
+        return CredentialStore()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
 
 
 def _restore_or_delete(store, profile_id: str, previous_ref: str | None, previous_secret: str | None, new_ref: str | None) -> None:

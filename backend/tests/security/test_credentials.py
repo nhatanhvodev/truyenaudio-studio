@@ -431,6 +431,29 @@ def test_translation_routes_map_keyring_dependency_failure_to_503_without_dispat
     assert response.json()["detail"] == "KEYRING_UNAVAILABLE"
 
 
+@pytest.mark.parametrize("method,path,payload", [
+    ("put", "credential", {"secret": "new-secret"}),
+    ("delete", "credential", None),
+    ("post", "validate", None),
+])
+def test_lifecycle_endpoints_map_keyring_constructor_failure_to_503(settings, migrated_engine, monkeypatch, method, path, payload) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        profile_id = _create_profile(client, "old-secret")["id"]
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: (_ for _ in ()).throw(RuntimeError("backend unavailable")))
+    with TestClient(app) as client:
+        if method == "delete":
+            response = client.delete(f"/api/cloud-profiles/{profile_id}/{path}")
+        else:
+            response = getattr(client, method)(f"/api/cloud-profiles/{profile_id}/{path}", json=payload)
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "KEYRING_UNAVAILABLE"
+
+
 def _has_forbidden_profile_secret_field(value: object) -> bool:
     if isinstance(value, dict):
         return any(

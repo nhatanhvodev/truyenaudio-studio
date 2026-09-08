@@ -34,8 +34,7 @@ def normalize_model_name(raw_model: str | None) -> str:
 async def list_models(api_key: str, http_client: httpx.AsyncClient | None = None) -> list[dict[str, Any]]:
     """Fetch available models from Google AI Studio to help users pick the right one."""
     client = http_client or httpx.AsyncClient()
-    url = f"{GEMINI_API_BASE}?key={api_key}"
-    response = client.get(url, timeout=15)
+    response = client.get(GEMINI_API_BASE, headers={"x-goog-api-key": api_key}, timeout=15)
     if isawaitable(response):
         response = await response
     if response.status_code != 200:
@@ -188,13 +187,12 @@ class GeminiMtAdapter:
                 models_to_try.append(fb)
 
         timeout = max(30, request.context.timeout_seconds)
-        last_error = None
         successful_response_data = None
         actual_model_used = self.model
 
         for current_model in models_to_try:
-            endpoint = f"{GEMINI_API_BASE}/{current_model}:generateContent?key={self.api_key}"
-            headers = {"Content-Type": "application/json"}
+            endpoint = f"{GEMINI_API_BASE}/{current_model}:generateContent"
+            headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
 
             try:
                 response = self.http_client.post(
@@ -205,8 +203,7 @@ class GeminiMtAdapter:
                 )
                 if isawaitable(response):
                     response = await response
-            except Exception as exc:
-                last_error = f"Network error on {current_model}: {exc}"
+            except Exception:
                 continue
 
             if response.status_code == 200:
@@ -214,37 +211,22 @@ class GeminiMtAdapter:
                 actual_model_used = current_model
                 break
 
-            err_detail = ""
-            try:
-                err_data = response.json()
-                err_detail = err_data.get("error", {}).get("message", "")
-            except Exception:
-                err_detail = response.text[:200]
-
-            last_error = f"HTTP {response.status_code} ({current_model}): {err_detail}"
-
             # Retry next fallback model if 404 (model not available for user) or 503 (high demand)
             if response.status_code in {404, 503}:
                 continue
 
             # Hard stop for auth / quota / bad request errors
             if response.status_code == 400:
-                raise ValueError(f"GEMINI_INVALID_REQUEST: {err_detail or response.text}")
+                raise ValueError("GEMINI_INVALID_REQUEST")
             elif response.status_code in {401, 403}:
-                raise ValueError(f"GEMINI_API_KEY_INVALID: {err_detail or 'API key không hợp lệ.'}")
+                raise ValueError("GEMINI_API_KEY_INVALID")
             elif response.status_code == 429:
-                raise RuntimeError(f"GEMINI_RATE_LIMIT_EXCEEDED (429): {err_detail or 'Quá giới hạn request.'}")
+                raise RuntimeError("GEMINI_RATE_LIMIT_EXCEEDED")
             elif response.status_code >= 500 and response.status_code != 503:
-                raise RuntimeError(f"GEMINI_SERVER_ERROR_{response.status_code}: {err_detail}")
+                raise RuntimeError(f"GEMINI_SERVER_ERROR_{response.status_code}")
 
         if not successful_response_data:
-            available = await list_models(self.api_key, self.http_client)
-            model_names = [m["name"].replace("models/", "") for m in available[:10]]
-            hint = ", ".join(model_names) if model_names else "Không lấy được danh sách"
-            raise ValueError(
-                f"GEMINI_ALL_MODELS_FAILED: Đã thử các model ({', '.join(models_to_try)}) nhưng đều gặp lỗi. "
-                f"Lỗi cuối: {last_error}. Các model khả dụng trên key của bạn: {hint}"
-            )
+            raise ValueError("GEMINI_ALL_MODELS_FAILED")
 
         data = successful_response_data
 
