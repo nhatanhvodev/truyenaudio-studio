@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from inspect import isawaitable
-import os
 from typing import Any
 
 import httpx
@@ -31,11 +30,6 @@ class Secret:
         *,
         credential_store: CredentialStore | None = None,
     ) -> "Secret":
-        if secret_ref.startswith("env:"):
-            value = os.environ.get(secret_ref.removeprefix("env:"), "")
-            if not value:
-                raise ValueError("QWEN_SECRET_MISSING")
-            return cls(value)
         if secret_ref.startswith("keyring:"):
             try:
                 store = credential_store or CredentialStore()
@@ -64,6 +58,8 @@ class QwenMtAdapter:
         cloud_guard: object | None = None,
         project_id: str | None = None,
         provider_profile_id: str | None = None,
+        dispatch_registry: object | None = None,
+        dispatch_authorization: object | None = None,
         endpoint: str = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
     ) -> None:
         self.http_client = http_client
@@ -73,6 +69,8 @@ class QwenMtAdapter:
         self.cloud_guard = cloud_guard
         self.project_id = project_id
         self.provider_profile_id = provider_profile_id
+        self.dispatch_registry = dispatch_registry
+        self.dispatch_authorization = dispatch_authorization
         self.endpoint = endpoint
 
     def capabilities(self) -> dict[str, object]:
@@ -86,6 +84,10 @@ class QwenMtAdapter:
         }
 
     async def translate(self, request: TranslationRequest) -> TranslationResult:
+        if self.dispatch_registry is not None or self.dispatch_authorization is not None:
+            if self.dispatch_registry is None or self.dispatch_authorization is None:
+                raise ValueError("PROFILE_REVISION_UNAVAILABLE")
+            self.dispatch_registry.validate_authorization(self.dispatch_authorization)
         self._validate_request(request)
         self._evaluate_cloud_guard(request)
         payload = self._payload(request)

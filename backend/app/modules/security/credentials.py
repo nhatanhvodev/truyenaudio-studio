@@ -67,15 +67,7 @@ class CredentialStore:
 
     def resolve(self, profile_id: str, secret_ref: str | None = None) -> SecretHandle:
         """Resolve canonical refs and read legacy ``keyring:service/user`` refs."""
-        ref = (secret_ref or self.ref_for(profile_id)).strip()
-        if not ref.startswith("keyring:"):
-            raise ValueError("SECRET_REF_UNSUPPORTED")
-        raw = ref.removeprefix("keyring:")
-        if "/" in raw:
-            service, username = raw.split("/", 1)
-        else:
-            # Early builds stored ``keyring:provider-profile:{id}`` as a service.
-            service, username = KEYRING_SERVICE, raw
+        service, username = self._location(profile_id, secret_ref)
         try:
             value = self._backend.get_password(service, username)
         except Exception as exc:
@@ -85,14 +77,7 @@ class CredentialStore:
         return SecretHandle(value)
 
     def delete(self, profile_id: str, secret_ref: str | None = None) -> bool:
-        ref = (secret_ref or self.ref_for(profile_id)).strip()
-        if not ref.startswith("keyring:"):
-            raise ValueError("SECRET_REF_UNSUPPORTED")
-        raw = ref.removeprefix("keyring:")
-        if "/" in raw:
-            service, username = raw.split("/", 1)
-        else:
-            service, username = KEYRING_SERVICE, raw
+        service, username = self._location(profile_id, secret_ref)
         try:
             self._backend.delete_password(service, username)
         except Exception as exc:
@@ -103,3 +88,24 @@ class CredentialStore:
                 return False
             raise CredentialUnavailable("KEYRING_UNAVAILABLE") from exc
         return True
+
+    def restore(self, profile_id: str, secret_ref: str, secret: str) -> None:
+        """Restore a transient secret after its database mutation is rolled back."""
+        if not isinstance(secret, str) or not secret:
+            raise ValueError("SECRET_REQUIRED")
+        service, username = self._location(profile_id, secret_ref)
+        try:
+            self._backend.set_password(service, username, secret)
+        except Exception as exc:
+            raise CredentialUnavailable("KEYRING_UNAVAILABLE") from exc
+
+    def _location(self, profile_id: str, secret_ref: str | None) -> tuple[str, str]:
+        ref = (secret_ref or self.ref_for(profile_id)).strip()
+        if not ref.startswith("keyring:"):
+            raise ValueError("SECRET_REF_UNSUPPORTED")
+        raw = ref.removeprefix("keyring:")
+        if "/" in raw:
+            service, username = raw.split("/", 1)
+        else:
+            service, username = KEYRING_SERVICE, raw
+        return service, username

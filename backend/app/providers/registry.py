@@ -38,15 +38,7 @@ class ProviderRegistry:
         snapshot_id = getattr(plan_or_snapshot, "model_snapshot_id", plan_or_snapshot)
         if not isinstance(snapshot_id, str) or not snapshot_id:
             raise RegistryError("MODEL_SNAPSHOT_REQUIRED")
-        if authorization.profile_revision < 1:
-            raise RegistryError("PROFILE_REVISION_REQUIRED")
-        if self._profile_revision_resolver is None:
-            raise RegistryError("PROFILE_REVISION_UNAVAILABLE")
-        current_revision = self._profile_revision_resolver(authorization.profile_id)
-        if current_revision is None:
-            raise RegistryError("PROFILE_REVISION_UNAVAILABLE")
-        if current_revision != authorization.profile_revision:
-            raise RegistryError("PROFILE_REVISION_STALE")
+        self.validate_authorization(authorization)
         if authorization.model_snapshot_id != snapshot_id:
             raise RegistryError("MODEL_SNAPSHOT_MISMATCH")
 
@@ -69,3 +61,17 @@ class ProviderRegistry:
         if descriptor.factory is None:
             raise RegistryError("ADAPTER_FACTORY_MISSING")
         return descriptor.factory(authorization)
+
+    def validate_authorization(self, authorization: RegistryAuthorization) -> None:
+        if authorization.profile_revision < 1:
+            raise RegistryError("PROFILE_REVISION_REQUIRED")
+        if self._profile_revision_resolver is None:
+            raise RegistryError("PROFILE_REVISION_UNAVAILABLE")
+        try:
+            current_revision = self._profile_revision_resolver(authorization.profile_id)
+        except Exception as exc:
+            raise RegistryError("PROFILE_REVISION_UNAVAILABLE") from exc
+        if current_revision is None:
+            raise RegistryError("PROFILE_REVISION_UNAVAILABLE")
+        if current_revision != authorization.profile_revision:
+            raise RegistryError("PROFILE_REVISION_STALE")

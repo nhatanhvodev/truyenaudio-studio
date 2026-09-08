@@ -352,22 +352,19 @@ def test_translation_api_gemini_route(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
     with TestClient(app) as client:
-        # Rejects if no key
+        # Raw credentials are not an execution path; a configured profile and
+        # cloud authorization are now required.
         resp_no_key = client.post(
             f"/api/chapters/{chapter_id}/translation/gemini",
             json={"apiKey": "", "model": "gemini-2.5-flash"},
         )
         assert resp_no_key.status_code == 422
-
-        # Translates with key
         resp = client.post(
             f"/api/chapters/{chapter_id}/translation/gemini",
             json={"apiKey": "fake-gemini-key", "model": "gemini-2.5-flash"},
         )
-        assert resp.status_code == 200
-        payload = resp.json()
-        assert len(payload["segments"]) > 0
-        assert "Gemini AI Studio" in payload["segments"][0]["targetText"]
+        assert resp.status_code == 422
+        assert resp.json()["detail"] == "CLOUD_CONSENT_REQUIRED"
 
 
 def test_translation_workflow_passes_cloud_context_to_translator(db_session) -> None:

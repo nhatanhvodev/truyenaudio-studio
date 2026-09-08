@@ -4,7 +4,6 @@ using an API key from aistudio.google.com.
 """
 from __future__ import annotations
 
-import os
 import re
 from typing import Any
 from inspect import isawaitable
@@ -57,27 +56,25 @@ async def list_models(api_key: str, http_client: httpx.AsyncClient | None = None
 class GeminiMtAdapter:
     def __init__(
         self,
-        api_key: str | None = None,
         *,
-        api_key_ref: str | None = None,
+        api_key_ref: str,
         credential_store: CredentialStore | None = None,
         model: str = DEFAULT_MODEL,
         http_client: Any = None,
         cloud_guard: Any = None,
         project_id: str | None = None,
         provider_profile_id: str | None = None,
+        dispatch_registry: object | None = None,
+        dispatch_authorization: object | None = None,
     ) -> None:
-        if api_key is not None and api_key_ref is not None:
-            raise ValueError("GEMINI_CREDENTIAL_AMBIGUOUS")
-        if api_key_ref is not None:
-            self.api_key = self.api_key_from_ref(api_key_ref, credential_store=credential_store)
-        else:
-            self.api_key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
+        self.api_key = self.api_key_from_ref(api_key_ref, credential_store=credential_store)
         self.model = normalize_model_name(model)
         self.http_client = http_client or httpx.AsyncClient()
         self.cloud_guard = cloud_guard
         self.project_id = project_id
         self.provider_profile_id = provider_profile_id
+        self.dispatch_registry = dispatch_registry
+        self.dispatch_authorization = dispatch_authorization
 
     @staticmethod
     def api_key_from_ref(
@@ -108,6 +105,10 @@ class GeminiMtAdapter:
         }
 
     async def translate(self, request: TranslationRequest) -> TranslationResult:
+        if self.dispatch_registry is not None or self.dispatch_authorization is not None:
+            if self.dispatch_registry is None or self.dispatch_authorization is None:
+                raise ValueError("PROFILE_REVISION_UNAVAILABLE")
+            self.dispatch_registry.validate_authorization(self.dispatch_authorization)
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY_REQUIRED")
 

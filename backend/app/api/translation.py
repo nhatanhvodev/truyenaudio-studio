@@ -20,9 +20,9 @@ from app.modules.translation.workflow import (
     RevisionConflict,
     TranslationWorkflow,
 )
-import os
 from app.providers.gemini_mt import GeminiMtAdapter
 from app.providers.qwen_mt import QwenMtAdapter, Secret
+from app.providers.registry import ProviderRegistry, RegistryAuthorization
 from app.settings.config import Settings
 
 QWEN_DEFAULT_ENDPOINT = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
@@ -56,8 +56,6 @@ class QwenTranslationRequest(BaseModel):
 class GeminiTranslationRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    api_key: str | None = Field(default=None, alias="apiKey")
-    model: str = Field(default="gemini-2.5-flash", alias="model")
     cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
     budget_authorization_id: str | None = Field(
         default=None, alias="budgetAuthorizationId"
@@ -114,21 +112,17 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
         chapter_id: str,
         request: GeminiTranslationRequest,
     ) -> dict[str, object]:
-        api_key = (request.api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
-        if not api_key:
-            raise HTTPException(status_code=422, detail="GEMINI_API_KEY_REQUIRED")
+        if not request.cloud_consent_id:
+            raise HTTPException(status_code=422, detail="CLOUD_CONSENT_REQUIRED")
+        if not request.budget_authorization_id:
+            raise HTTPException(status_code=422, detail="BUDGET_AUTHORIZATION_REQUIRED")
         try:
-            with _gemini_workflow(
-                active_settings,
-                chapter_id,
-                api_key=api_key,
-                model=request.model,
-            ) as workflow:
+            with _gemini_workflow(active_settings, chapter_id) as workflow:
                 return _run_payload(
                     workflow.enqueue_translation(
                         chapter_id,
-                        cloud_consent_id=request.cloud_consent_id or "consent:gemini-user",
-                        budget_authorization_id=request.budget_authorization_id or "budget:gemini-user",
+                        cloud_consent_id=request.cloud_consent_id,
+                        budget_authorization_id=request.budget_authorization_id,
                     )
                 )
         except CloudCallBlocked as exc:
@@ -240,6 +234,8 @@ class _qwen_workflow:
                 cloud_guard=CloudCallGuard(session, BudgetGuard(session)),
                 project_id=_chapter_project_id(session, self.chapter_id),
                 provider_profile_id=profile.id,
+                dispatch_registry=ProviderRegistry(profile_revision_resolver=_db_profile_revision_resolver(session)),
+                dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, profile.model),
                 endpoint=str(
                     (profile.config_json or {}).get("endpoint") or QWEN_DEFAULT_ENDPOINT
                 ),
@@ -261,14 +257,9 @@ class _gemini_workflow:
         self,
         active_settings: Settings,
         chapter_id: str,
-        *,
-        api_key: str,
-        model: str = "gemini-2.5-flash",
     ) -> None:
         self.active_settings = active_settings
         self.chapter_id = chapter_id
-        self.api_key = api_key
-        self.model = model
         self.engine = None
         self.session_cm = None
 
@@ -280,10 +271,28 @@ class _gemini_workflow:
             factory = session_factory(self.engine)
             self.session_cm = factory()
             session = self.session_cm.__enter__()
+            profile = session.scalar(
+                select(ProviderProfile)
+                .where(
+                    ProviderProfile.provider_kind == "TRANSLATOR",
+                    ProviderProfile.adapter_name.in_(("gemini", "gemini_mt")),
+                    ProviderProfile.enabled.is_(True),
+                )
+                .order_by(ProviderProfile.id)
+            )
+            if profile is None:
+                raise ValueError("GEMINI_PROVIDER_PROFILE_REQUIRED")
+            if not profile.model or not profile.secret_ref:
+                raise ValueError("GEMINI_PROVIDER_PROFILE_INCOMPLETE")
             adapter = GeminiMtAdapter(
-                api_key=self.api_key,
-                model=self.model,
+                api_key_ref=profile.secret_ref,
+                model=profile.model,
                 http_client=httpx.AsyncClient(),
+                cloud_guard=CloudCallGuard(session, BudgetGuard(session)),
+                project_id=_chapter_project_id(session, self.chapter_id),
+                provider_profile_id=profile.id,
+                dispatch_registry=ProviderRegistry(profile_revision_resolver=_db_profile_revision_resolver(session)),
+                dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, profile.model),
             )
             return TranslationWorkflow(session, translator=adapter)
         except Exception:
@@ -304,6 +313,13 @@ def _chapter_project_id(session, chapter_id: str) -> str:
     if chapter is None:
         raise ValueError("CHAPTER_NOT_FOUND")
     return chapter.project_id
+
+
+def _db_profile_revision_resolver(session):
+    def resolve(profile_id: str) -> int | None:
+        return session.scalar(select(ProviderProfile.revision).where(ProviderProfile.id == profile_id))
+
+    return resolve
 
 
 class CleanFakeTranslator:

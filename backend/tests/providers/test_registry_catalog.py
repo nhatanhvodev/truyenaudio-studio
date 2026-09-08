@@ -122,6 +122,19 @@ def test_registry_fails_closed_when_current_profile_revision_is_not_available() 
         registry.resolve(descriptor.models[0].id, authorization)
 
 
+def test_registry_converts_revision_resolver_failures_to_unavailable() -> None:
+    descriptor = ProviderDescriptor(
+        "p1", "gemini", "adapter-a", models=[_snapshot("p1", "fast")], factory=lambda authorization: authorization
+    )
+    registry = ProviderRegistry(
+        [descriptor], profile_revision_resolver=lambda profile_id: (_ for _ in ()).throw(RuntimeError("database offline"))
+    )
+    authorization = RegistryAuthorization(profile_id="p1", profile_revision=1, model_snapshot_id=descriptor.models[0].id)
+
+    with pytest.raises(RegistryError, match="PROFILE_REVISION_UNAVAILABLE"):
+        registry.resolve(descriptor.models[0].id, authorization)
+
+
 def test_catalog_pagination_has_opaque_cursor_and_bounds() -> None:
     models = [_snapshot("p1", f"model-{index}") for index in range(3)]
     catalog = ProviderCatalog([ProviderDescriptor("p1", "provider", "adapter", models=models)])

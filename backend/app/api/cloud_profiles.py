@@ -86,7 +86,10 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             enabled=request.enabled,
         )
         session.add(profile)
-        session.commit()
+        _commit_with_compensation(
+            session,
+            lambda: _delete_secret(profile_id, secret_write.secret_ref),
+        )
         return _profile_payload(profile)
 
     @router.patch("/{profile_id}")
@@ -111,12 +114,19 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         profile = session.get(ProviderProfile, profile_id)
         if profile is None:
             raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
+        store = CredentialStore()
+        previous_ref = profile.secret_ref
+        previous_secret = store.resolve(profile_id, previous_ref).value if previous_ref else None
         try:
-            profile.secret_ref = CredentialStore().set(profile_id, request.secret)
+            new_ref = store.set(profile_id, request.secret)
+            profile.secret_ref = new_ref
         except Exception as exc:
             raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
         profile.revision += 1
-        session.commit()
+        _commit_with_compensation(
+            session,
+            lambda: _restore_or_delete(store, profile_id, previous_ref, previous_secret, new_ref),
+        )
         return {"secretConfigured": True}
 
     @router.delete("/{profile_id}/credential")
@@ -124,14 +134,23 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         profile = session.get(ProviderProfile, profile_id)
         if profile is None:
             raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
-        if profile.secret_ref:
+        previous_ref = profile.secret_ref
+        if previous_ref:
             try:
-                CredentialStore().delete(profile_id, profile.secret_ref)
+                store = CredentialStore()
+                previous_secret = store.resolve(profile_id, previous_ref).value
+                store.delete(profile_id, previous_ref)
             except Exception as exc:
                 raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+        else:
+            store = None
+            previous_secret = None
         profile.secret_ref = None
         profile.revision += 1
-        session.commit()
+        _commit_with_compensation(
+            session,
+            lambda: _restore_deleted_secret(store, profile_id, previous_ref, previous_secret),
+        )
         return {"secretConfigured": False}
 
     @router.post("/{profile_id}/validate")
@@ -158,6 +177,39 @@ def _store_secret(profile_id: str, value: str | None) -> _SecretWrite:
     except Exception as exc:
         raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
     return _SecretWrite(secret_ref=secret_ref)
+
+
+def _commit(session) -> None:
+    session.commit()
+
+
+def _commit_with_compensation(session, compensate) -> None:
+    try:
+        _commit(session)
+    except Exception as exc:
+        session.rollback()
+        try:
+            compensate()
+        except Exception as compensation_exc:
+            raise HTTPException(status_code=503, detail="KEYRING_COMPENSATION_FAILED") from compensation_exc
+        raise HTTPException(status_code=500, detail="PROFILE_PERSIST_FAILED") from exc
+
+
+def _delete_secret(profile_id: str, secret_ref: str | None) -> None:
+    if secret_ref:
+        CredentialStore().delete(profile_id, secret_ref)
+
+
+def _restore_or_delete(store, profile_id: str, previous_ref: str | None, previous_secret: str | None, new_ref: str | None) -> None:
+    if previous_ref and previous_secret is not None:
+        store.restore(profile_id, previous_ref, previous_secret)
+    if new_ref and new_ref != previous_ref:
+        store.delete(profile_id, new_ref)
+
+
+def _restore_deleted_secret(store, profile_id: str, previous_ref: str | None, previous_secret: str | None) -> None:
+    if store is not None and previous_ref and previous_secret is not None:
+        store.restore(profile_id, previous_ref, previous_secret)
 
 
 def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
