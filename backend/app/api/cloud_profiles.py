@@ -150,7 +150,10 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
                 if str(exc) != "SECRET_MISSING":
                     raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
                 previous_secret = None
-                store.delete(profile_id, previous_ref)
+                try:
+                    store.delete(profile_id, previous_ref)
+                except CredentialUnavailable as delete_exc:
+                    raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from delete_exc
             except CredentialUnavailable as exc:
                 raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
             else:

@@ -8,7 +8,7 @@ import httpx
 
 from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked
-from app.modules.security.credentials import CredentialStore
+from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 
 
 PROVIDER = "qwen"
@@ -34,6 +34,8 @@ class Secret:
             try:
                 store = credential_store or CredentialStore()
                 return cls(store.resolve("", secret_ref).value)
+            except CredentialUnavailable:
+                raise
             except ValueError as exc:
                 if str(exc) == "SECRET_MISSING":
                     raise ValueError("QWEN_SECRET_MISSING") from exc

@@ -7,6 +7,8 @@ from sqlalchemy import select
 
 from app.api import cloud_profiles
 from app.api.cloud_profiles import _contains_secret_key, _safe_config, create_cloud_profiles_router
+from app.api import translation
+from app.api.translation import create_translation_router
 from app.contracts import OperationContext, TranslationRequest
 from app.db.models import ProviderProfile
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
@@ -48,6 +50,11 @@ class GetUnavailableKeyring(FakeKeyring):
 class DeleteUnavailableKeyring(FakeKeyring):
     def delete_password(self, service_name: str, username: str) -> None:
         raise RuntimeError("keyring unavailable")
+
+
+class MissingThenDeleteUnavailableKeyring(DeleteUnavailableKeyring):
+    def get_password(self, service_name: str, username: str) -> str | None:
+        return None
 
 
 def test_credential_store_round_trip_uses_canonical_service_and_username() -> None:
@@ -365,6 +372,23 @@ def test_delete_credential_returns_503_when_old_secret_delete_is_unavailable(set
     assert response.json()["detail"] == "KEYRING_UNAVAILABLE"
 
 
+def test_delete_credential_returns_503_when_missing_old_secret_delete_is_unavailable(settings, migrated_engine, monkeypatch) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        profile_id = _create_profile(client, "old-secret")["id"]
+    unavailable = MissingThenDeleteUnavailableKeyring()
+    unavailable.values = store._backend.values
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: CredentialStore(unavailable))
+    with TestClient(app) as client:
+        response = client.delete(f"/api/cloud-profiles/{profile_id}/credential")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "KEYRING_UNAVAILABLE"
+
+
 def test_validate_credential_reports_missing_as_invalid_and_keyring_outage_as_unavailable(settings, migrated_engine, monkeypatch) -> None:
     store = CredentialStore(FakeKeyring())
     monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
@@ -382,6 +406,29 @@ def test_validate_credential_reports_missing_as_invalid_and_keyring_outage_as_un
 
     assert missing.json() == {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
     assert outage.json() == {"state": "unavailable", "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
+
+
+@pytest.mark.parametrize("path", ["qwen", "gemini"])
+def test_translation_routes_map_keyring_dependency_failure_to_503_without_dispatch(settings, monkeypatch, path: str) -> None:
+    class KeyringFailureWorkflow:
+        def __enter__(self):
+            raise CredentialUnavailable("KEYRING_UNAVAILABLE")
+
+        def __exit__(self, *args):
+            return None
+
+    monkeypatch.setattr(translation, "_qwen_workflow", lambda *args: KeyringFailureWorkflow())
+    monkeypatch.setattr(translation, "_gemini_workflow", lambda *args: KeyringFailureWorkflow())
+    app = FastAPI()
+    app.include_router(create_translation_router(settings))
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/chapters/chapter-1/translation/{path}",
+            json={"cloudConsentId": "consent-1", "budgetAuthorizationId": "budget-1"},
+        )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "KEYRING_UNAVAILABLE"
 
 
 def _has_forbidden_profile_secret_field(value: object) -> bool:

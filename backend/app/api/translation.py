@@ -14,6 +14,7 @@ from app.db.base import create_engine_for, session_factory
 from app.db.models import ProviderProfile
 from app.modules.budgets.guard import BudgetGuard
 from app.modules.compliance.cloud import CloudCallBlocked, CloudCallGuard
+from app.modules.security.credentials import CredentialUnavailable
 from app.modules.translation.hanviet import convert_hanviet
 from app.modules.translation.workflow import (
     ApprovalBlocked,
@@ -104,6 +105,8 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
                 )
         except CloudCallBlocked as exc:
             raise HTTPException(status_code=403, detail=",".join(exc.reasons)) from exc
+        except CredentialUnavailable as exc:
+            raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -127,6 +130,8 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
                 )
         except CloudCallBlocked as exc:
             raise HTTPException(status_code=403, detail=",".join(exc.reasons)) from exc
+        except CredentialUnavailable as exc:
+            raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:

@@ -17,7 +17,7 @@ from app.contracts import (
     UsageUnit,
 )
 from app.modules.compliance.cloud import CloudCallBlocked
-from app.modules.security.credentials import CredentialStore
+from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 
 
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -87,6 +87,8 @@ class GeminiMtAdapter:
         try:
             store = credential_store or CredentialStore()
             return store.resolve("", secret_ref).value
+        except CredentialUnavailable:
+            raise
         except ValueError as exc:
             if str(exc) == "SECRET_MISSING":
                 raise ValueError("GEMINI_API_KEY_MISSING") from exc
