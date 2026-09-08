@@ -156,7 +156,7 @@ def test_quote_from_usage_uses_integer_fx_and_contingency(db_session, guard: Bud
     assert quote.estimate_vnd == 26_500
     assert quote.contingency_vnd == 3_975
     assert quote.rate_card_id == rate.id
-    assert quote.expires_at == NOW + timedelta(minutes=15)
+    assert quote.expires_at == NOW + timedelta(minutes=10)
 
 
 def test_commit_usage_moves_hold_to_committed_and_writes_integer_ledger(db_session, guard: BudgetGuard) -> None:
