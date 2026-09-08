@@ -221,8 +221,8 @@ class BackupService:
 
         target_root = Path(target_data_root).resolve()
         source_root = self.db_path.parent.resolve()
-        if target_root == source_root:
-            raise BackupError("isolated restore target must differ from the source data root")
+        if _paths_overlap(source_root, target_root):
+            raise BackupError("isolated restore target must not overlap the source data root")
         if target_root.exists():
             raise BackupError(f"isolated restore target already exists: {target_root}")
 
@@ -339,6 +339,10 @@ class BackupService:
 
 def _utc_stamp() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _paths_overlap(first: Path, second: Path) -> bool:
+    return first.is_relative_to(second) or second.is_relative_to(first)
 
 
 def _integrity_check(path: Path) -> str:

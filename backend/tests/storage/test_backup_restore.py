@@ -6,7 +6,8 @@ import sqlite3
 import pytest
 from sqlalchemy import text
 
-from app.modules.storage.backup import BackupService, BackupVerificationError, RestoreLockRequired
+from app.db.base import create_engine_for
+from app.modules.storage.backup import BackupError, BackupService, BackupVerificationError, RestoreLockRequired
 
 
 HASH_B = "b" * 64
@@ -42,13 +43,15 @@ def test_online_backup_restores_pointers(migrated_engine, tmp_path: Path) -> Non
 
 
 def test_backup_restores_database_and_artifacts_to_an_isolated_data_root(migrated_engine, tmp_path: Path) -> None:
-    db_path = Path(migrated_engine.url.database)
     source_data_root = tmp_path / "source-data"
+    db_path = _copy_database_to_data_root(migrated_engine, source_data_root)
+    source_engine = create_engine_for(db_path)
     artifact_path = source_data_root / "artifacts" / "audio" / "chapter-1.mp3"
     artifact_path.parent.mkdir(parents=True)
     payload = b"isolated restore artifact"
     artifact_path.write_bytes(payload)
-    _seed_artifact_row(migrated_engine, "audio/chapter-1.mp3", _sha256_bytes(payload))
+    _seed_artifact_row(source_engine, "audio/chapter-1.mp3", _sha256_bytes(payload))
+    source_engine.dispose()
 
     service = BackupService(
         db_path=db_path,
@@ -74,6 +77,31 @@ def test_backup_restores_database_and_artifacts_to_an_isolated_data_root(migrate
         assert connection.execute("SELECT relative_path FROM artifacts").fetchall() == source_rows_before_restore
     with sqlite3.connect(restored_data_root / "studio.sqlite3") as connection:
         assert connection.execute("SELECT relative_path FROM artifacts").fetchone()[0] == "audio/chapter-1.mp3"
+
+
+@pytest.mark.parametrize("relation", ["equal", "inside_source", "contains_source"])
+def test_isolated_restore_rejects_overlapping_data_roots(migrated_engine, tmp_path: Path, relation: str) -> None:
+    source_data_root = tmp_path / "source-data"
+    db_path = _copy_database_to_data_root(migrated_engine, source_data_root)
+    service = BackupService(
+        db_path=db_path,
+        backup_root=source_data_root / "backups",
+        artifact_root=source_data_root,
+        api_lock_path=source_data_root / "studio-api.lock",
+        worker_lock_path=source_data_root / "studio-worker.lock",
+    )
+    backup = service.create()
+    target_data_root = {
+        "equal": source_data_root,
+        "inside_source": source_data_root / "restored",
+        "contains_source": tmp_path,
+    }[relation]
+
+    with service.acquire_restore_locks() as token:
+        with pytest.raises(BackupError, match="must not overlap the source data root"):
+            service.restore_to_data_root(backup.id, target_data_root, lock_token=token)
+
+    assert not (source_data_root / "restored").exists()
 
 
 def test_restore_verifies_rows_under_data_root_artifacts_when_paths_are_artifact_relative(
@@ -194,6 +222,14 @@ def _seed_artifact_row(engine, relative_path: str, sha256: str) -> None:
                 "settings_hash": HASH_C,
             },
         )
+
+
+def _copy_database_to_data_root(migrated_engine, data_root: Path) -> Path:
+    data_root.mkdir()
+    db_path = data_root / "studio.sqlite3"
+    with sqlite3.connect(Path(migrated_engine.url.database)) as source, sqlite3.connect(db_path) as target:
+        source.backup(target)
+    return db_path
 
 
 def _sha256_bytes(payload: bytes) -> str:
