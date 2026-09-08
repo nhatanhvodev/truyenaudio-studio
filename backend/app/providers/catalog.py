@@ -72,6 +72,12 @@ class ProviderCatalog:
     def descriptors(self) -> tuple[ProviderDescriptor, ...]:
         return tuple(self._descriptors.values())
 
+    def provider_for_profile(self, profile_id: str) -> str | None:
+        for descriptor in self._descriptors.values():
+            if profile_id in descriptor.profile_ids:
+                return descriptor.provider_id
+        return None
+
     def list_models(self, filters: CatalogFilter | None = None) -> list[ModelSnapshot]:
         filters = filters or CatalogFilter()
         result: list[ModelSnapshot] = []
