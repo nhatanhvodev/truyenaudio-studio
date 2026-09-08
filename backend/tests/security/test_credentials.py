@@ -405,8 +405,30 @@ def test_validate_credential_reports_missing_as_invalid_and_keyring_outage_as_un
     with TestClient(app) as client:
         outage = client.post(f"/api/cloud-profiles/{profile_id}/validate")
 
-    assert missing.json() == {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
-    assert outage.json() == {"state": "unavailable", "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
+    missing_payload = missing.json()
+    outage_payload = outage.json()
+    assert missing_payload["state"] == "invalid"
+    assert missing_payload["error"] == {"code": "CREDENTIAL_MISSING"}
+    assert missing_payload["checkedAt"]
+    assert outage_payload["state"] == "unavailable"
+    assert outage_payload["error"] == {"code": "CREDENTIAL_UNAVAILABLE"}
+    assert outage_payload["checkedAt"]
+
+
+def test_validate_credential_does_not_claim_provider_health_from_local_keyring_only(settings, migrated_engine, monkeypatch) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+
+    with TestClient(app) as client:
+        profile_id = _create_profile(client, "configured-but-revoked-upstream")["id"]
+        response = client.post(f"/api/cloud-profiles/{profile_id}/validate")
+
+    payload = response.json()
+    assert payload["state"] == "unknown"
+    assert payload["checkedAt"]
+    assert payload["error"] == {"code": "PROVIDER_HEALTH_NOT_CHECKED"}
 
 
 @pytest.mark.parametrize("path", ["qwen", "gemini"])

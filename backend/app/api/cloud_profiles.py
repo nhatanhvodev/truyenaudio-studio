@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -175,20 +176,25 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
 
     @router.post("/{profile_id}/validate")
     def validate_credential(profile_id: str, session=Depends(session_dependency)) -> dict[str, object]:
+        checked_at = datetime.now(UTC).isoformat()
         profile = session.get(ProviderProfile, profile_id)
         if profile is None:
             raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
         if not profile.secret_ref:
-            return {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
+            return {"state": "invalid", "checkedAt": checked_at, "error": {"code": "CREDENTIAL_MISSING"}}
         try:
             _credential_store().resolve(profile_id, profile.secret_ref)
         except ValueError as exc:
             if str(exc) == "SECRET_MISSING":
-                return {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
-            return {"state": "unavailable", "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
+                return {"state": "invalid", "checkedAt": checked_at, "error": {"code": "CREDENTIAL_MISSING"}}
+            return {"state": "unavailable", "checkedAt": checked_at, "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
         except CredentialUnavailable:
-            return {"state": "unavailable", "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
-        return {"state": "ready", "error": None}
+            return {"state": "unavailable", "checkedAt": checked_at, "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
+        return {
+            "state": "unknown",
+            "checkedAt": checked_at,
+            "error": {"code": "PROVIDER_HEALTH_NOT_CHECKED"},
+        }
 
     return router
 
