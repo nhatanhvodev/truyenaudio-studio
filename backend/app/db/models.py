@@ -606,7 +606,7 @@ class AuditEvent(CreatedAtMixin, Base):
 
 class EventLog(CreatedAtMixin, Base):
     __tablename__ = "event_log"
-    __table_args__ = (UniqueConstraint("entity_type", "entity_id", name="uq_event_log_entity"),)
+    __table_args__ = (Index("ix_event_log_entity_sequence", "entity_type", "entity_id", "sequence_id"),)
 
     sequence_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
