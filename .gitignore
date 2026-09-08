@@ -12,3 +12,4 @@ models/
 *.partial
 playwright-report/
 test-results/
+.worktrees/
