@@ -146,9 +146,15 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             try:
                 store = CredentialStore()
                 previous_secret = store.resolve(profile_id, previous_ref).value
+            except ValueError as exc:
+                if str(exc) != "SECRET_MISSING":
+                    raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+                previous_secret = None
                 store.delete(profile_id, previous_ref)
-            except Exception as exc:
+            except CredentialUnavailable as exc:
                 raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+            else:
+                store.delete(profile_id, previous_ref)
         else:
             store = None
             previous_secret = None
@@ -210,7 +216,7 @@ def _delete_secret(profile_id: str, secret_ref: str | None) -> None:
 def _restore_or_delete(store, profile_id: str, previous_ref: str | None, previous_secret: str | None, new_ref: str | None) -> None:
     if previous_ref and previous_secret is not None:
         store.restore(profile_id, previous_ref, previous_secret)
-    if new_ref and new_ref != previous_ref:
+    if new_ref and (new_ref != previous_ref or previous_secret is None):
         store.delete(profile_id, new_ref)
 
 

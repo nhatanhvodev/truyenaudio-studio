@@ -290,6 +290,42 @@ def test_credential_recovery_deletes_new_secret_when_database_commit_fails(setti
         store.resolve(profile_id)
 
 
+def test_stale_canonical_ref_recovery_deletes_new_secret_when_database_commit_fails(settings, migrated_engine, monkeypatch) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        profile_id = _create_profile(client, "old-secret")["id"]
+        store.delete(profile_id)
+        monkeypatch.setattr(cloud_profiles, "_commit", lambda session: (_ for _ in ()).throw(RuntimeError("db failure")))
+        response = client.put(f"/api/cloud-profiles/{profile_id}/credential", json={"secret": "new-secret"})
+        profile = client.get("/api/cloud-profiles").json()["profiles"][0]
+
+    assert response.status_code == 500
+    assert profile["revision"] == 1
+    assert profile["secretConfigured"] is True
+    with pytest.raises(ValueError, match="SECRET_MISSING"):
+        store.resolve(profile_id)
+
+
+def test_delete_credential_is_idempotent_when_referenced_keyring_entry_is_missing(settings, migrated_engine, monkeypatch) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        profile_id = _create_profile(client, "old-secret")["id"]
+        store.delete(profile_id)
+        response = client.delete(f"/api/cloud-profiles/{profile_id}/credential")
+        profile = client.get("/api/cloud-profiles").json()["profiles"][0]
+
+    assert response.status_code == 200
+    assert response.json() == {"secretConfigured": False}
+    assert profile["secretConfigured"] is False
+    assert profile["revision"] == 2
+
+
 def _has_forbidden_profile_secret_field(value: object) -> bool:
     if isinstance(value, dict):
         return any(
