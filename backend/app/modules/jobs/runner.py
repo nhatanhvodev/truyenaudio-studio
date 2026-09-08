@@ -124,8 +124,19 @@ class JobRunner:
                 },
             )
             row = connection.execute(
-                text("SELECT * FROM jobs WHERE idempotency_key = :idempotency_key"),
-                {"idempotency_key": idempotency_key},
+                text(
+                    """
+                    SELECT * FROM jobs
+                    WHERE project_id = :project_id
+                      AND kind = :kind
+                      AND idempotency_key = :idempotency_key
+                    """
+                ),
+                {
+                    "project_id": project_id,
+                    "kind": kind.value,
+                    "idempotency_key": idempotency_key,
+                },
             ).mappings().one()
         return _job_view(row)
 

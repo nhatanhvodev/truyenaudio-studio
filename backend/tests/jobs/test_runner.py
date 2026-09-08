@@ -139,6 +139,31 @@ def test_enqueue_is_idempotent_and_returns_immutable_view(runner: JobRunner, mig
     assert count == 1
 
 
+def test_enqueue_idempotency_scope_allows_other_project_and_kind(runner: JobRunner, migrated_engine: Engine) -> None:
+    other_project_id = "018f0000-0000-7000-8000-000000000103"
+    with migrated_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO projects (id, title, slug, source_type, rights_status, created_at, updated_at)
+                VALUES (:id, 'Other Project', 'other-project', :source_type, :rights_status, :now, :now)
+                """
+            ),
+            {
+                "id": other_project_id,
+                "source_type": SourceType.SELF_AUTHORED.value,
+                "rights_status": RightsStatus.PRIVATE_ONLY.value,
+                "now": NOW.isoformat(),
+            },
+        )
+
+    first = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, None, "shared-key")
+    other_project = runner.enqueue(JobKind.TRANSLATE, other_project_id, None, "shared-key")
+    other_kind = runner.enqueue(JobKind.REVIEW, PROJECT_ID, None, "shared-key")
+
+    assert len({first.id, other_project.id, other_kind.id}) == 3
+
+
 def test_claim_uses_stable_priority_then_id_order_and_creates_first_attempt(runner: JobRunner) -> None:
     later_low_priority = runner.enqueue(JobKind.REVIEW, PROJECT_ID, CHAPTER_ID, "priority-20", priority=20)
     first_same_priority = runner.enqueue(JobKind.TRANSLATE, PROJECT_ID, CHAPTER_ID, "priority-5a", priority=5)

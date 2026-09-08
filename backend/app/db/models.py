@@ -319,6 +319,7 @@ class ProviderProfile(MutableMixin, Base):
     secret_ref: Mapped[str | None] = mapped_column(String(255))
     config_json: Mapped[dict | None] = mapped_column(JSON)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
 
 class VoicePreset(MutableMixin, Base):
@@ -438,10 +439,24 @@ class Artifact(MutableMixin, Base):
     supersedes_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("artifacts.id"))
 
 
+class ExecutionSnapshot(CreatedAtMixin, Base):
+    __tablename__ = "execution_snapshots"
+    __table_args__ = (
+        UniqueConstraint("kind", "hash", name="uq_execution_snapshots_kind_hash"),
+        hash_constraint("hash"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
 class Job(MutableMixin, Base):
     __tablename__ = "jobs"
     __table_args__ = (
-        UniqueConstraint("idempotency_key", name="uq_jobs_idempotency_key"),
+        UniqueConstraint("project_id", "kind", "idempotency_key", name="uq_jobs_project_kind_idempotency"),
         enum_constraint("kind", JobKind),
         enum_constraint("status", JobStatus),
         Index("ix_jobs_status_next_priority", "status", "next_run_at", "priority"),
@@ -453,6 +468,7 @@ class Job(MutableMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
     chapter_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("chapters.id"))
+    plan_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("execution_snapshots.id"))
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     progress_current: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -478,6 +494,9 @@ class JobAttempt(MutableMixin, Base):
     finished_at: Mapped[object | None] = mapped_column(TZDateTime)
     outcome: Mapped[str | None] = mapped_column(String(64))
     provider_request_id: Mapped[str | None] = mapped_column(Text)
+    requested_model: Mapped[str | None] = mapped_column(String(255))
+    actual_model: Mapped[str | None] = mapped_column(String(255))
+    billing_state: Mapped[str | None] = mapped_column(String(32))
     error_class: Mapped[str | None] = mapped_column(String(255))
     redacted_detail: Mapped[str | None] = mapped_column(Text)
 
@@ -520,6 +539,7 @@ class UsageLedger(CreatedAtMixin, Base):
         enum_constraint("unit", UsageUnit),
         CheckConstraint("billing_confidence IN ('CONFIRMED', 'ESTIMATED', 'UNKNOWN')", name="billing_confidence_enum"),
         Index("ix_usage_ledger_created_provider_model", "created_at", "provider", "model"),
+        UniqueConstraint("attempt_id", "entry_kind", name="uq_usage_ledger_attempt_entry_kind"),
     )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
@@ -534,6 +554,8 @@ class UsageLedger(CreatedAtMixin, Base):
     fx_rate: Mapped[int | None] = mapped_column(BigInteger)
     actual_vnd: Mapped[int | None] = mapped_column(BigInteger)
     billing_confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    attempt_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("job_attempts.id"))
+    entry_kind: Mapped[str | None] = mapped_column(String(32))
 
 
 class Export(CreatedAtMixin, Base):

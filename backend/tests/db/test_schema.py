@@ -54,6 +54,7 @@ EXPECTED_TABLES = {
     "voice_roles",
     "speech_segments",
     "artifacts",
+    "execution_snapshots",
     "jobs",
     "job_attempts",
     "rate_cards",
@@ -356,6 +357,7 @@ EXPECTED_COLUMNS = {
         "secret_ref",
         "config_json",
         "enabled",
+        "revision",
         "created_at",
         "updated_at",
     },
@@ -442,6 +444,7 @@ EXPECTED_COLUMNS = {
         "status",
         "project_id",
         "chapter_id",
+        "plan_id",
         "idempotency_key",
         "priority",
         "progress_current",
@@ -465,6 +468,9 @@ EXPECTED_COLUMNS = {
         "finished_at",
         "outcome",
         "provider_request_id",
+        "requested_model",
+        "actual_model",
+        "billing_state",
         "error_class",
         "redacted_detail",
         "created_at",
@@ -509,6 +515,16 @@ EXPECTED_COLUMNS = {
         "fx_rate",
         "actual_vnd",
         "billing_confidence",
+        "attempt_id",
+        "entry_kind",
+        "created_at",
+    },
+    "execution_snapshots": {
+        "id",
+        "kind",
+        "schema_version",
+        "hash",
+        "payload_json",
         "created_at",
     },
     "exports": {
@@ -640,7 +656,19 @@ def test_required_indexes_and_unique_constraints_exist(migrated_engine) -> None:
     assert ("uq_speech_segments_plan_segment_index", ("voice_plan_id", "segment_index")) in unique_constraints[
         "speech_segments"
     ]
-    assert ("uq_jobs_idempotency_key", ("idempotency_key",)) in unique_constraints["jobs"]
+    assert (
+        "uq_jobs_project_kind_idempotency",
+        ("project_id", "kind", "idempotency_key"),
+    ) in unique_constraints["jobs"]
+    assert all(name != "uq_jobs_idempotency_key" for name, _ in unique_constraints["jobs"])
+    assert (
+        "uq_execution_snapshots_kind_hash",
+        ("kind", "hash"),
+    ) in unique_constraints["execution_snapshots"]
+    assert (
+        "uq_usage_ledger_attempt_entry_kind",
+        ("attempt_id", "entry_kind"),
+    ) in unique_constraints["usage_ledger"]
     assert ("uq_job_attempts_job_attempt_no", ("job_id", "attempt_no")) in unique_constraints["job_attempts"]
 
 
