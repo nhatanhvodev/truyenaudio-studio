@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import inspect
+import pytest
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 
 
 def test_execution_schema_has_snapshot_and_provenance_columns(migrated_engine) -> None:
@@ -39,3 +41,28 @@ def test_legacy_rows_can_keep_unknown_provenance(migrated_engine) -> None:
     }.items():
         columns = {column["name"]: column for column in inspector.get_columns(table)}
         assert all(columns[name]["nullable"] for name in names)
+
+
+def test_execution_snapshot_kind_and_schema_version_are_locked(migrated_engine) -> None:
+    with pytest.raises(IntegrityError):
+        with migrated_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO execution_snapshots (id, kind, schema_version, hash, payload_json, created_at)
+                    VALUES ('snapshot-invalid', 'unknown', 1, :hash, '{}', :created_at)
+                    """
+                ),
+                {"hash": "a" * 64, "created_at": "2026-09-08T00:00:00+00:00"},
+            )
+    with pytest.raises(IntegrityError):
+        with migrated_engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO execution_snapshots (id, kind, schema_version, hash, payload_json, created_at)
+                    VALUES ('snapshot-invalid-version', 'plan', 2, :hash, '{}', :created_at)
+                    """
+                ),
+                {"hash": "b" * 64, "created_at": "2026-09-08T00:00:00+00:00"},
+            )

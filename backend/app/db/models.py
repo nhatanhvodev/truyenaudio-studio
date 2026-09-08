@@ -443,6 +443,8 @@ class ExecutionSnapshot(CreatedAtMixin, Base):
     __tablename__ = "execution_snapshots"
     __table_args__ = (
         UniqueConstraint("kind", "hash", name="uq_execution_snapshots_kind_hash"),
+        CheckConstraint("kind IN ('model', 'prompt', 'context', 'plan')", name="kind_execution_snapshot_enum"),
+        CheckConstraint("schema_version = 1", name="schema_version_supported"),
         hash_constraint("hash"),
     )
 

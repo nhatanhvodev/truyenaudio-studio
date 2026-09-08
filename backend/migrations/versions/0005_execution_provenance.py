@@ -21,6 +21,8 @@ def upgrade() -> None:
         sa.Column("payload_json", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.String(32), nullable=False),
         sa.UniqueConstraint("kind", "hash", name="uq_execution_snapshots_kind_hash"),
+        sa.CheckConstraint("kind IN ('model', 'prompt', 'context', 'plan')", name="kind_execution_snapshot_enum"),
+        sa.CheckConstraint("schema_version = 1", name="schema_version_supported"),
         sa.CheckConstraint(
             "length(hash) = 64 AND hash NOT GLOB '*[^0-9a-f]*'",
             name="hash_lowercase_sha256",
