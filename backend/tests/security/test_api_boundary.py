@@ -20,10 +20,30 @@ def test_api_rejects_noncanonical_host_and_unknown_or_encoded_paths(settings) ->
         assert client.get("/api/health/ready?apiKey=query-secret").status_code == 404
 
 
-@pytest.mark.parametrize("query", ["key=AIza-example", "credential=secret-value", "api-key=secret-value", "token=secret-value"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "key=AIza-example",
+        "credential=secret-value",
+        "api-key=secret-value",
+        "api_key=secret-value",
+        "x-goog-api-key=secret-value",
+        "google_api_key=secret-value",
+        "authorization=Bearer+secret-value",
+        "authorization-header=Bearer+secret-value",
+        "token=secret-value",
+    ],
+)
 def test_api_rejects_secret_query_parameter_variants(settings, query: str) -> None:
     with TestClient(create_app(settings=settings, acquire_lock=False), base_url=LOOPBACK) as client:
         assert client.get(f"/api/health/ready?{query}").status_code == 404
+
+
+def test_api_allows_non_secret_query_identifiers(settings) -> None:
+    with TestClient(create_app(settings=settings, acquire_lock=False), base_url=LOOPBACK) as client:
+        # The empty fixture has no worker heartbeat, so readiness is 503.  It
+        # must still reach the health route instead of the query-key 404 guard.
+        assert client.get("/api/health/ready?cursor=page-2&id=health-check").status_code == 503
 
 
 def test_api_state_changes_require_exact_host_origin_and_csrf(settings) -> None:

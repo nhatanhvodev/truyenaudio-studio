@@ -10,6 +10,7 @@ from app.api.cloud_profiles import _contains_secret_key, _safe_config, create_cl
 from app.api import translation
 from app.api.translation import _qwen_workflow, create_translation_router
 from app.contracts import OperationContext, TranslationRequest
+from app.db.base import session_factory
 from app.db.models import ProviderProfile
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 from app.providers import gemini_mt, qwen_mt
@@ -649,7 +650,89 @@ class _AllowingGuard:
 def test_cloud_profile_config_rejects_nested_secret_keys_and_redacts_legacy_values() -> None:
     assert _contains_secret_key({"provider": {"apiKey": "secret"}})
     assert _contains_secret_key({"headers": [{"access_token": "secret"}]})
-    assert _safe_config({"provider": "gemini", "apiKey": "secret", "nested": {"token": "secret", "x": 1}}) == {
+    assert _contains_secret_key({"headers": {"Authorization": "Bearer secret", "credential": "secret"}})
+    assert _contains_secret_key({"x-goog-api-key": "secret", "google_api_key": "secret", "Bearer": "secret"})
+    assert _safe_config(
+        {
+            "provider": "gemini",
+            "apiKey": "secret",
+            "google_api_key": "secret",
+            "headers": {"Authorization": "Bearer secret", "credential": "secret", "safe": "value"},
+            "nested": {"token": "secret", "x": 1},
+        }
+    ) == {
         "provider": "gemini",
+        "headers": {"safe": "value"},
         "nested": {"x": 1},
     }
+
+
+@pytest.mark.parametrize(
+    ("config", "secret"),
+    [
+        ({"headers": {"Authorization": "Bearer config-secret"}}, "config-secret"),
+        ({"headers": {"credential": "config-secret"}}, "config-secret"),
+        ({"headers": {"x-goog-api-key": "config-secret"}}, "config-secret"),
+        ({"google_api_key": "config-secret"}, "config-secret"),
+        ({"headers": {"Bearer": "config-secret"}}, "config-secret"),
+    ],
+)
+def test_profile_config_rejects_sensitive_header_variants_without_echoing(
+    settings, migrated_engine, monkeypatch: pytest.MonkeyPatch, config: dict[str, object], secret: str
+) -> None:
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: CredentialStore(FakeKeyring()))
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+
+    with TestClient(app) as client:
+        rejected_create = client.post(
+            "/api/cloud-profiles",
+            json={
+                "providerKind": "TRANSLATOR",
+                "adapterName": "gemini_mt",
+                "displayName": "Gemini",
+                "config": config,
+            },
+        )
+        profile = _create_profile(client, None)
+        rejected_patch = client.patch(
+            f"/api/cloud-profiles/{profile['id']}",
+            json={"expectedRevision": profile["revision"], "config": config},
+        )
+
+    for response in (rejected_create, rejected_patch):
+        assert response.status_code == 422
+        assert response.json() == {"detail": "SECRET_IN_CONFIG_FORBIDDEN"}
+        assert secret not in response.text
+
+
+def test_profile_response_redacts_legacy_sensitive_config_keys(settings, migrated_engine, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: CredentialStore(FakeKeyring()))
+    legacy_secret = "legacy-config-secret"
+    profile = ProviderProfile(
+        id="018f0000-0000-7000-8000-000000000810",
+        provider_kind="TRANSLATOR",
+        adapter_name="gemini_mt",
+        display_name="Legacy Gemini",
+        config_json={
+            "headers": {"Authorization": f"Bearer {legacy_secret}", "credential": legacy_secret, "safe": "value"},
+            "x-goog-api-key": legacy_secret,
+            "google_api_key": legacy_secret,
+            "safe": True,
+        },
+        enabled=False,
+        revision=1,
+    )
+    with session_factory(migrated_engine)() as session:
+        session.add(profile)
+        session.commit()
+
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        response = client.get("/api/cloud-profiles")
+
+    assert response.status_code == 200
+    config = response.json()["profiles"][0]["config"]
+    assert config == {"headers": {"safe": "value"}, "safe": True}
+    assert legacy_secret not in response.text

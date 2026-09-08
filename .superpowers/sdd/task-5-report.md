@@ -39,3 +39,11 @@ Status: DONE
 - API tests cover rejected create/PATCH payloads without echoing an attacker URL or bearer secret, and adapter/legacy-dispatch tests prove no attacker endpoint receives a request.
 
 Validation for round 2: focused backend 65 passed, full frontend Vitest 22 passed, frontend build passed, Ruff and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.
+
+## S02 round 3 remediation
+
+- Cloud-profile config now normalizes every field name before classifying it as sensitive. It rejects and omits nested `Authorization`, `credential`, `Bearer`, `x-goog-api-key`, and `google_api_key` fields, including legacy stored values returned through the profile API.
+- The API query guard recognizes normalized provider/header forms such as `x-goog-api-key`, `google_api_key`, `api_key`, and `authorization-header`. Its token suffix and sensitive-name checks leave ordinary identifiers such as `cursor` and `id` reachable.
+- TestClient regressions prove rejected create/PATCH config responses use the fixed 422 error without echoing submitted secrets, and prove legacy profile responses omit stored secret values.
+
+Validation for round 3: RED exposed one incorrect readiness expectation in the new non-secret-query test (the no-worker fixture returns 503); after correcting the test to assert that it reaches the endpoint, the focused security set passed 49 tests and the expanded S02 backend set passed 77 tests. Ruff and `git diff --check` passed. Frontend was untouched, so frontend tests were not rerun. Paid-cloud smoke remains `NOT_RUN`.

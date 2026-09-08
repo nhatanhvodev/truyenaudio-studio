@@ -283,7 +283,20 @@ def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
     }
 
 
-_SECRET_KEY_PARTS = ("secret", "token", "password", "apikey", "api_key", "accesskey", "access_key")
+# Keys are normalized before matching, so keep these entries normalized too.
+# This covers provider-specific spellings such as x-goog-api-key and
+# google_api_key without relying on one vendor's exact field name.
+_SECRET_KEY_PARTS = (
+    "secret",
+    "token",
+    "password",
+    "apikey",
+    "accesskey",
+    "privatekey",
+    "authorization",
+    "credential",
+    "bearer",
+)
 _QWEN_ADAPTER_NAMES = {"qwen", "qwen-mt", "qwen_mt"}
 _QWEN_ENDPOINT_ALIASES = {"endpoint", "baseurl", "url", "apibase"}
 
@@ -306,8 +319,7 @@ def _validate_profile_config(adapter_name: str, config: dict[str, object]) -> No
 def _contains_secret_key(value: object) -> bool:
     if isinstance(value, dict):
         for key, item in value.items():
-            normalized = "".join(character for character in str(key).lower() if character.isalnum())
-            if any(part in normalized for part in _SECRET_KEY_PARTS):
+            if _is_secret_config_key(key):
                 return True
             if _contains_secret_key(item):
                 return True
@@ -319,8 +331,7 @@ def _contains_secret_key(value: object) -> bool:
 def _safe_config(value: dict[str, object]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, item in value.items():
-        normalized = "".join(character for character in key.lower() if character.isalnum())
-        if any(part in normalized for part in _SECRET_KEY_PARTS):
+        if _is_secret_config_key(key):
             continue
         result[key] = _safe_config_value(item)
     return result
@@ -334,3 +345,8 @@ def _safe_config_value(value: object) -> object:
     if isinstance(value, tuple):
         return tuple(_safe_config_value(item) for item in value)
     return value
+
+
+def _is_secret_config_key(key: object) -> bool:
+    normalized = "".join(character for character in str(key).lower() if character.isalnum())
+    return any(part in normalized for part in _SECRET_KEY_PARTS)

@@ -60,14 +60,20 @@ def _is_api_path(path: str) -> bool:
 
 def _is_secret_query_key(key: str) -> bool:
     normalized = "".join(character for character in key.lower() if character.isalnum())
-    return normalized in {
-        "key",
-        "apikey",
-        "credential",
-        "token",
-        "secret",
-        "password",
-        "authorization",
-        "accesstoken",
-        "accesskey",
-    }
+    if normalized in {"key", "token"}:
+        return True
+    # Recognize normalized vendor/header forms (x-goog-api-key,
+    # google_api_key, authorization_header) while deliberately not treating
+    # generic pagination identifiers such as cursor or id as credentials.
+    return normalized.endswith("token") or any(
+        part in normalized
+        for part in {
+            "apikey",
+            "accesskey",
+            "authorization",
+            "credential",
+            "secret",
+            "password",
+            "bearer",
+        }
+    )
