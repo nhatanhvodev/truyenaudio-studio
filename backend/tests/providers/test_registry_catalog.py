@@ -13,7 +13,7 @@ from app.modules.execution.contracts import (
     PricingClass,
     ProviderCapabilities,
 )
-from app.providers.catalog import CatalogFilter, ProviderDescriptor, ProviderCatalog
+from app.providers.catalog import CatalogFilter, DiscoveryCache, DiscoveryResponse, ProviderDescriptor, ProviderCatalog
 from app.providers.registry import ProviderRegistry, RegistryAuthorization, RegistryError
 
 
@@ -96,3 +96,26 @@ def test_catalog_pagination_has_opaque_cursor_and_bounds() -> None:
         catalog.page_models(cursor="bad", limit=2)
     with pytest.raises(ValueError, match="LIMIT_OUT_OF_RANGE"):
         catalog.page_models(limit=101)
+
+
+def test_discovery_cache_preserves_last_good_snapshot_on_outage_and_honors_cooldown() -> None:
+    cache = DiscoveryCache()
+    first_time = datetime(2026, 9, 8, tzinfo=UTC)
+    calls: list[str | None] = []
+    model = _snapshot("p1", "m1")
+
+    def fetch(etag: str | None) -> DiscoveryResponse:
+        calls.append(etag)
+        return DiscoveryResponse((model,), "etag-1")
+
+    assert cache.refresh("p1", fetch, now=first_time).stale is False
+    assert cache.refresh("p1", fetch, now=first_time + timedelta(seconds=5)).items == (model,)
+    assert calls == [None]
+
+    def outage(etag: str | None) -> DiscoveryResponse:
+        raise RuntimeError("offline")
+
+    stale = cache.refresh("p1", outage, now=first_time + timedelta(minutes=2))
+    assert stale.items == (model,)
+    assert stale.stale is True
+    assert stale.error == "DISCOVERY_UNAVAILABLE"

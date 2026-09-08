@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import base64
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Callable, Iterable
 
 from app.modules.execution.contracts import CapabilityState, ModelSnapshot, PricingClass
@@ -118,3 +119,56 @@ def _decode_cursor(cursor: str) -> int:
         return offset
     except (ValueError, KeyError, TypeError, json.JSONDecodeError, UnicodeDecodeError, base64.binascii.Error) as exc:
         raise ValueError("CURSOR_INVALID") from exc
+
+
+@dataclass(frozen=True)
+class DiscoveryResponse:
+    items: tuple[ModelSnapshot, ...] = ()
+    etag: str | None = None
+    not_modified: bool = False
+
+
+@dataclass(frozen=True)
+class DiscoveryState:
+    items: tuple[ModelSnapshot, ...]
+    etag: str | None
+    fetched_at: datetime
+    stale: bool
+    error: str | None = None
+
+
+class DiscoveryCache:
+    """Keep the last good catalog snapshot across provider outages."""
+
+    def __init__(self, *, ttl: timedelta = timedelta(hours=24), cooldown: timedelta = timedelta(seconds=60)) -> None:
+        self.ttl = ttl
+        self.cooldown = cooldown
+        self._states: dict[str, DiscoveryState] = {}
+        self._last_refresh: dict[str, datetime] = {}
+
+    def get(self, provider_id: str, *, now: datetime | None = None) -> DiscoveryState | None:
+        state = self._states.get(provider_id)
+        if state is None:
+            return None
+        instant = now or datetime.now(UTC)
+        return DiscoveryState(state.items, state.etag, state.fetched_at, instant - state.fetched_at > self.ttl, state.error)
+
+    def refresh(self, provider_id: str, fetcher: Callable[[str | None], DiscoveryResponse], *, now: datetime | None = None) -> DiscoveryState:
+        instant = now or datetime.now(UTC)
+        previous = self._states.get(provider_id)
+        last = self._last_refresh.get(provider_id)
+        if last is not None and instant - last < self.cooldown and previous is not None:
+            return self.get(provider_id, now=instant) or previous
+        self._last_refresh[provider_id] = instant
+        try:
+            response = fetcher(previous.etag if previous else None)
+            if response.not_modified and previous is not None:
+                state = DiscoveryState(previous.items, previous.etag, instant, False, None)
+            else:
+                state = DiscoveryState(tuple(response.items), response.etag, instant, False, None)
+        except Exception:
+            if previous is None:
+                raise
+            state = DiscoveryState(previous.items, previous.etag, previous.fetched_at, True, "DISCOVERY_UNAVAILABLE")
+        self._states[provider_id] = state
+        return state
