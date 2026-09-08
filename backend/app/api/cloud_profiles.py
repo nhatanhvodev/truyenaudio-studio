@@ -198,10 +198,15 @@ def _safe_config(value: dict[str, object]) -> dict[str, object]:
         normalized = "".join(character for character in key.lower() if character.isalnum())
         if any(part in normalized for part in _SECRET_KEY_PARTS):
             continue
-        if isinstance(item, dict):
-            result[key] = _safe_config(item)
-        elif isinstance(item, list):
-            result[key] = [_safe_config(entry) if isinstance(entry, dict) else entry for entry in item]
-        else:
-            result[key] = item
+        result[key] = _safe_config_value(item)
     return result
+
+
+def _safe_config_value(value: object) -> object:
+    if isinstance(value, dict):
+        return _safe_config(value)
+    if isinstance(value, list):
+        return [_safe_config_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_safe_config_value(item) for item in value)
+    return value

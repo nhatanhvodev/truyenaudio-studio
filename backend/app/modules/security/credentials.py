@@ -17,6 +17,10 @@ class KeyringBackend(Protocol):
     def delete_password(self, service_name: str, username: str) -> None: ...
 
 
+class CredentialUnavailable(RuntimeError):
+    """The keyring could not be reached, so secret access must stop."""
+
+
 @dataclass(frozen=True)
 class SecretHandle:
     """Opaque secret value that intentionally cannot be serialized in repr/logs."""
@@ -55,7 +59,10 @@ class CredentialStore:
         if not isinstance(secret, str) or not secret.strip():
             raise ValueError("SECRET_REQUIRED")
         username = self.username(profile_id)
-        self._backend.set_password(KEYRING_SERVICE, username, secret)
+        try:
+            self._backend.set_password(KEYRING_SERVICE, username, secret)
+        except Exception as exc:
+            raise CredentialUnavailable("KEYRING_UNAVAILABLE") from exc
         return self.ref_for(profile_id)
 
     def resolve(self, profile_id: str, secret_ref: str | None = None) -> SecretHandle:
@@ -69,7 +76,10 @@ class CredentialStore:
         else:
             # Early builds stored ``keyring:provider-profile:{id}`` as a service.
             service, username = KEYRING_SERVICE, raw
-        value = self._backend.get_password(service, username)
+        try:
+            value = self._backend.get_password(service, username)
+        except Exception as exc:
+            raise CredentialUnavailable("KEYRING_UNAVAILABLE") from exc
         if not value:
             raise ValueError("SECRET_MISSING")
         return SecretHandle(value)
@@ -86,8 +96,10 @@ class CredentialStore:
         try:
             self._backend.delete_password(service, username)
         except Exception as exc:
-            # keyring backends use different exception classes for a missing item.
-            if "not found" not in str(exc).lower() and "password" not in str(exc).lower():
-                raise
-        return False
-
+            # The keyring package consistently uses PasswordDeleteError for a
+            # missing entry.  Do not infer absence from arbitrary backend text:
+            # that would turn an outage into a successful revoke.
+            if type(exc).__name__ == "PasswordDeleteError":
+                return False
+            raise CredentialUnavailable("KEYRING_UNAVAILABLE") from exc
+        return True

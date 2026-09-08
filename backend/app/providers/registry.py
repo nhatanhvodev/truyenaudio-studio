@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -23,8 +24,15 @@ class RegistryAuthorization:
 
 
 class ProviderRegistry:
-    def __init__(self, descriptors=(), *, catalog: ProviderCatalog | None = None) -> None:
+    def __init__(
+        self,
+        descriptors=(),
+        *,
+        catalog: ProviderCatalog | None = None,
+        profile_revision_resolver: Callable[[str], int | None] | None = None,
+    ) -> None:
         self.catalog = catalog or ProviderCatalog(descriptors)
+        self._profile_revision_resolver = profile_revision_resolver
 
     def resolve(self, plan_or_snapshot: object, authorization: RegistryAuthorization) -> object:
         snapshot_id = getattr(plan_or_snapshot, "model_snapshot_id", plan_or_snapshot)
@@ -32,6 +40,13 @@ class ProviderRegistry:
             raise RegistryError("MODEL_SNAPSHOT_REQUIRED")
         if authorization.profile_revision < 1:
             raise RegistryError("PROFILE_REVISION_REQUIRED")
+        if self._profile_revision_resolver is None:
+            raise RegistryError("PROFILE_REVISION_UNAVAILABLE")
+        current_revision = self._profile_revision_resolver(authorization.profile_id)
+        if current_revision is None:
+            raise RegistryError("PROFILE_REVISION_UNAVAILABLE")
+        if current_revision != authorization.profile_revision:
+            raise RegistryError("PROFILE_REVISION_STALE")
         if authorization.model_snapshot_id != snapshot_id:
             raise RegistryError("MODEL_SNAPSHOT_MISMATCH")
 

@@ -9,6 +9,7 @@ import httpx
 
 from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked
+from app.modules.security.credentials import CredentialStore
 
 
 PROVIDER = "qwen"
@@ -24,7 +25,12 @@ class Secret:
         return "Secret(<redacted>)"
 
     @classmethod
-    def from_ref(cls, secret_ref: str) -> "Secret":
+    def from_ref(
+        cls,
+        secret_ref: str,
+        *,
+        credential_store: CredentialStore | None = None,
+    ) -> "Secret":
         if secret_ref.startswith("env:"):
             value = os.environ.get(secret_ref.removeprefix("env:"), "")
             if not value:
@@ -32,9 +38,8 @@ class Secret:
             return cls(value)
         if secret_ref.startswith("keyring:"):
             try:
-                from app.modules.security.credentials import CredentialStore
-
-                return cls(CredentialStore().resolve("", secret_ref).value)
+                store = credential_store or CredentialStore()
+                return cls(store.resolve("", secret_ref).value)
             except ValueError as exc:
                 if str(exc) == "SECRET_MISSING":
                     raise ValueError("QWEN_SECRET_MISSING") from exc

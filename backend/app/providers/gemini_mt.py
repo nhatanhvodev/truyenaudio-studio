@@ -18,6 +18,7 @@ from app.contracts import (
     UsageUnit,
 )
 from app.modules.compliance.cloud import CloudCallBlocked
+from app.modules.security.credentials import CredentialStore
 
 
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -58,18 +59,43 @@ class GeminiMtAdapter:
         self,
         api_key: str | None = None,
         *,
+        api_key_ref: str | None = None,
+        credential_store: CredentialStore | None = None,
         model: str = DEFAULT_MODEL,
         http_client: Any = None,
         cloud_guard: Any = None,
         project_id: str | None = None,
         provider_profile_id: str | None = None,
     ) -> None:
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "").strip()
+        if api_key is not None and api_key_ref is not None:
+            raise ValueError("GEMINI_CREDENTIAL_AMBIGUOUS")
+        if api_key_ref is not None:
+            self.api_key = self.api_key_from_ref(api_key_ref, credential_store=credential_store)
+        else:
+            self.api_key = (api_key or os.environ.get("GEMINI_API_KEY") or "").strip()
         self.model = normalize_model_name(model)
         self.http_client = http_client or httpx.AsyncClient()
         self.cloud_guard = cloud_guard
         self.project_id = project_id
         self.provider_profile_id = provider_profile_id
+
+    @staticmethod
+    def api_key_from_ref(
+        secret_ref: str,
+        *,
+        credential_store: CredentialStore | None = None,
+    ) -> str:
+        if not secret_ref.startswith("keyring:"):
+            raise ValueError("GEMINI_SECRET_REF_UNSUPPORTED")
+        try:
+            store = credential_store or CredentialStore()
+            return store.resolve("", secret_ref).value
+        except ValueError as exc:
+            if str(exc) == "SECRET_MISSING":
+                raise ValueError("GEMINI_API_KEY_MISSING") from exc
+            raise
+        except Exception as exc:
+            raise ValueError("GEMINI_KEYRING_UNAVAILABLE") from exc
 
     def capabilities(self) -> dict[str, object]:
         return {

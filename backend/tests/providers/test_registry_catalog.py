@@ -70,7 +70,7 @@ def test_registry_requires_authorized_profile_revision_and_supported_model() -> 
         models=[_snapshot("p1", "fast")],
         factory=lambda authorization: created.append(authorization.profile_id) or authorization,
     )
-    registry = ProviderRegistry([descriptor])
+    registry = ProviderRegistry([descriptor], profile_revision_resolver=lambda profile_id: 2)
     authorization = RegistryAuthorization(profile_id="p1", profile_revision=2, model_snapshot_id=descriptor.models[0].id)
 
     result = registry.resolve(descriptor.models[0].id, authorization)
@@ -81,6 +81,45 @@ def test_registry_requires_authorized_profile_revision_and_supported_model() -> 
         registry.resolve(descriptor.models[0].id, RegistryAuthorization(profile_id="p1", profile_revision=0, model_snapshot_id="x"))
     with pytest.raises(RegistryError, match="MODEL_UNAVAILABLE"):
         registry.resolve("missing", RegistryAuthorization(profile_id="p1", profile_revision=2, model_snapshot_id="missing"))
+
+
+def test_registry_rejects_stale_profile_revision_before_factory_dispatch() -> None:
+    revisions = {"p1": 1}
+    dispatched: list[str] = []
+    descriptor = ProviderDescriptor(
+        "p1",
+        "gemini",
+        "adapter-a",
+        models=[_snapshot("p1", "fast")],
+        factory=lambda authorization: dispatched.append(authorization.profile_id) or authorization,
+    )
+    registry = ProviderRegistry(
+        [descriptor],
+        profile_revision_resolver=lambda profile_id: revisions.get(profile_id),
+    )
+    authorization = RegistryAuthorization(profile_id="p1", profile_revision=1, model_snapshot_id=descriptor.models[0].id)
+
+    registry.resolve(descriptor.models[0].id, authorization)
+    revisions["p1"] = 2
+    with pytest.raises(RegistryError, match="PROFILE_REVISION_STALE"):
+        registry.resolve(descriptor.models[0].id, authorization)
+
+    assert dispatched == ["p1"]
+
+
+def test_registry_fails_closed_when_current_profile_revision_is_not_available() -> None:
+    descriptor = ProviderDescriptor(
+        "p1",
+        "gemini",
+        "adapter-a",
+        models=[_snapshot("p1", "fast")],
+        factory=lambda authorization: authorization,
+    )
+    registry = ProviderRegistry([descriptor])
+    authorization = RegistryAuthorization(profile_id="p1", profile_revision=1, model_snapshot_id=descriptor.models[0].id)
+
+    with pytest.raises(RegistryError, match="PROFILE_REVISION_UNAVAILABLE"):
+        registry.resolve(descriptor.models[0].id, authorization)
 
 
 def test_catalog_pagination_has_opaque_cursor_and_bounds() -> None:
