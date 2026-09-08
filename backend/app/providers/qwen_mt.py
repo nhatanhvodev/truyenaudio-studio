@@ -14,6 +14,7 @@ from app.modules.security.credentials import CredentialStore, CredentialUnavaila
 PROVIDER = "qwen"
 PROVIDER_VERSION_FALLBACK = "unknown"
 MAX_SOURCE_CHARS = 30_000
+QWEN_ENDPOINT = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,7 @@ class QwenMtAdapter:
         provider_profile_id: str | None = None,
         dispatch_registry: object | None = None,
         dispatch_authorization: object | None = None,
-        endpoint: str = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+        endpoint: str = QWEN_ENDPOINT,
     ) -> None:
         self.http_client = http_client
         self.model = model
@@ -73,7 +74,7 @@ class QwenMtAdapter:
         self.provider_profile_id = provider_profile_id
         self.dispatch_registry = dispatch_registry
         self.dispatch_authorization = dispatch_authorization
-        self.endpoint = endpoint
+        self.endpoint = canonical_qwen_endpoint(endpoint)
 
     def capabilities(self) -> dict[str, object]:
         return {
@@ -182,3 +183,9 @@ def _non_negative_usage(value: Any) -> int:
     if type(value) is not int or value < 0:
         raise ValueError("QWEN_USAGE_INVALID")
     return value
+
+
+def canonical_qwen_endpoint(value: object) -> str:
+    if value != QWEN_ENDPOINT:
+        raise ValueError("QWEN_ENDPOINT_INVALID")
+    return QWEN_ENDPOINT

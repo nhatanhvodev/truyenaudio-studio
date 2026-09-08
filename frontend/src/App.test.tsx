@@ -107,8 +107,16 @@ describe('App', () => {
     expect(screen.getByText('Qwen target')).toBeVisible();
   });
 
-  it('removes the legacy key and sends a credential only to provisioning, never inference', async () => {
+  it('removes a legacy Gemini credential while bootstrapping the root route', async () => {
     window.localStorage.setItem('gemini_api_key', 'legacy-secret');
+    const { default: App } = await import('./App');
+
+    render(<App />);
+
+    await waitFor(() => expect(window.localStorage.getItem('gemini_api_key')).toBeNull());
+  });
+
+  it('sends a credential only to provisioning, never inference', async () => {
     window.history.replaceState(null, '', '/chapters/chapter-1/translation');
     vi.stubGlobal('EventSource', undefined);
     const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
@@ -138,7 +146,7 @@ describe('App', () => {
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/chapters/chapter-1/translation/gemini', expect.anything()));
     const inferenceCall = fetchSpy.mock.calls.find(([url]) => url === '/api/chapters/chapter-1/translation/gemini');
     expect(JSON.parse(String(inferenceCall?.[1]?.body))).toEqual({
-      profileId: 'profile-gemini-1', model: 'gemini-2.5-flash', cloudConsentId: 'consent-1', budgetAuthorizationId: 'budget-1',
+      profileId: 'profile-gemini-1', cloudConsentId: 'consent-1', budgetAuthorizationId: 'budget-1',
     });
     expect(String(inferenceCall?.[1]?.body)).not.toContain('secret');
   });

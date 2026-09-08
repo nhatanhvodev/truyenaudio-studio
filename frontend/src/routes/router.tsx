@@ -278,37 +278,9 @@ function TranslationScreen() {
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [geminiProfileId, setGeminiProfileId] = useState('');
   const [qwenProfileId, setQwenProfileId] = useState('');
-  const GEMINI_PRESET_MODELS = [
-    { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash (Khuyên dùng - Nhanh, mượt, ít bị 503 quá tải)' },
-    { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro (Chất lượng cao nhất - Dịch chuyên sâu)' },
-    { value: 'gemini-2.5-flash-lite', label: 'gemini-2.5-flash-lite (Siêu nhẹ, tốc độ cao)' },
-    { value: 'gemini-flash-latest', label: 'gemini-flash-latest (Bản Flash tự động cập nhật)' },
-    { value: 'gemini-pro-latest', label: 'gemini-pro-latest (Bản Pro tự động cập nhật)' },
-    { value: 'gemini-flash-lite-latest', label: 'gemini-flash-lite-latest (Bản Flash Lite mới nhất)' },
-    { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash (Bản 1.5 Flash)' },
-    { value: 'gemini-1.5-pro', label: 'gemini-1.5-pro (Bản 1.5 Pro)' },
-    { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash (Bản 2.0 Flash)' },
-    { value: 'gemini-2.0-flash-lite', label: 'gemini-2.0-flash-lite (Bản 2.0 Flash Lite)' },
-    { value: 'custom', label: '✏️ Nhập tên model tùy chỉnh khác...' },
-  ];
-
-  const [geminiModel, setGeminiModel] = useState(() => {
-    const saved = localStorage.getItem('gemini_model');
-    return saved || 'gemini-2.5-flash';
-  });
-  const [customModel, setCustomModel] = useState(() => localStorage.getItem('gemini_custom_model') ?? '');
-  const [isCustomModel, setIsCustomModel] = useState(() => {
-    const saved = localStorage.getItem('gemini_model');
-    return saved === 'custom';
-  });
   const [showKey, setShowKey] = useState(false);
   const [cloudConsentId, setCloudConsentId] = useState('');
   const [budgetAuthorizationId, setBudgetAuthorizationId] = useState('');
-
-  useEffect(() => {
-    // Remove a legacy persisted credential without ever reading or reusing it.
-    localStorage.removeItem('gemini_api_key');
-  }, []);
 
   useEffect(() => {
     if (!chapterId) {
@@ -338,27 +310,21 @@ function TranslationScreen() {
       setError('GEMINI_PROFILE_CONSENT_AND_BUDGET_REQUIRED');
       return;
     }
-    const activeModel = (isCustomModel ? customModel : geminiModel).trim() || 'gemini-2.5-flash';
     setBusy(true);
     setError('');
-    setMessage(`Đang dịch chương truyện bằng Google Gemini (${activeModel})... Vui lòng chờ vài giây.`);
+    setMessage('Đang dịch chương truyện bằng Google Gemini... Vui lòng chờ vài giây.');
     try {
-      localStorage.setItem('gemini_model', isCustomModel ? 'custom' : activeModel);
-      if (isCustomModel) {
-        localStorage.setItem('gemini_custom_model', activeModel);
-      }
       const payload = await apiJson<TranslationPayload>(`/api/chapters/${chapterId}/translation/gemini`, {
         method: 'POST',
         body: {
           profileId,
-          model: activeModel,
           cloudConsentId: cloudConsentId.trim(),
           budgetAuthorizationId: budgetAuthorizationId.trim(),
         },
       });
       setData(payload);
       setDrafts(Object.fromEntries(payload.segments.map((s) => [s.sourceSegmentId, s.targetText])));
-      setMessage(`Đã dịch xong toàn bộ chương bằng Google Gemini (${activeModel})! Văn phong tiểu thuyết tự nhiên, mượt mà.`);
+      setMessage('Đã dịch xong toàn bộ chương bằng Google Gemini! Văn phong tiểu thuyết tự nhiên, mượt mà.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'GEMINI_TRANSLATION_FAILED');
     } finally {
@@ -609,45 +575,9 @@ function TranslationScreen() {
             </button>
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 4 }}>
-              Mô hình Gemini (Google AI Studio)
-            </label>
-            <select
-              value={isCustomModel ? 'custom' : geminiModel}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === 'custom') {
-                  setIsCustomModel(true);
-                  localStorage.setItem('gemini_model', 'custom');
-                } else {
-                  setIsCustomModel(false);
-                  setGeminiModel(val);
-                  localStorage.setItem('gemini_model', val);
-                }
-              }}
-              style={{ ...styles.input, width: '100%', fontSize: 13, fontWeight: 600 }}
-            >
-              {GEMINI_PRESET_MODELS.map((m) => (
-                <option key={m.value} value={m.value}>{m.label}</option>
-              ))}
-            </select>
-            {isCustomModel && (
-              <input
-                type="text"
-                value={customModel}
-                onChange={(e) => {
-                  setCustomModel(e.target.value);
-                  localStorage.setItem('gemini_custom_model', e.target.value);
-                }}
-                placeholder="Nhập mã model (VD: gemini-2.5-pro, gemma-4-31b-it...)"
-                style={{ ...styles.input, width: '100%', marginTop: 6, fontSize: 13, borderColor: '#818cf8' }}
-              />
-            )}
-            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-              Xem tất cả model tại <a href="https://aistudio.google.com/docs/models" target="_blank" rel="noreferrer" style={{ color: '#4f46e5', fontWeight: 600, textDecoration: 'underline' }}>Docs | Google AI Studio</a>. Nếu gặp lỗi 503 (quá tải), hãy đổi sang <code style={{ background: '#e2e8f0', padding: '1px 4px', borderRadius: 3 }}>gemini-2.5-flash</code> hoặc <code style={{ background: '#e2e8f0', padding: '1px 4px', borderRadius: 3 }}>gemini-2.5-pro</code>.
-            </div>
-          </div>
+          <p style={{ ...styles.quote, fontSize: 13 }}>
+            Model được cấu hình và kiểm soát bởi provider profile cục bộ.
+          </p>
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>

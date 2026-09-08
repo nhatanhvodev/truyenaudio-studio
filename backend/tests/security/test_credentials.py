@@ -8,13 +8,13 @@ from sqlalchemy import select
 from app.api import cloud_profiles
 from app.api.cloud_profiles import _contains_secret_key, _safe_config, create_cloud_profiles_router
 from app.api import translation
-from app.api.translation import create_translation_router
+from app.api.translation import _qwen_workflow, create_translation_router
 from app.contracts import OperationContext, TranslationRequest
 from app.db.models import ProviderProfile
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 from app.providers import gemini_mt, qwen_mt
 from app.providers.gemini_mt import GeminiMtAdapter
-from app.providers.qwen_mt import QwenMtAdapter, Secret
+from app.providers.qwen_mt import QWEN_ENDPOINT, QwenMtAdapter, Secret
 from app.providers.registry import ProviderRegistry, RegistryAuthorization, RegistryError
 
 
@@ -250,6 +250,72 @@ def test_profile_credential_lifecycle_hides_secret_and_secret_ref(settings, migr
     assert "first-secret" not in repr(payloads)
     assert "rotated-secret" not in repr(payloads)
     assert _has_forbidden_profile_secret_field(payloads) is False
+
+
+def test_qwen_profile_rejects_noncanonical_endpoint_on_create_and_patch_without_echoing_values(
+    settings, migrated_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    attacker_endpoint = "https://attacker.example/collect?key=attacker-secret"
+
+    with TestClient(app) as client:
+        rejected_create = client.post(
+            "/api/cloud-profiles",
+            json={
+                "providerKind": "TRANSLATOR",
+                "adapterName": "qwen",
+                "displayName": "Qwen",
+                "model": "qwen-mt-flash",
+                "region": "frankfurt",
+                "config": {"endpoint": attacker_endpoint},
+                "secret": "bearer-secret",
+            },
+        )
+        created = client.post(
+            "/api/cloud-profiles",
+            json={
+                "providerKind": "TRANSLATOR",
+                "adapterName": "qwen",
+                "displayName": "Qwen",
+                "model": "qwen-mt-flash",
+                "region": "frankfurt",
+                "config": {"endpoint": QWEN_ENDPOINT, "provider": "qwen", "policy_sha256": "a" * 64},
+            },
+        )
+        assert created.status_code == 201
+        rejected_patch = client.patch(
+            f"/api/cloud-profiles/{created.json()['id']}",
+            json={"expectedRevision": 1, "config": {"baseUrl": attacker_endpoint}},
+        )
+
+    for response in (rejected_create, rejected_patch):
+        assert response.status_code == 422
+        assert response.json() == {"detail": "QWEN_ENDPOINT_INVALID"}
+        assert attacker_endpoint not in response.text
+        assert "bearer-secret" not in response.text
+
+
+def test_legacy_qwen_endpoint_fails_before_credential_or_network_dispatch(settings, db_session, monkeypatch: pytest.MonkeyPatch) -> None:
+    profile = ProviderProfile(
+        id="018f0000-0000-7000-8000-000000000799",
+        provider_kind="TRANSLATOR",
+        adapter_name="qwen",
+        display_name="Legacy Qwen",
+        model="qwen-mt-flash",
+        region="frankfurt",
+        secret_ref="keyring:truyenaudio-studio/provider-profile:legacy-qwen",
+        config_json={"endpoint": "https://attacker.example/collect"},
+        enabled=True,
+    )
+    db_session.add(profile)
+    db_session.commit()
+    monkeypatch.setattr(translation.Secret, "from_ref", lambda *_args, **_kwargs: pytest.fail("credential must not resolve"))
+
+    with pytest.raises(ValueError, match="QWEN_ENDPOINT_INVALID"):
+        _qwen_workflow(settings, "chapter-not-needed", profile.id).__enter__()
 
 
 def test_credential_reentry_recovers_from_missing_prior_key_and_increments_revision(settings, migrated_engine, monkeypatch) -> None:

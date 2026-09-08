@@ -12,6 +12,7 @@ from app.contracts import ProviderKind, new_id
 from app.db.base import create_engine_for, session_factory
 from app.db.models import ProviderProfile
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
+from app.providers.qwen_mt import canonical_qwen_endpoint
 from app.settings.config import Settings
 
 
@@ -73,6 +74,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
     ) -> dict[str, object]:
         if _contains_secret_key(request.config):
             raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
+        _validate_profile_config(request.adapter_name, request.config)
         profile_id = new_id()
         secret_write = _store_secret(profile_id, _optional_secret(request.secret))
         profile = ProviderProfile(
@@ -102,6 +104,8 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=409, detail="PROFILE_REVISION_CONFLICT")
         if request.config is not None and _contains_secret_key(request.config):
             raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
+        if request.config is not None:
+            _validate_profile_config(profile.adapter_name, request.config)
         for field_name in ("display_name", "model", "region", "config", "enabled"):
             value = getattr(request, field_name)
             if value is not None:
@@ -280,6 +284,23 @@ def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
 
 
 _SECRET_KEY_PARTS = ("secret", "token", "password", "apikey", "api_key", "accesskey", "access_key")
+_QWEN_ADAPTER_NAMES = {"qwen", "qwen-mt", "qwen_mt"}
+_QWEN_ENDPOINT_ALIASES = {"endpoint", "baseurl", "url", "apibase"}
+
+
+def _validate_profile_config(adapter_name: str, config: dict[str, object]) -> None:
+    if adapter_name not in _QWEN_ADAPTER_NAMES:
+        return
+    for key, value in config.items():
+        normalized = "".join(character for character in key.lower() if character.isalnum())
+        if normalized not in _QWEN_ENDPOINT_ALIASES:
+            continue
+        try:
+            if normalized != "endpoint":
+                raise ValueError("QWEN_ENDPOINT_INVALID")
+            canonical_qwen_endpoint(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="QWEN_ENDPOINT_INVALID") from exc
 
 
 def _contains_secret_key(value: object) -> bool:

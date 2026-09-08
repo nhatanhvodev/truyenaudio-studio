@@ -22,12 +22,9 @@ from app.modules.translation.workflow import (
     TranslationWorkflow,
 )
 from app.providers.gemini_mt import GeminiMtAdapter
-from app.providers.qwen_mt import QwenMtAdapter, Secret
+from app.providers.qwen_mt import QWEN_ENDPOINT, QwenMtAdapter, Secret, canonical_qwen_endpoint
 from app.providers.registry import ProviderRegistry, RegistryAuthorization
 from app.settings.config import Settings
-
-QWEN_DEFAULT_ENDPOINT = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
-
 
 class ReviseSegmentRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -53,7 +50,6 @@ class QwenTranslationRequest(BaseModel):
     budget_authorization_id: str | None = Field(
         default=None, alias="budgetAuthorizationId"
     )
-    model_preference: str | None = Field(default=None, alias="model")
 
 
 class GeminiTranslationRequest(BaseModel):
@@ -64,7 +60,6 @@ class GeminiTranslationRequest(BaseModel):
     budget_authorization_id: str | None = Field(
         default=None, alias="budgetAuthorizationId"
     )
-    model_preference: str | None = Field(default=None, alias="model")
 
 
 def create_translation_router(settings: Settings | None = None) -> APIRouter:
@@ -100,7 +95,7 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=422, detail="BUDGET_AUTHORIZATION_REQUIRED")
         try:
             with _qwen_workflow(
-                active_settings, chapter_id, request.profile_id, request.model_preference
+                active_settings, chapter_id, request.profile_id
             ) as workflow:
                 return _run_payload(
                     workflow.enqueue_translation(
@@ -129,7 +124,7 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=422, detail="BUDGET_AUTHORIZATION_REQUIRED")
         try:
             with _gemini_workflow(
-                active_settings, chapter_id, request.profile_id, request.model_preference
+                active_settings, chapter_id, request.profile_id
             ) as workflow:
                 return _run_payload(
                     workflow.enqueue_translation(
@@ -214,11 +209,10 @@ def _workflow_dependency(
 
 
 class _qwen_workflow:
-    def __init__(self, active_settings: Settings, chapter_id: str, profile_id: str, model_preference: str | None = None) -> None:
+    def __init__(self, active_settings: Settings, chapter_id: str, profile_id: str) -> None:
         self.active_settings = active_settings
         self.chapter_id = chapter_id
         self.profile_id = profile_id
-        self.model_preference = model_preference
         self.engine = None
         self.session_cm = None
 
@@ -233,7 +227,7 @@ class _qwen_workflow:
             profile = _resolve_translation_profile(session, self.profile_id, {"qwen"})
             if not profile.model or not profile.region or not profile.secret_ref:
                 raise ValueError("QWEN_PROVIDER_PROFILE_INCOMPLETE")
-            _validate_model_preference(profile.model, self.model_preference)
+            endpoint = _qwen_endpoint_from_config(profile.config_json or {})
             adapter = QwenMtAdapter(
                 httpx.AsyncClient(),
                 profile.model,
@@ -244,9 +238,7 @@ class _qwen_workflow:
                 provider_profile_id=profile.id,
                 dispatch_registry=ProviderRegistry(profile_revision_resolver=_db_profile_revision_resolver(session)),
                 dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, profile.model),
-                endpoint=str(
-                    (profile.config_json or {}).get("endpoint") or QWEN_DEFAULT_ENDPOINT
-                ),
+                endpoint=endpoint,
             )
             return TranslationWorkflow(session, translator=adapter)
         except Exception:
@@ -266,12 +258,10 @@ class _gemini_workflow:
         active_settings: Settings,
         chapter_id: str,
         profile_id: str,
-        model_preference: str | None = None,
     ) -> None:
         self.active_settings = active_settings
         self.chapter_id = chapter_id
         self.profile_id = profile_id
-        self.model_preference = model_preference
         self.engine = None
         self.session_cm = None
 
@@ -286,7 +276,6 @@ class _gemini_workflow:
             profile = _resolve_translation_profile(session, self.profile_id, {"gemini", "gemini_mt"})
             if not profile.model or not profile.secret_ref:
                 raise ValueError("GEMINI_PROVIDER_PROFILE_INCOMPLETE")
-            _validate_model_preference(profile.model, self.model_preference)
             adapter = GeminiMtAdapter(
                 api_key_ref=profile.secret_ref,
                 model=profile.model,
@@ -329,9 +318,8 @@ def _resolve_translation_profile(session, profile_id: str, adapter_names: set[st
     return profile
 
 
-def _validate_model_preference(profile_model: str, model_preference: str | None) -> None:
-    if model_preference is not None and model_preference.strip() != profile_model:
-        raise ValueError("MODEL_PREFERENCE_MISMATCH")
+def _qwen_endpoint_from_config(config: dict[str, object]) -> str:
+    return canonical_qwen_endpoint(config.get("endpoint", QWEN_ENDPOINT))
 
 
 def _public_provider_error(value: str) -> str:

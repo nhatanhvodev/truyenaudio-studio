@@ -34,8 +34,8 @@ def test_api_state_changes_require_exact_host_origin_and_csrf(settings) -> None:
         assert client.post("/api/projects", json={}, headers={"Origin": LOOPBACK}).status_code == 403
 
 
-def test_inference_requires_profile_and_rejects_raw_secret_fields(monkeypatch, tmp_path) -> None:
-    captured: list[tuple[str, str, str | None]] = []
+def test_inference_requires_profile_and_rejects_raw_secret_or_model_fields(monkeypatch, tmp_path) -> None:
+    captured: list[tuple[str, str]] = []
 
     class CapturingWorkflow:
         def __enter__(self):
@@ -44,8 +44,8 @@ def test_inference_requires_profile_and_rejects_raw_secret_fields(monkeypatch, t
         def __exit__(self, *args):
             return None
 
-    def capture(_settings, _chapter_id, profile_id, model_preference=None):
-        captured.append((_chapter_id, profile_id, model_preference))
+    def capture(_settings, _chapter_id, profile_id):
+        captured.append((_chapter_id, profile_id))
         return CapturingWorkflow()
 
     import app.api.translation as translation
@@ -65,14 +65,30 @@ def test_inference_requires_profile_and_rejects_raw_secret_fields(monkeypatch, t
             json={"cloudConsentId": "consent-1", "budgetAuthorizationId": "budget-1"},
             headers=headers,
         )
-        selected = client.post(
+        raw_model = client.post(
             "/api/chapters/chapter-1/translation/gemini",
             json={"profileId": "profile-1", "cloudConsentId": "consent-1", "budgetAuthorizationId": "budget-1", "model": "gemini-2.5-flash"},
+            headers=headers,
+        )
+        raw_qwen_model = client.post(
+            "/api/chapters/chapter-1/translation/qwen",
+            json={"profileId": "profile-1", "cloudConsentId": "consent-1", "budgetAuthorizationId": "budget-1", "model": "qwen-mt-flash"},
+            headers=headers,
+        )
+        selected = client.post(
+            "/api/chapters/chapter-1/translation/gemini",
+            json={"profileId": "profile-1", "cloudConsentId": "consent-1", "budgetAuthorizationId": "budget-1"},
             headers=headers,
         )
 
     assert raw_secret.status_code == 422
     assert "must-never-be-accepted" not in raw_secret.text
     assert missing_profile.status_code == 422
+    assert raw_model.status_code == 422
+    assert raw_model.json() == {"detail": "INVALID_REQUEST"}
+    assert "gemini-2.5-flash" not in raw_model.text
+    assert raw_qwen_model.status_code == 422
+    assert raw_qwen_model.json() == {"detail": "INVALID_REQUEST"}
+    assert "qwen-mt-flash" not in raw_qwen_model.text
     assert selected.status_code == 400
-    assert captured == [("chapter-1", "profile-1", "gemini-2.5-flash")]
+    assert captured == [("chapter-1", "profile-1")]

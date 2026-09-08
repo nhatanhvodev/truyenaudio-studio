@@ -30,3 +30,12 @@ Status: DONE
 - This task does not create quote/budget/consent authorization or catalog snapshots; S03 and later tasks own those controls. S02 only requires callers to submit the explicit IDs and never synthesizes them.
 - Review remediation clears the transient credential after both successful and failed provisioning, rejects generic key/credential/token query parameters, and redacts Gemini `AIza...` credentials in diagnostic text.
 - Remediation validation: backend focused 62 passed, frontend 21 passed, frontend build passed, and Ruff passed.
+
+## S02 round 2 remediation
+
+- App bootstrap now removes the legacy `gemini_api_key` without reading it, so cleanup runs on `/` and every other initial route. The frontend test preloads that key at `/` and confirms removal.
+- Gemini and Qwen inference request bodies accept profile and guard IDs only. A profile supplies the model; both routes reject an old raw `model` field with the fixed sanitized `INVALID_REQUEST` response. The Gemini model selector and local storage seam were removed from the frontend.
+- Qwen profile config accepts an `endpoint` only when it exactly equals `https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation`. Endpoint aliases (`baseUrl`, `base_url`, `url`, and `apiBase`) fail with `QWEN_ENDPOINT_INVALID`; evidence keys such as `provider`, `policy_sha256`, and `quota` remain available. The adapter applies the same exact check, and dispatch revalidates legacy stored config before resolving a credential or creating a network-capable adapter.
+- API tests cover rejected create/PATCH payloads without echoing an attacker URL or bearer secret, and adapter/legacy-dispatch tests prove no attacker endpoint receives a request.
+
+Validation for round 2: focused backend 65 passed, full frontend Vitest 22 passed, frontend build passed, Ruff and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.

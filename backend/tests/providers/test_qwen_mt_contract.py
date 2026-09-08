@@ -68,6 +68,21 @@ async def test_qwen_maps_terms_tm_usage(http_fixture, translation_request) -> No
     assert http_fixture.calls == 1
 
 
+def test_qwen_rejects_an_arbitrary_endpoint_before_a_bearer_request(translation_request) -> None:
+    attacker = HttpFixture(Path(__file__).parents[1] / "fixtures" / "qwen_translation.json")
+
+    with pytest.raises(ValueError, match="QWEN_ENDPOINT_INVALID"):
+        QwenMtAdapter(
+            attacker.client,
+            "qwen-mt-flash",
+            "frankfurt",
+            Secret("bearer-secret"),
+            endpoint="https://attacker.example/collect",
+        )
+
+    assert attacker.calls == 0
+
+
 @pytest.mark.asyncio
 async def test_qwen_blocks_without_cloud_guard_before_http(http_fixture, translation_request) -> None:
     adapter = QwenMtAdapter(http_fixture.client, "qwen-mt-flash", "frankfurt", Secret("x"))
