@@ -471,6 +471,11 @@ def test_invalid_secret_payload_is_never_echoed(settings, migrated_engine, monke
             },
         )
         profile_id = _create_profile(client, "old-secret")["id"]
+        monkeypatch.setattr(
+            cloud_profiles,
+            "CredentialStore",
+            lambda: (_ for _ in ()).throw(RuntimeError("backend unavailable")),
+        )
         put_response = client.put(
             f"/api/cloud-profiles/{profile_id}/credential",
             json={"secret": {"actual": "supersecret"}},

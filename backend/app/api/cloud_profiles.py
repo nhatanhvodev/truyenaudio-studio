@@ -111,6 +111,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
 
     @router.put("/{profile_id}/credential")
     def put_credential(profile_id: str, request: CredentialRequest, session=Depends(session_dependency)) -> dict[str, object]:
+        secret = _required_secret(request.secret)
         profile = session.get(ProviderProfile, profile_id)
         if profile is None:
             raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
@@ -124,7 +125,6 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             if str(exc) != "SECRET_MISSING":
                 raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
             previous_secret = None
-        secret = _required_secret(request.secret)
         try:
             new_ref = store.set(profile_id, secret)
             profile.secret_ref = new_ref
