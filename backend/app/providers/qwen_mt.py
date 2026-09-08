@@ -41,7 +41,7 @@ class Secret:
                     raise ValueError("QWEN_SECRET_MISSING") from exc
                 raise
             except Exception as exc:
-                raise ValueError("QWEN_KEYRING_UNAVAILABLE") from exc
+                raise CredentialUnavailable("KEYRING_UNAVAILABLE") from exc
         raise ValueError("QWEN_SECRET_REF_UNSUPPORTED")
 
 

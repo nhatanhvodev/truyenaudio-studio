@@ -24,7 +24,7 @@ class ProviderProfileRequest(BaseModel):
     region: str | None = None
     config: dict[str, object] = Field(default_factory=dict)
     enabled: bool = False
-    secret: str | None = None
+    secret: object | None = None
 
 
 class ProviderProfilePatch(BaseModel):
@@ -39,7 +39,7 @@ class ProviderProfilePatch(BaseModel):
 
 
 class CredentialRequest(BaseModel):
-    secret: str = Field(min_length=1)
+    secret: object
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         if _contains_secret_key(request.config):
             raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
         profile_id = new_id()
-        secret_write = _store_secret(profile_id, request.secret)
+        secret_write = _store_secret(profile_id, _optional_secret(request.secret))
         profile = ProviderProfile(
             id=profile_id,
             provider_kind=request.provider_kind.value,
@@ -124,8 +124,9 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             if str(exc) != "SECRET_MISSING":
                 raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
             previous_secret = None
+        secret = _required_secret(request.secret)
         try:
-            new_ref = store.set(profile_id, request.secret)
+            new_ref = store.set(profile_id, secret)
             profile.secret_ref = new_ref
         except Exception as exc:
             raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
@@ -200,6 +201,20 @@ def _store_secret(profile_id: str, value: str | None) -> _SecretWrite:
     except Exception as exc:
         raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
     return _SecretWrite(secret_ref=secret_ref)
+
+
+def _optional_secret(value: object | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(status_code=422, detail="SECRET_INVALID")
+    return value
+
+
+def _required_secret(value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise HTTPException(status_code=422, detail="SECRET_INVALID")
+    return value
 
 
 def _commit(session) -> None:

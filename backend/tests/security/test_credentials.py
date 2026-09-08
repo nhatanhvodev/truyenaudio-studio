@@ -12,6 +12,7 @@ from app.api.translation import create_translation_router
 from app.contracts import OperationContext, TranslationRequest
 from app.db.models import ProviderProfile
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
+from app.providers import gemini_mt, qwen_mt
 from app.providers.gemini_mt import GeminiMtAdapter
 from app.providers.qwen_mt import QwenMtAdapter, Secret
 from app.providers.registry import ProviderRegistry, RegistryAuthorization, RegistryError
@@ -452,6 +453,51 @@ def test_lifecycle_endpoints_map_keyring_constructor_failure_to_503(settings, mi
 
     assert response.status_code == 503
     assert response.json()["detail"] == "KEYRING_UNAVAILABLE"
+
+
+def test_invalid_secret_payload_is_never_echoed(settings, migrated_engine, monkeypatch) -> None:
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: CredentialStore(FakeKeyring()))
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+
+    with TestClient(app) as client:
+        create_response = client.post(
+            "/api/cloud-profiles",
+            json={
+                "providerKind": "TRANSLATOR",
+                "adapterName": "gemini",
+                "displayName": "Gemini",
+                "secret": {"actual": "supersecret"},
+            },
+        )
+        profile_id = _create_profile(client, "old-secret")["id"]
+        put_response = client.put(
+            f"/api/cloud-profiles/{profile_id}/credential",
+            json={"secret": {"actual": "supersecret"}},
+        )
+
+    assert create_response.status_code == 422
+    assert put_response.status_code == 422
+    assert "supersecret" not in create_response.text
+    assert "supersecret" not in put_response.text
+
+
+@pytest.mark.parametrize(
+    "module,resolve",
+    [
+        (gemini_mt, lambda: GeminiMtAdapter.api_key_from_ref("keyring:service/user")),
+        (qwen_mt, lambda: Secret.from_ref("keyring:service/user")),
+    ],
+)
+def test_provider_keyring_constructor_failure_stays_typed(monkeypatch, module, resolve) -> None:
+    monkeypatch.setattr(
+        module,
+        "CredentialStore",
+        lambda: (_ for _ in ()).throw(RuntimeError("backend unavailable")),
+    )
+
+    with pytest.raises(CredentialUnavailable, match="KEYRING_UNAVAILABLE"):
+        resolve()
 
 
 def _has_forbidden_profile_secret_field(value: object) -> bool:

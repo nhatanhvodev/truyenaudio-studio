@@ -93,7 +93,7 @@ class GeminiMtAdapter:
                 raise ValueError("GEMINI_API_KEY_MISSING") from exc
             raise
         except Exception as exc:
-            raise ValueError("GEMINI_KEYRING_UNAVAILABLE") from exc
+            raise CredentialUnavailable("KEYRING_UNAVAILABLE") from exc
 
     def capabilities(self) -> dict[str, object]:
         return {
