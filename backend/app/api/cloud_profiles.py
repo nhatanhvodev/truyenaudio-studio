@@ -3,17 +3,15 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.contracts import ProviderKind, new_id
 from app.db.base import create_engine_for, session_factory
 from app.db.models import ProviderProfile
+from app.modules.security.credentials import CredentialStore
 from app.settings.config import Settings
-
-
-KEYRING_SERVICE = "truyenaudio-studio"
 
 
 class ProviderProfileRequest(BaseModel):
@@ -24,9 +22,24 @@ class ProviderProfileRequest(BaseModel):
     display_name: str = Field(alias="displayName")
     model: str | None = None
     region: str | None = None
-    config: dict[str, object] = {}
+    config: dict[str, object] = Field(default_factory=dict)
     enabled: bool = False
     secret: str | None = None
+
+
+class ProviderProfilePatch(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    expected_revision: int = Field(alias="expectedRevision", ge=1)
+    display_name: str | None = Field(default=None, alias="displayName")
+    model: str | None = None
+    region: str | None = None
+    config: dict[str, object] | None = None
+    enabled: bool | None = None
+
+
+class CredentialRequest(BaseModel):
+    secret: str = Field(min_length=1)
 
 
 @dataclass(frozen=True)
@@ -52,7 +65,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         rows = session.scalars(select(ProviderProfile).order_by(ProviderProfile.display_name)).all()
         return {"profiles": [_profile_payload(row) for row in rows]}
 
-    @router.post("")
+    @router.post("", status_code=status.HTTP_201_CREATED)
     def upsert_profile(
         request: ProviderProfileRequest,
         session=Depends(session_dependency),
@@ -74,20 +87,75 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         session.commit()
         return _profile_payload(profile)
 
+    @router.patch("/{profile_id}")
+    def patch_profile(profile_id: str, request: ProviderProfilePatch, session=Depends(session_dependency)) -> dict[str, object]:
+        profile = session.get(ProviderProfile, profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
+        if profile.revision != request.expected_revision:
+            raise HTTPException(status_code=409, detail="PROFILE_REVISION_CONFLICT")
+        if request.config is not None and any(key.lower() in {"key", "api_key", "token", "secret"} for key in request.config):
+            raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
+        for field_name in ("display_name", "model", "region", "config", "enabled"):
+            value = getattr(request, field_name)
+            if value is not None:
+                setattr(profile, "config_json" if field_name == "config" else field_name, value)
+        profile.revision += 1
+        session.commit()
+        return _profile_payload(profile)
+
+    @router.put("/{profile_id}/credential")
+    def put_credential(profile_id: str, request: CredentialRequest, session=Depends(session_dependency)) -> dict[str, object]:
+        profile = session.get(ProviderProfile, profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
+        try:
+            profile.secret_ref = CredentialStore().set(profile_id, request.secret)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+        profile.revision += 1
+        session.commit()
+        return {"secretConfigured": True}
+
+    @router.delete("/{profile_id}/credential")
+    def delete_credential(profile_id: str, session=Depends(session_dependency)) -> dict[str, object]:
+        profile = session.get(ProviderProfile, profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
+        if profile.secret_ref:
+            try:
+                CredentialStore().delete(profile_id, profile.secret_ref)
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+        profile.secret_ref = None
+        profile.revision += 1
+        session.commit()
+        return {"secretConfigured": False}
+
+    @router.post("/{profile_id}/validate")
+    def validate_credential(profile_id: str, session=Depends(session_dependency)) -> dict[str, object]:
+        profile = session.get(ProviderProfile, profile_id)
+        if profile is None:
+            raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
+        if not profile.secret_ref:
+            return {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
+        try:
+            CredentialStore().resolve(profile_id, profile.secret_ref)
+        except Exception:
+            return {"state": "unavailable", "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
+        return {"state": "ready", "error": None}
+
     return router
 
 
 def _store_secret(profile_id: str, value: str | None) -> _SecretWrite:
     if value is None or value == "":
         return _SecretWrite(secret_ref=None)
-    secret_ref = f"provider-profile:{profile_id}"
     try:
-        import keyring
-
-        keyring.set_password(KEYRING_SERVICE, secret_ref, value)
+        secret_ref = CredentialStore().set(profile_id, value)
     except Exception as exc:
         raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
-    return _SecretWrite(secret_ref=f"keyring:{secret_ref}")
+    return _SecretWrite(secret_ref=secret_ref)
 
 
 def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
@@ -98,7 +166,9 @@ def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
         "displayName": profile.display_name,
         "model": profile.model,
         "region": profile.region,
+        "revision": profile.revision,
         "secretConfigured": bool(profile.secret_ref),
         "config": profile.config_json or {},
         "enabled": profile.enabled,
+        "status": "ready" if profile.enabled and profile.secret_ref else ("disabled" if not profile.enabled else "invalid"),
     }

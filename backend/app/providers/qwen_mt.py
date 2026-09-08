@@ -32,14 +32,15 @@ class Secret:
             return cls(value)
         if secret_ref.startswith("keyring:"):
             try:
-                import keyring
-            except ImportError as exc:
+                from app.modules.security.credentials import CredentialStore
+
+                return cls(CredentialStore().resolve("", secret_ref).value)
+            except ValueError as exc:
+                if str(exc) == "SECRET_MISSING":
+                    raise ValueError("QWEN_SECRET_MISSING") from exc
+                raise
+            except Exception as exc:
                 raise ValueError("QWEN_KEYRING_UNAVAILABLE") from exc
-            service, _, username = secret_ref.removeprefix("keyring:").partition("/")
-            value = keyring.get_password(service, username)
-            if not value:
-                raise ValueError("QWEN_SECRET_MISSING")
-            return cls(value)
         raise ValueError("QWEN_SECRET_REF_UNSUPPORTED")
 
 
