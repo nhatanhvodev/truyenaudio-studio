@@ -235,6 +235,18 @@ Không paste hoặc commit API key vào repo.
 
 ## Lệnh kiểm tra
 
+## Baseline và phục hồi bản sao
+
+Mỗi backup storage được tạo bằng SQLite Backup API để lấy snapshot nhất quán khi database dùng WAL. Bản backup gồm:
+
+- file SQLite có `PRAGMA integrity_check = ok`;
+- manifest có SHA-256 và byte size của database;
+- bản sao các artifact còn được tham chiếu, kiểm lại bằng SHA-256 trong database.
+
+Core storage có thể phục hồi vào một `STUDIO_DATA_ROOT` mới, chưa tồn tại. Quá trình dựng database và artifact trong thư mục staging, kiểm `integrity_check` cùng artifact pointers, rồi mới publish data root đích; data root nguồn không bị thay đổi. Đây là đường phục hồi bản sao đã được fixture kiểm chứng. API restore hiện hữu vẫn là restore tại chỗ và chưa nhận data root đích từ giao diện; phần chọn/confirm đích thuộc Storage UI của các task sau.
+
+Kết quả baseline và lệnh đã chạy được ghi tại [docs/validation/baseline.md](docs/validation/baseline.md). Không coi fake audio, preflight cloud hoặc package audit là bằng chứng provider/audio cloud đã hoạt động thật.
+
 Backend:
 
 ```powershell

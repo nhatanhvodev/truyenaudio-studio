@@ -41,6 +41,41 @@ def test_online_backup_restores_pointers(migrated_engine, tmp_path: Path) -> Non
         assert connection.execute("SELECT relative_path FROM artifacts").fetchone()[0] == "chapters/one/master.mp3"
 
 
+def test_backup_restores_database_and_artifacts_to_an_isolated_data_root(migrated_engine, tmp_path: Path) -> None:
+    db_path = Path(migrated_engine.url.database)
+    source_data_root = tmp_path / "source-data"
+    artifact_path = source_data_root / "artifacts" / "audio" / "chapter-1.mp3"
+    artifact_path.parent.mkdir(parents=True)
+    payload = b"isolated restore artifact"
+    artifact_path.write_bytes(payload)
+    _seed_artifact_row(migrated_engine, "audio/chapter-1.mp3", _sha256_bytes(payload))
+
+    service = BackupService(
+        db_path=db_path,
+        backup_root=source_data_root / "backups",
+        artifact_root=source_data_root,
+        api_lock_path=source_data_root / "studio-api.lock",
+        worker_lock_path=source_data_root / "studio-worker.lock",
+    )
+    backup = service.create()
+    restored_data_root = tmp_path / "restored-data"
+    with sqlite3.connect(db_path) as connection:
+        source_rows_before_restore = connection.execute("SELECT relative_path FROM artifacts").fetchall()
+
+    with service.acquire_restore_locks() as token:
+        restored = service.restore_to_data_root(backup.id, restored_data_root, lock_token=token)
+
+    assert restored.target_path == restored_data_root / "studio.sqlite3"
+    assert restored.artifact_pointer_count == 1
+    assert restored.integrity_check == "ok"
+    assert (restored_data_root / "artifacts" / "audio" / "chapter-1.mp3").read_bytes() == payload
+    assert artifact_path.read_bytes() == payload
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute("SELECT relative_path FROM artifacts").fetchall() == source_rows_before_restore
+    with sqlite3.connect(restored_data_root / "studio.sqlite3") as connection:
+        assert connection.execute("SELECT relative_path FROM artifacts").fetchone()[0] == "audio/chapter-1.mp3"
+
+
 def test_restore_verifies_rows_under_data_root_artifacts_when_paths_are_artifact_relative(
     migrated_engine,
     tmp_path: Path,
