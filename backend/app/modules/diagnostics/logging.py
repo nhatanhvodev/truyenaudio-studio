@@ -29,6 +29,7 @@ SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"\b(?:bearer|token|api[_-]?key|secret)\s+['\"]?[A-Za-z0-9._\-:/+=]{4,}", re.IGNORECASE),
     re.compile(r"\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"([?&](?:api[_-]?key|token|secret|access[_-]?token)=[^&#\s]+)", re.IGNORECASE),
 )
 
 
@@ -126,9 +127,21 @@ def summarize_error(error: Exception) -> str:
 
 
 def scrub_text(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if _is_secret_key(key) else scrub_text(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list | tuple):
+        return [scrub_text(item) for item in value]
     if not isinstance(value, str):
         return value
     scrubbed = value
     for pattern in SECRET_PATTERNS:
         scrubbed = pattern.sub("[REDACTED]", scrubbed)
     return scrubbed
+
+
+def _is_secret_key(key: object) -> bool:
+    normalized = "".join(character for character in str(key).lower() if character.isalnum())
+    return any(part in normalized for part in ("secret", "token", "apikey", "password", "authorization"))

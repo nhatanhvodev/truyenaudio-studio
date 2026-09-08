@@ -5,6 +5,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.resetModules();
+  window.localStorage.clear();
   window.history.replaceState(null, '', '/');
 });
 
@@ -92,16 +93,54 @@ describe('App', () => {
 
     fireEvent.change(screen.getByLabelText('Cloud consent ID'), { target: { value: 'consent-1' } });
     fireEvent.change(screen.getByLabelText('Budget authorization ID'), { target: { value: 'budget-1' } });
+    fireEvent.change(screen.getByLabelText('Qwen profile ID'), { target: { value: 'profile-qwen-1' } });
     fireEvent.click(qwenButton);
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/chapters/chapter-1/translation/qwen', expect.anything()));
     const qwenCall = fetchSpy.mock.calls.find(([url]) => url === '/api/chapters/chapter-1/translation/qwen');
     expect(JSON.parse(String(qwenCall?.[1]?.body))).toEqual({
+      profileId: 'profile-qwen-1',
       cloudConsentId: 'consent-1',
       budgetAuthorizationId: 'budget-1',
     });
     expect(await screen.findByText('Qwen source')).toBeVisible();
     expect(screen.getByText('Qwen target')).toBeVisible();
+  });
+
+  it('removes the legacy key and sends a credential only to provisioning, never inference', async () => {
+    window.localStorage.setItem('gemini_api_key', 'legacy-secret');
+    window.history.replaceState(null, '', '/chapters/chapter-1/translation');
+    vi.stubGlobal('EventSource', undefined);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/chapters/chapter-1/translation') return jsonResponse({ detail: 'TRANSLATION_RUN_NOT_FOUND' }, false, 404);
+      if (url === '/api/security/bootstrap') return jsonResponse({ csrfToken: 'token-1' });
+      if (url === '/api/cloud-profiles/profile-gemini-1/credential' && init?.method === 'PUT') return jsonResponse({ secretConfigured: true });
+      if (url === '/api/chapters/chapter-1/translation/gemini' && init?.method === 'POST') return jsonResponse(translationPayload('gemini-run-1'));
+      if (url === '/api/jobs/snapshot') return jsonResponse({ events: [] });
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { default: App } = await import('./App');
+    render(<App />);
+
+    expect(window.localStorage.getItem('gemini_api_key')).toBeNull();
+    fireEvent.change(await screen.findByLabelText('Gemini profile ID'), { target: { value: 'profile-gemini-1' } });
+    fireEvent.change(screen.getByPlaceholderText(/Dán AIzaSy/), { target: { value: 'transient-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu API key vào profile' }));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/cloud-profiles/profile-gemini-1/credential', expect.anything()));
+    const provisionCall = fetchSpy.mock.calls.find(([url]) => url === '/api/cloud-profiles/profile-gemini-1/credential');
+    expect(JSON.parse(String(provisionCall?.[1]?.body))).toEqual({ secret: 'transient-secret' });
+    expect(screen.getByPlaceholderText(/Dán AIzaSy/)).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('Cloud consent ID'), { target: { value: 'consent-1' } });
+    fireEvent.change(screen.getByLabelText('Budget authorization ID'), { target: { value: 'budget-1' } });
+    fireEvent.click(screen.getByRole('button', { name: /Dịch toàn bộ chương bằng Gemini AI/ }));
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/chapters/chapter-1/translation/gemini', expect.anything()));
+    const inferenceCall = fetchSpy.mock.calls.find(([url]) => url === '/api/chapters/chapter-1/translation/gemini');
+    expect(JSON.parse(String(inferenceCall?.[1]?.body))).toEqual({
+      profileId: 'profile-gemini-1', model: 'gemini-2.5-flash', cloudConsentId: 'consent-1', budgetAuthorizationId: 'budget-1',
+    });
+    expect(String(inferenceCall?.[1]?.body)).not.toContain('secret');
   });
 
   it('previews folder imports and confirms only after mapping review', async () => {

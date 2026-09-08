@@ -72,10 +72,10 @@ async def test_gemini_keeps_key_out_of_url_and_redacts_provider_failures(client)
         http_client=client,
     )
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(RuntimeError) as caught:
         await adapter.translate(_request())
 
-    assert str(caught.value) == "GEMINI_ALL_MODELS_FAILED"
+    assert str(caught.value) == "GEMINI_PROVIDER_UNAVAILABLE"
     assert SECRET not in str(caught.value)
     assert client.calls
     assert all("?" not in url and SECRET not in url for url, _headers in client.calls)

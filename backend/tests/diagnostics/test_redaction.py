@@ -5,7 +5,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from app.modules.diagnostics.logging import DiagnosticsLogger, summarize_error
+from app.modules.diagnostics.logging import DiagnosticsLogger, scrub_text, summarize_error
 
 
 def test_job_error_writes_allowlisted_jsonl_without_secret_or_full_text(
@@ -74,3 +74,15 @@ def test_sanctioned_error_summary_is_scrubbed_and_capped() -> None:
     assert "sk-test-1234567890abcdef" not in summary
     assert summary.startswith("[REDACTED] ")
     assert len(summary) <= 500
+
+
+def test_scrubber_redacts_structured_secrets_and_query_credentials() -> None:
+    value = {
+        "request": {"apiKey": "raw-secret", "url": "https://provider.test/infer?token=query-secret&safe=1"},
+        "error": {"Authorization": "Bearer raw-secret"},
+    }
+
+    rendered = str(scrub_text(value))
+
+    assert "raw-secret" not in rendered
+    assert "query-secret" not in rendered

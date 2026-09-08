@@ -447,7 +447,7 @@ def test_translation_routes_map_keyring_dependency_failure_to_503_without_dispat
     with TestClient(app) as client:
         response = client.post(
             f"/api/chapters/chapter-1/translation/{path}",
-            json={"cloudConsentId": "consent-1", "budgetAuthorizationId": "budget-1"},
+            json={"profileId": "profile-1", "cloudConsentId": "consent-1", "budgetAuthorizationId": "budget-1"},
         )
 
     assert response.status_code == 503

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from starlette.routing import Match
 from starlette.responses import JSONResponse
+from urllib.parse import parse_qsl
 
-from app.settings.csrf import CsrfService, STATE_CHANGING_METHODS
+from app.settings.csrf import CsrfService, LOOPBACK_HOST, STATE_CHANGING_METHODS
 
 
 def create_security_router(csrf: CsrfService) -> APIRouter:
@@ -19,8 +22,42 @@ def create_security_router(csrf: CsrfService) -> APIRouter:
 
 
 def install_csrf_middleware(app: FastAPI, csrf: CsrfService) -> None:
+    @app.exception_handler(RequestValidationError)
+    async def invalid_api_request(request: Request, _exc: RequestValidationError):
+        return JSONResponse({"detail": "INVALID_REQUEST"}, status_code=422)
+
     @app.middleware("http")
     async def require_csrf(request: Request, call_next):
+        if _is_api_path(request.url.path):
+            if not _is_canonical_api_request(app, request):
+                return JSONResponse({"detail": "API_ROUTE_NOT_FOUND"}, status_code=404)
+            if request.headers.get("host") != LOOPBACK_HOST:
+                return JSONResponse({"detail": "LOOPBACK_HOST_REQUIRED"}, status_code=403)
         if request.method in STATE_CHANGING_METHODS and not csrf.validates_state_change(request):
             return JSONResponse({"detail": "CSRF_ORIGIN_TOKEN_REQUIRED"}, status_code=403)
         return await call_next(request)
+
+
+def _is_canonical_api_request(app: FastAPI, request: Request) -> bool:
+    """Allow only a registered API endpoint; the SPA catch-all must never handle API paths."""
+    raw_path = request.scope.get("raw_path", b"")
+    if not isinstance(raw_path, bytes):
+        return False
+    if b"%" in raw_path or b"\\" in raw_path or b".." in raw_path:
+        return False
+    if any(_is_secret_query_key(key) for key, _value in parse_qsl(request.url.query, keep_blank_values=True)):
+        return False
+    return any(
+        getattr(route, "path", "").startswith("/api")
+        and route.matches(request.scope)[0] is Match.FULL
+        for route in app.router.routes
+    )
+
+
+def _is_api_path(path: str) -> bool:
+    return path == "/api" or path.startswith("/api/")
+
+
+def _is_secret_query_key(key: str) -> bool:
+    normalized = "".join(character for character in key.lower() if character.isalnum())
+    return any(part in normalized for part in ("secret", "token", "apikey", "password", "authorization"))

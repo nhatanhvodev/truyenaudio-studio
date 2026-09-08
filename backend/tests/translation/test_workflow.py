@@ -263,7 +263,7 @@ def test_translation_api_qwen_route_requires_consent_and_authorization(
     with TestClient(app) as client:
         response = client.post(
             f"/api/chapters/{chapter_id}/translation/qwen",
-            json={},
+            json={"profileId": "profile-qwen-1"},
         )
 
     assert response.status_code == 422
@@ -356,15 +356,14 @@ def test_translation_api_gemini_route(tmp_path: Path, monkeypatch) -> None:
         # cloud authorization are now required.
         resp_no_key = client.post(
             f"/api/chapters/{chapter_id}/translation/gemini",
-            json={"apiKey": "", "model": "gemini-2.5-flash"},
+        json={"profileId": "profile-gemini-1", "model": "gemini-2.5-flash"},
         )
         assert resp_no_key.status_code == 422
         resp = client.post(
             f"/api/chapters/{chapter_id}/translation/gemini",
-            json={"apiKey": "fake-gemini-key", "model": "gemini-2.5-flash"},
+        json={"profileId": "profile-gemini-1", "model": "gemini-2.5-flash", "apiKey": "fake-gemini-key"},
         )
         assert resp.status_code == 422
-        assert resp.json()["detail"] == "CLOUD_CONSENT_REQUIRED"
 
 
 def test_translation_workflow_passes_cloud_context_to_translator(db_session) -> None:

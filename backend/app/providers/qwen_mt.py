@@ -111,8 +111,14 @@ class QwenMtAdapter:
                 raise ProviderBillingUnknown("QWEN_BILLING_UNKNOWN") from exc
             raise
 
-        response.raise_for_status()
-        body = response.json()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError("QWEN_PROVIDER_REJECTED") from exc
+        try:
+            body = response.json()
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("QWEN_PROVIDER_INVALID_RESPONSE") from exc
         translations = body.get("translations") or []
         if not translations or not str(translations[0].get("target_text", "")).strip():
             raise ValueError("QWEN_EMPTY_TRANSLATION")

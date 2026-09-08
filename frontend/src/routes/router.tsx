@@ -275,7 +275,9 @@ function TranslationScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') ?? '');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [geminiProfileId, setGeminiProfileId] = useState('');
+  const [qwenProfileId, setQwenProfileId] = useState('');
   const GEMINI_PRESET_MODELS = [
     { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash (Khuyên dùng - Nhanh, mượt, ít bị 503 quá tải)' },
     { value: 'gemini-2.5-pro', label: 'gemini-2.5-pro (Chất lượng cao nhất - Dịch chuyên sâu)' },
@@ -304,6 +306,11 @@ function TranslationScreen() {
   const [budgetAuthorizationId, setBudgetAuthorizationId] = useState('');
 
   useEffect(() => {
+    // Remove a legacy persisted credential without ever reading or reusing it.
+    localStorage.removeItem('gemini_api_key');
+  }, []);
+
+  useEffect(() => {
     if (!chapterId) {
       return;
     }
@@ -326,9 +333,9 @@ function TranslationScreen() {
     if (!chapterId) {
       return;
     }
-    const key = geminiApiKey.trim();
-    if (!key) {
-      setError('Vui lòng nhập Google AI Studio API Key. Bạn có thể lấy Key miễn phí tại: https://aistudio.google.com/app/apikey');
+    const profileId = geminiProfileId.trim();
+    if (!profileId || !cloudConsentId.trim() || !budgetAuthorizationId.trim()) {
+      setError('GEMINI_PROFILE_CONSENT_AND_BUDGET_REQUIRED');
       return;
     }
     const activeModel = (isCustomModel ? customModel : geminiModel).trim() || 'gemini-2.5-flash';
@@ -336,7 +343,6 @@ function TranslationScreen() {
     setError('');
     setMessage(`Đang dịch chương truyện bằng Google Gemini (${activeModel})... Vui lòng chờ vài giây.`);
     try {
-      localStorage.setItem('gemini_api_key', key);
       localStorage.setItem('gemini_model', isCustomModel ? 'custom' : activeModel);
       if (isCustomModel) {
         localStorage.setItem('gemini_custom_model', activeModel);
@@ -344,8 +350,10 @@ function TranslationScreen() {
       const payload = await apiJson<TranslationPayload>(`/api/chapters/${chapterId}/translation/gemini`, {
         method: 'POST',
         body: {
-          apiKey: key,
+          profileId,
           model: activeModel,
+          cloudConsentId: cloudConsentId.trim(),
+          budgetAuthorizationId: budgetAuthorizationId.trim(),
         },
       });
       setData(payload);
@@ -353,6 +361,29 @@ function TranslationScreen() {
       setMessage(`Đã dịch xong toàn bộ chương bằng Google Gemini (${activeModel})! Văn phong tiểu thuyết tự nhiên, mượt mà.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'GEMINI_TRANSLATION_FAILED');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function provisionGeminiCredential() {
+    const profileId = geminiProfileId.trim();
+    const secret = geminiApiKey.trim();
+    if (!profileId || !secret) {
+      setError('GEMINI_PROFILE_AND_CREDENTIAL_REQUIRED');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await apiJson(`/api/cloud-profiles/${profileId}/credential`, {
+        method: 'PUT',
+        body: { secret },
+      });
+      setGeminiApiKey('');
+      setMessage('Đã lưu credential vào keyring cục bộ và xóa key khỏi biểu mẫu.');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'CREDENTIAL_PROVISIONING_FAILED');
     } finally {
       setBusy(false);
     }
@@ -384,7 +415,7 @@ function TranslationScreen() {
     if (!chapterId) {
       return;
     }
-    if (!cloudConsentId.trim() || !budgetAuthorizationId.trim()) {
+    if (!qwenProfileId.trim() || !cloudConsentId.trim() || !budgetAuthorizationId.trim()) {
       setError('CLOUD_CONSENT_AND_BUDGET_REQUIRED');
       return;
     }
@@ -395,6 +426,7 @@ function TranslationScreen() {
       const payload = await apiJson<TranslationPayload>(`/api/chapters/${chapterId}/translation/qwen`, {
         method: 'POST',
         body: {
+          profileId: qwenProfileId.trim(),
           cloudConsentId: cloudConsentId.trim(),
           budgetAuthorizationId: budgetAuthorizationId.trim(),
         },
@@ -542,10 +574,7 @@ function TranslationScreen() {
               <input
                 type={showKey ? 'text' : 'password'}
                 value={geminiApiKey}
-                onChange={(e) => {
-                  setGeminiApiKey(e.target.value);
-                  localStorage.setItem('gemini_api_key', e.target.value);
-                }}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
                 placeholder="Dán AIzaSy... từ aistudio.google.com"
                 style={{
                   ...styles.input,
@@ -566,8 +595,18 @@ function TranslationScreen() {
               </button>
             </div>
             <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
-              {geminiApiKey ? '✓ Đã lưu key trong trình duyệt (hoặc có thể đặt GEMINI_API_KEY trong file .env)' : '⚠️ Chưa có key: Nhấn link phía trên để tạo key trong 30 giây'}
+              Credential chỉ tồn tại trong biểu mẫu đến khi gửi vào keyring cục bộ; không lưu trong trình duyệt hoặc dùng từ .env.
             </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#374151', marginBottom: 4 }}>
+              Gemini profile ID
+            </label>
+            <input aria-label="Gemini profile ID" value={geminiProfileId} onChange={(event) => setGeminiProfileId(event.target.value)} placeholder="Profile đã tạo trong AI Providers" style={{ ...styles.input, width: '100%' }} />
+            <button type="button" onClick={() => void provisionGeminiCredential()} disabled={busy || !geminiProfileId.trim() || !geminiApiKey.trim()} style={{ ...styles.secondaryButton, marginTop: 6 }}>
+              Lưu API key vào profile
+            </button>
           </div>
 
           <div>
@@ -615,20 +654,20 @@ function TranslationScreen() {
           <button
             type="button"
             onClick={() => void translateGemini()}
-            disabled={busy || !geminiApiKey.trim()}
+            disabled={busy || !geminiProfileId.trim() || !cloudConsentId.trim() || !budgetAuthorizationId.trim()}
             style={{
               ...styles.primaryButton,
               background: busy ? '#94a3b8' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)',
               fontSize: 15,
               padding: '10px 20px',
-              cursor: busy || !geminiApiKey.trim() ? 'not-allowed' : 'pointer',
+              cursor: busy || !geminiProfileId.trim() || !cloudConsentId.trim() || !budgetAuthorizationId.trim() ? 'not-allowed' : 'pointer',
             }}
           >
             {busy ? '⏳ Đang dịch qua Gemini...' : '✨ Dịch toàn bộ chương bằng Gemini AI'}
           </button>
-          {!geminiApiKey.trim() ? (
+          {!geminiProfileId.trim() ? (
             <span style={{ fontSize: 13, color: '#b91c1c', fontWeight: 600 }}>
-              ← Nhập API Key ở trên để kích hoạt nút dịch
+              ← Nhập profile Gemini và consent/budget để kích hoạt nút dịch
             </span>
           ) : null}
         </div>
@@ -659,6 +698,17 @@ function TranslationScreen() {
               <span>🤖</span>
               <strong>Dịch qua Qwen AI Cloud</strong>
             </div>
+            <label style={styles.label}>
+              Qwen profile ID
+              <input
+                aria-label="Qwen profile ID"
+                value={qwenProfileId}
+                onChange={(event) => setQwenProfileId(event.target.value)}
+                style={styles.input}
+                autoComplete="off"
+                placeholder="VD: profile-qwen-1"
+              />
+            </label>
             <label style={styles.label}>
               Cloud consent ID
               <input

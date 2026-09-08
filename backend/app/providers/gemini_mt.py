@@ -179,18 +179,11 @@ class GeminiMtAdapter:
             },
         }
 
-        # Build list of models to try (primary + fallbacks for 404/503 errors)
-        models_to_try = [self.model]
-        fallbacks = ["gemini-flash-lite-latest", "gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-pro-latest"]
-        for fb in fallbacks:
-            if fb not in models_to_try:
-                models_to_try.append(fb)
-
         timeout = max(30, request.context.timeout_seconds)
         successful_response_data = None
         actual_model_used = self.model
 
-        for current_model in models_to_try:
+        for current_model in (self.model,):
             endpoint = f"{GEMINI_API_BASE}/{current_model}:generateContent"
             headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
 
@@ -211,9 +204,8 @@ class GeminiMtAdapter:
                 actual_model_used = current_model
                 break
 
-            # Retry next fallback model if 404 (model not available for user) or 503 (high demand)
             if response.status_code in {404, 503}:
-                continue
+                raise RuntimeError("GEMINI_PROVIDER_UNAVAILABLE")
 
             # Hard stop for auth / quota / bad request errors
             if response.status_code == 400:
@@ -223,10 +215,10 @@ class GeminiMtAdapter:
             elif response.status_code == 429:
                 raise RuntimeError("GEMINI_RATE_LIMIT_EXCEEDED")
             elif response.status_code >= 500 and response.status_code != 503:
-                raise RuntimeError(f"GEMINI_SERVER_ERROR_{response.status_code}")
+                raise RuntimeError("GEMINI_PROVIDER_UNAVAILABLE")
 
         if not successful_response_data:
-            raise ValueError("GEMINI_ALL_MODELS_FAILED")
+            raise RuntimeError("GEMINI_PROVIDER_UNAVAILABLE")
 
         data = successful_response_data
 

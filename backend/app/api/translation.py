@@ -46,21 +46,25 @@ class ApproveTranslationRequest(BaseModel):
 
 
 class QwenTranslationRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
+    profile_id: str = Field(alias="profileId", min_length=1)
     cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
     budget_authorization_id: str | None = Field(
         default=None, alias="budgetAuthorizationId"
     )
+    model_preference: str | None = Field(default=None, alias="model")
 
 
 class GeminiTranslationRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
+    profile_id: str = Field(alias="profileId", min_length=1)
     cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
     budget_authorization_id: str | None = Field(
         default=None, alias="budgetAuthorizationId"
     )
+    model_preference: str | None = Field(default=None, alias="model")
 
 
 def create_translation_router(settings: Settings | None = None) -> APIRouter:
@@ -95,7 +99,9 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
         if not request.budget_authorization_id:
             raise HTTPException(status_code=422, detail="BUDGET_AUTHORIZATION_REQUIRED")
         try:
-            with _qwen_workflow(active_settings, chapter_id) as workflow:
+            with _qwen_workflow(
+                active_settings, chapter_id, request.profile_id, request.model_preference
+            ) as workflow:
                 return _run_payload(
                     workflow.enqueue_translation(
                         chapter_id,
@@ -107,6 +113,8 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=403, detail=",".join(exc.reasons)) from exc
         except CredentialUnavailable as exc:
             raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=_public_provider_error(str(exc))) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -120,7 +128,9 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
         if not request.budget_authorization_id:
             raise HTTPException(status_code=422, detail="BUDGET_AUTHORIZATION_REQUIRED")
         try:
-            with _gemini_workflow(active_settings, chapter_id) as workflow:
+            with _gemini_workflow(
+                active_settings, chapter_id, request.profile_id, request.model_preference
+            ) as workflow:
                 return _run_payload(
                     workflow.enqueue_translation(
                         chapter_id,
@@ -135,7 +145,7 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+            raise HTTPException(status_code=502, detail=_public_provider_error(str(exc))) from exc
 
     @router.get("")
     def read_translation(
@@ -204,9 +214,11 @@ def _workflow_dependency(
 
 
 class _qwen_workflow:
-    def __init__(self, active_settings: Settings, chapter_id: str) -> None:
+    def __init__(self, active_settings: Settings, chapter_id: str, profile_id: str, model_preference: str | None = None) -> None:
         self.active_settings = active_settings
         self.chapter_id = chapter_id
+        self.profile_id = profile_id
+        self.model_preference = model_preference
         self.engine = None
         self.session_cm = None
 
@@ -218,19 +230,10 @@ class _qwen_workflow:
             factory = session_factory(self.engine)
             self.session_cm = factory()
             session = self.session_cm.__enter__()
-            profile = session.scalar(
-                select(ProviderProfile)
-                .where(
-                    ProviderProfile.provider_kind == "TRANSLATOR",
-                    ProviderProfile.adapter_name == "qwen",
-                    ProviderProfile.enabled.is_(True),
-                )
-                .order_by(ProviderProfile.id)
-            )
-            if profile is None:
-                raise ValueError("QWEN_PROVIDER_PROFILE_REQUIRED")
+            profile = _resolve_translation_profile(session, self.profile_id, {"qwen"})
             if not profile.model or not profile.region or not profile.secret_ref:
                 raise ValueError("QWEN_PROVIDER_PROFILE_INCOMPLETE")
+            _validate_model_preference(profile.model, self.model_preference)
             adapter = QwenMtAdapter(
                 httpx.AsyncClient(),
                 profile.model,
@@ -262,9 +265,13 @@ class _gemini_workflow:
         self,
         active_settings: Settings,
         chapter_id: str,
+        profile_id: str,
+        model_preference: str | None = None,
     ) -> None:
         self.active_settings = active_settings
         self.chapter_id = chapter_id
+        self.profile_id = profile_id
+        self.model_preference = model_preference
         self.engine = None
         self.session_cm = None
 
@@ -276,19 +283,10 @@ class _gemini_workflow:
             factory = session_factory(self.engine)
             self.session_cm = factory()
             session = self.session_cm.__enter__()
-            profile = session.scalar(
-                select(ProviderProfile)
-                .where(
-                    ProviderProfile.provider_kind == "TRANSLATOR",
-                    ProviderProfile.adapter_name.in_(("gemini", "gemini_mt")),
-                    ProviderProfile.enabled.is_(True),
-                )
-                .order_by(ProviderProfile.id)
-            )
-            if profile is None:
-                raise ValueError("GEMINI_PROVIDER_PROFILE_REQUIRED")
+            profile = _resolve_translation_profile(session, self.profile_id, {"gemini", "gemini_mt"})
             if not profile.model or not profile.secret_ref:
                 raise ValueError("GEMINI_PROVIDER_PROFILE_INCOMPLETE")
+            _validate_model_preference(profile.model, self.model_preference)
             adapter = GeminiMtAdapter(
                 api_key_ref=profile.secret_ref,
                 model=profile.model,
@@ -318,6 +316,32 @@ def _chapter_project_id(session, chapter_id: str) -> str:
     if chapter is None:
         raise ValueError("CHAPTER_NOT_FOUND")
     return chapter.project_id
+
+
+def _resolve_translation_profile(session, profile_id: str, adapter_names: set[str]) -> ProviderProfile:
+    profile = session.get(ProviderProfile, profile_id)
+    if profile is None:
+        raise ValueError("PROVIDER_PROFILE_NOT_FOUND")
+    if profile.provider_kind != "TRANSLATOR" or profile.adapter_name not in adapter_names:
+        raise ValueError("PROVIDER_PROFILE_KIND_MISMATCH")
+    if not profile.enabled:
+        raise ValueError("PROVIDER_PROFILE_DISABLED")
+    return profile
+
+
+def _validate_model_preference(profile_model: str, model_preference: str | None) -> None:
+    if model_preference is not None and model_preference.strip() != profile_model:
+        raise ValueError("MODEL_PREFERENCE_MISMATCH")
+
+
+def _public_provider_error(value: str) -> str:
+    allowed = {
+        "GEMINI_PROVIDER_UNAVAILABLE",
+        "GEMINI_RATE_LIMIT_EXCEEDED",
+        "QWEN_PROVIDER_REJECTED",
+        "QWEN_PROVIDER_INVALID_RESPONSE",
+    }
+    return value if value in allowed else "PROVIDER_UNAVAILABLE"
 
 
 def _db_profile_revision_resolver(session):
