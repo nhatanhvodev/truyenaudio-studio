@@ -12,6 +12,8 @@ from app.contracts import ProviderKind, new_id
 from app.db.base import create_engine_for, session_factory
 from app.db.models import ProviderProfile
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
+from app.modules.security.model_identifier import MODEL_IDENTIFIER_INVALID, validate_model_identifier
+from app.modules.security.secret_keys import is_secret_key as _is_secret_config_key
 from app.providers.qwen_mt import canonical_qwen_endpoint
 from app.settings.config import Settings
 
@@ -74,6 +76,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
     ) -> dict[str, object]:
         if _contains_secret_key(request.config):
             raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
+        _validate_profile_model(request.model)
         _validate_profile_config(request.adapter_name, request.config)
         profile_id = new_id()
         secret_write = _store_secret(profile_id, _optional_secret(request.secret))
@@ -104,6 +107,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=409, detail="PROFILE_REVISION_CONFLICT")
         if request.config is not None and _contains_secret_key(request.config):
             raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
+        _validate_profile_model(request.model)
         if request.config is not None:
             _validate_profile_config(profile.adapter_name, request.config)
         for field_name in ("display_name", "model", "region", "config", "enabled"):
@@ -283,20 +287,6 @@ def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
     }
 
 
-# Keys are normalized before matching, so keep these entries normalized too.
-# This covers provider-specific spellings such as x-goog-api-key and
-# google_api_key without relying on one vendor's exact field name.
-_SECRET_KEY_PARTS = (
-    "secret",
-    "token",
-    "password",
-    "apikey",
-    "accesskey",
-    "privatekey",
-    "authorization",
-    "credential",
-    "bearer",
-)
 _QWEN_ADAPTER_NAMES = {"qwen", "qwen-mt", "qwen_mt"}
 _QWEN_ENDPOINT_ALIASES = {"endpoint", "baseurl", "url", "apibase"}
 
@@ -314,6 +304,15 @@ def _validate_profile_config(adapter_name: str, config: dict[str, object]) -> No
             canonical_qwen_endpoint(value)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="QWEN_ENDPOINT_INVALID") from exc
+
+
+def _validate_profile_model(model: str | None) -> None:
+    if model is None:
+        return
+    try:
+        validate_model_identifier(model)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=MODEL_IDENTIFIER_INVALID) from exc
 
 
 def _contains_secret_key(value: object) -> bool:
@@ -345,8 +344,3 @@ def _safe_config_value(value: object) -> object:
     if isinstance(value, tuple):
         return tuple(_safe_config_value(item) for item in value)
     return value
-
-
-def _is_secret_config_key(key: object) -> bool:
-    normalized = "".join(character for character in str(key).lower() if character.isalnum())
-    return any(part in normalized for part in _SECRET_KEY_PARTS)

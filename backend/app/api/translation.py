@@ -15,6 +15,7 @@ from app.db.models import ProviderProfile
 from app.modules.budgets.guard import BudgetGuard
 from app.modules.compliance.cloud import CloudCallBlocked, CloudCallGuard
 from app.modules.security.credentials import CredentialUnavailable
+from app.modules.security.model_identifier import validate_model_identifier
 from app.modules.translation.hanviet import convert_hanviet
 from app.modules.translation.workflow import (
     ApprovalBlocked,
@@ -276,15 +277,16 @@ class _gemini_workflow:
             profile = _resolve_translation_profile(session, self.profile_id, {"gemini", "gemini_mt"})
             if not profile.model or not profile.secret_ref:
                 raise ValueError("GEMINI_PROVIDER_PROFILE_INCOMPLETE")
+            model = validate_model_identifier(profile.model)
             adapter = GeminiMtAdapter(
                 api_key_ref=profile.secret_ref,
-                model=profile.model,
+                model=model,
                 http_client=httpx.AsyncClient(),
                 cloud_guard=CloudCallGuard(session, BudgetGuard(session)),
                 project_id=_chapter_project_id(session, self.chapter_id),
                 provider_profile_id=profile.id,
                 dispatch_registry=ProviderRegistry(profile_revision_resolver=_db_profile_revision_resolver(session)),
-                dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, profile.model),
+                dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, model),
             )
             return TranslationWorkflow(session, translator=adapter)
         except Exception:

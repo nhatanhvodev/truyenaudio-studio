@@ -47,3 +47,12 @@ Validation for round 2: focused backend 65 passed, full frontend Vitest 22 passe
 - TestClient regressions prove rejected create/PATCH config responses use the fixed 422 error without echoing submitted secrets, and prove legacy profile responses omit stored secret values.
 
 Validation for round 3: RED exposed one incorrect readiness expectation in the new non-secret-query test (the no-worker fixture returns 503); after correcting the test to assert that it reaches the endpoint, the focused security set passed 49 tests and the expanded S02 backend set passed 77 tests. Ruff and `git diff --check` passed. Frontend was untouched, so frontend tests were not rerun. Paid-cloud smoke remains `NOT_RUN`.
+
+## S02 round 4 remediation
+
+- Diagnostics and profile configuration now share one normalized secret-key classifier. It redacts `credential`, `bearer`, and punctuation/case variants in both JSONL and stream logs, so the live log no longer bypasses the redaction already applied to the file payload.
+- Provider profile model identifiers are constrained to 1–255 ASCII path-safe characters: alphanumeric segment starts with dot, underscore, or hyphen allowed after it; slash-separated vendor namespaces are allowed. Queries, fragments, colon schemes, backslashes, percent escapes, whitespace, and traversal-shaped segments are rejected with the fixed `MODEL_IDENTIFIER_INVALID` response.
+- Gemini validates the model before resolving a keyring credential. The Gemini workflow also validates legacy DB rows before adapter construction, so an unsafe persisted model never reaches URL construction, credential resolution, or a network-capable client.
+- Test coverage includes POST/PATCH non-echo rejection, accepted Gemini/Qwen/OpenRouter-style identifiers, direct Gemini constructor rejection before credential lookup, legacy Gemini profile rejection before dispatch, and structured JSONL/stream redaction variants.
+
+Validation for round 4: RED first produced one diagnostics log failure and 12 model-boundary failures. After the implementation, `pytest tests/diagnostics/test_redaction.py tests/security/test_credentials.py tests/providers/test_gemini_mt_security.py -q` passed 58 tests; targeted Ruff and `git diff --check` passed. Frontend was unchanged and not rerun. Paid-cloud smoke remains `NOT_RUN`.

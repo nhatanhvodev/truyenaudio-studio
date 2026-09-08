@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from typing import Any
 
+from app.modules.security.secret_keys import is_secret_key as _is_secret_key
+
 
 JSONL_FIELDS = (
     "timestamp",
@@ -78,20 +80,22 @@ class DiagnosticsLogger:
             error_code=error_code,
         )
         self.write(record)
-        self.stream_logger.error(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
-        return record
+        safe_record = _redacted_payload(record)
+        self.stream_logger.error(json.dumps(safe_record, ensure_ascii=False, separators=(",", ":")))
+        return safe_record
 
     def info(self, **fields: object) -> dict[str, object]:
         record = self._record("INFO", **fields)
         self.write(record)
-        self.stream_logger.info(json.dumps(record, ensure_ascii=False, separators=(",", ":")))
-        return record
+        safe_record = _redacted_payload(record)
+        self.stream_logger.info(json.dumps(safe_record, ensure_ascii=False, separators=(",", ":")))
+        return safe_record
 
     def write(self, record: dict[str, object]) -> None:
         now = self._now_utc()
         path = self.log_dir / f"diagnostics-{now.date().isoformat()}.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {field: scrub_text(record.get(field)) for field in JSONL_FIELDS if field in record}
+        payload = _redacted_payload(record)
         line = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         with path.open("a", encoding="utf-8") as file:
             file.write(line + "\n")
@@ -143,6 +147,5 @@ def scrub_text(value: Any) -> Any:
     return scrubbed
 
 
-def _is_secret_key(key: object) -> bool:
-    normalized = "".join(character for character in str(key).lower() if character.isalnum())
-    return any(part in normalized for part in ("secret", "token", "apikey", "password", "authorization"))
+def _redacted_payload(record: dict[str, object]) -> dict[str, object]:
+    return {field: scrub_text(record.get(field)) for field in JSONL_FIELDS if field in record}

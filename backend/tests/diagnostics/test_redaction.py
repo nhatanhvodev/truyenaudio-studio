@@ -88,6 +88,32 @@ def test_scrubber_redacts_structured_secrets_and_query_credentials() -> None:
     assert "query-secret" not in rendered
 
 
+def test_scrubber_redacts_normalized_credential_and_bearer_keys_in_structured_logs(
+    tmp_path: Path,
+    caplog,
+) -> None:
+    logger = DiagnosticsLogger(
+        tmp_path,
+        clock=lambda: datetime(2026, 8, 19, 1, 2, 3, tzinfo=UTC),
+        stream_logger=logging.getLogger("tests.diagnostics.normalized-redaction"),
+    )
+    secret = "must-not-appear"
+
+    with caplog.at_level(logging.INFO, logger="tests.diagnostics.normalized-redaction"):
+        logger.info(
+            provider={
+                "x_credential": secret,
+                "X-Bearer": secret,
+                "nested": {"bearerToken": secret, "safe": "value"},
+            }
+        )
+
+    payload = (tmp_path / "diagnostics-2026-08-19.jsonl").read_text(encoding="utf-8")
+    assert secret not in payload
+    assert secret not in caplog.text
+    assert "[REDACTED]" in payload
+
+
 def test_scrubber_redacts_gemini_api_key_in_error_and_diagnostics() -> None:
     gemini_key = "AIzaSyD0123456789abcdefghijklmnopqrstuvwxyz"
 

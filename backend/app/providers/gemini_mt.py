@@ -18,6 +18,7 @@ from app.contracts import (
 )
 from app.modules.compliance.cloud import CloudCallBlocked
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
+from app.modules.security.model_identifier import validate_model_identifier
 
 
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -25,10 +26,12 @@ GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 def normalize_model_name(raw_model: str | None) -> str:
-    cleaned = (raw_model or "").strip()
+    if raw_model is None:
+        return DEFAULT_MODEL
+    cleaned = validate_model_identifier(raw_model)
     if cleaned.startswith("models/"):
         cleaned = cleaned[len("models/"):]
-    return cleaned or DEFAULT_MODEL
+    return validate_model_identifier(cleaned)
 
 
 async def list_models(api_key: str, http_client: httpx.AsyncClient | None = None) -> list[dict[str, Any]]:
@@ -66,8 +69,8 @@ class GeminiMtAdapter:
         dispatch_registry: object | None = None,
         dispatch_authorization: object | None = None,
     ) -> None:
-        self.api_key = self.api_key_from_ref(api_key_ref, credential_store=credential_store)
         self.model = normalize_model_name(model)
+        self.api_key = self.api_key_from_ref(api_key_ref, credential_store=credential_store)
         self.http_client = http_client or httpx.AsyncClient()
         self.cloud_guard = cloud_guard
         self.project_id = project_id

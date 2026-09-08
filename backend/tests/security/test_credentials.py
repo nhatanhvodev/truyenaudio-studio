@@ -736,3 +736,107 @@ def test_profile_response_redacts_legacy_sensitive_config_keys(settings, migrate
     config = response.json()["profiles"][0]["config"]
     assert config == {"headers": {"safe": "value"}, "safe": True}
     assert legacy_secret not in response.text
+
+
+@pytest.mark.parametrize(
+    "unsafe_model",
+    (
+        "gemini-2.5-flash?key=model-secret",
+        "gemini-2.5-flash#fragment",
+        "gemini:2.5-flash",
+        r"gemini\\2.5-flash",
+        "gemini%2F2.5-flash",
+        "../model-secret",
+    ),
+)
+def test_cloud_profile_rejects_unsafe_model_identifiers_without_echoing(
+    settings, migrated_engine, monkeypatch: pytest.MonkeyPatch, unsafe_model: str
+) -> None:
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: CredentialStore(FakeKeyring()))
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+
+    with TestClient(app) as client:
+        rejected_create = client.post(
+            "/api/cloud-profiles",
+            json={
+                "providerKind": "TRANSLATOR",
+                "adapterName": "gemini_mt",
+                "displayName": "Gemini",
+                "model": unsafe_model,
+            },
+        )
+        profile = _create_profile(client, None)
+        rejected_patch = client.patch(
+            f"/api/cloud-profiles/{profile['id']}",
+            json={"expectedRevision": profile["revision"], "model": unsafe_model},
+        )
+
+    for response in (rejected_create, rejected_patch):
+        assert response.status_code == 422
+        assert response.json() == {"detail": "MODEL_IDENTIFIER_INVALID"}
+        assert unsafe_model not in response.text
+        assert "model-secret" not in response.text
+
+
+@pytest.mark.parametrize("model", ("gemini-2.5-flash", "qwen-mt-flash", "vendor/model-v2"))
+def test_cloud_profile_accepts_safe_model_identifiers(
+    settings, migrated_engine, monkeypatch: pytest.MonkeyPatch, model: str
+) -> None:
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: CredentialStore(FakeKeyring()))
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/cloud-profiles",
+            json={
+                "providerKind": "TRANSLATOR",
+                "adapterName": "gemini_mt",
+                "displayName": "Translator",
+                "model": model,
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.json()["model"] == model
+
+
+class _CredentialStoreMustNotResolve:
+    def resolve(self, *_args, **_kwargs):
+        pytest.fail("credential must not resolve")
+
+
+@pytest.mark.parametrize("unsafe_model", ("gemini?key=direct-secret", "gemini#x", "gemini:tts", r"gemini\\tts", "gemini%2Ftts"))
+def test_gemini_adapter_rejects_unsafe_models_before_resolving_credential(unsafe_model: str) -> None:
+    with pytest.raises(ValueError, match="MODEL_IDENTIFIER_INVALID"):
+        GeminiMtAdapter(
+            api_key_ref="keyring:truyenaudio-studio/provider-profile:gemini",
+            credential_store=_CredentialStoreMustNotResolve(),
+            model=unsafe_model,
+        )
+
+
+def test_legacy_gemini_profile_with_unsafe_model_fails_before_credential_dispatch(
+    settings, db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile = ProviderProfile(
+        id="018f0000-0000-7000-8000-000000000811",
+        provider_kind="TRANSLATOR",
+        adapter_name="gemini_mt",
+        display_name="Legacy Gemini",
+        model="gemini-2.5-flash?key=legacy-model-secret",
+        secret_ref="keyring:truyenaudio-studio/provider-profile:legacy-gemini",
+        config_json={},
+        enabled=True,
+    )
+    db_session.add(profile)
+    db_session.commit()
+    monkeypatch.setattr(
+        GeminiMtAdapter,
+        "api_key_from_ref",
+        staticmethod(lambda *_args, **_kwargs: pytest.fail("credential must not resolve")),
+    )
+
+    with pytest.raises(ValueError, match="MODEL_IDENTIFIER_INVALID"):
+        translation._gemini_workflow(settings, "chapter-not-needed", profile.id).__enter__()
