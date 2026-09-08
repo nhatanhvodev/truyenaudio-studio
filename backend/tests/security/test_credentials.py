@@ -40,6 +40,11 @@ class UnavailableKeyring:
         raise RuntimeError("password backend unavailable")
 
 
+class GetUnavailableKeyring(FakeKeyring):
+    def get_password(self, service_name: str, username: str) -> str | None:
+        raise RuntimeError("keyring unavailable")
+
+
 def test_credential_store_round_trip_uses_canonical_service_and_username() -> None:
     backend = FakeKeyring()
     store = CredentialStore(backend)
@@ -234,6 +239,57 @@ def test_profile_credential_lifecycle_hides_secret_and_secret_ref(settings, migr
     assert _has_forbidden_profile_secret_field(payloads) is False
 
 
+def test_credential_reentry_recovers_from_missing_prior_key_and_increments_revision(settings, migrated_engine, monkeypatch) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        created = _create_profile(client, "old-secret")
+        profile_id = created["id"]
+        store.delete(profile_id)
+        response = client.put(f"/api/cloud-profiles/{profile_id}/credential", json={"secret": "replacement-secret"})
+        profile = client.get("/api/cloud-profiles").json()["profiles"][0]
+
+    assert response.status_code == 200
+    assert profile["revision"] == 2
+    assert store.resolve(profile_id).value == "replacement-secret"
+
+
+def test_credential_rotation_returns_503_without_writing_when_old_keyring_read_is_unavailable(settings, migrated_engine, monkeypatch) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        profile = _create_profile(client, "old-secret")
+        profile_id = profile["id"]
+    unavailable_backend = GetUnavailableKeyring()
+    unavailable_backend.values = store._backend.values
+    unavailable_store = CredentialStore(unavailable_backend)
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: unavailable_store)
+    with TestClient(app) as client:
+        response = client.put(f"/api/cloud-profiles/{profile_id}/credential", json={"secret": "new-secret"})
+
+    assert response.status_code == 503
+    assert store._backend.values[("truyenaudio-studio", f"provider-profile:{profile_id}")] == "old-secret"
+
+
+def test_credential_recovery_deletes_new_secret_when_database_commit_fails(settings, migrated_engine, monkeypatch) -> None:
+    store = CredentialStore(FakeKeyring())
+    monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)
+    app = FastAPI()
+    app.include_router(create_cloud_profiles_router(settings))
+    with TestClient(app) as client:
+        profile_id = _create_profile(client, None)["id"]
+        monkeypatch.setattr(cloud_profiles, "_commit", lambda session: (_ for _ in ()).throw(RuntimeError("db failure")))
+        response = client.put(f"/api/cloud-profiles/{profile_id}/credential", json={"secret": "new-secret"})
+
+    assert response.status_code == 500
+    with pytest.raises(ValueError, match="SECRET_MISSING"):
+        store.resolve(profile_id)
+
+
 def _has_forbidden_profile_secret_field(value: object) -> bool:
     if isinstance(value, dict):
         return any(
@@ -255,6 +311,22 @@ class _FailingCommitSession:
 
     def rollback(self) -> None:
         self.rollback_calls += 1
+
+
+def _create_profile(client: TestClient, secret: str | None) -> dict[str, object]:
+    response = client.post(
+        "/api/cloud-profiles",
+        json={
+            "providerKind": "TRANSLATOR",
+            "adapterName": "gemini_mt",
+            "displayName": "Gemini",
+            "model": "gemini-2.5-flash",
+            "enabled": True,
+            "secret": secret,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 class _NoNetworkHttp:

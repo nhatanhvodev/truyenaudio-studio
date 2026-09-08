@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.contracts import ProviderKind, new_id
 from app.db.base import create_engine_for, session_factory
 from app.db.models import ProviderProfile
-from app.modules.security.credentials import CredentialStore
+from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 from app.settings.config import Settings
 
 
@@ -116,7 +116,14 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
         store = CredentialStore()
         previous_ref = profile.secret_ref
-        previous_secret = store.resolve(profile_id, previous_ref).value if previous_ref else None
+        try:
+            previous_secret = store.resolve(profile_id, previous_ref).value if previous_ref else None
+        except CredentialUnavailable as exc:
+            raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+        except ValueError as exc:
+            if str(exc) != "SECRET_MISSING":
+                raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
+            previous_secret = None
         try:
             new_ref = store.set(profile_id, request.secret)
             profile.secret_ref = new_ref
