@@ -73,7 +73,21 @@ def _sync_event_log(session: Session) -> None:
     for created_at, entity_type, entity_id in sorted(candidates, key=lambda item: (item[0], item[1], item[2])):
         if (entity_type, entity_id) in existing:
             continue
-        session.add(EventLog(entity_type=entity_type, entity_id=entity_id, created_at=created_at))
+        event = EventLog(entity_type=entity_type, entity_id=entity_id, created_at=created_at)
+        session.add(event)
+        # EventLog is append-only, so the old uniqueness constraint cannot
+        # arbitrate concurrent backfill. Drop our pending duplicate when a
+        # stream inserted the same entity between the initial read and add.
+        with session.no_autoflush:
+            raced = session.scalar(
+                select(EventLog.sequence_id)
+                .where(EventLog.entity_type == entity_type, EventLog.entity_id == entity_id)
+                .limit(1)
+            )
+        if raced is not None:
+            session.expunge(event)
+            existing.add((entity_type, entity_id))
+            continue
         existing.add((entity_type, entity_id))
         created = True
     if created:
