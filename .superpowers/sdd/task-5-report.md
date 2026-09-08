@@ -28,3 +28,5 @@ Status: DONE
 
 - Paid-cloud smoke was deliberately not run. Its evidence state remains `NOT_RUN`.
 - This task does not create quote/budget/consent authorization or catalog snapshots; S03 and later tasks own those controls. S02 only requires callers to submit the explicit IDs and never synthesizes them.
+- Review remediation clears the transient credential after both successful and failed provisioning, rejects generic key/credential/token query parameters, and redacts Gemini `AIza...` credentials in diagnostic text.
+- Remediation validation: backend focused 62 passed, frontend 21 passed, frontend build passed, and Ruff passed.

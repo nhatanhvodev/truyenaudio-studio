@@ -86,3 +86,10 @@ def test_scrubber_redacts_structured_secrets_and_query_credentials() -> None:
 
     assert "raw-secret" not in rendered
     assert "query-secret" not in rendered
+
+
+def test_scrubber_redacts_gemini_api_key_in_error_and_diagnostics() -> None:
+    gemini_key = "AIzaSyD0123456789abcdefghijklmnopqrstuvwxyz"
+
+    assert gemini_key not in summarize_error(RuntimeError(f"provider rejected {gemini_key}"))
+    assert gemini_key not in str(scrub_text({"providerError": f"url?key={gemini_key}"}))

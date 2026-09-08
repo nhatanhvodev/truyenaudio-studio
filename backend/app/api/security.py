@@ -60,4 +60,14 @@ def _is_api_path(path: str) -> bool:
 
 def _is_secret_query_key(key: str) -> bool:
     normalized = "".join(character for character in key.lower() if character.isalnum())
-    return any(part in normalized for part in ("secret", "token", "apikey", "password", "authorization"))
+    return normalized in {
+        "key",
+        "apikey",
+        "credential",
+        "token",
+        "secret",
+        "password",
+        "authorization",
+        "accesstoken",
+        "accesskey",
+    }

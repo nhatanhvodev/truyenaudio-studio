@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.main import create_app
 from app.settings.config import Settings
@@ -17,6 +18,12 @@ def test_api_rejects_noncanonical_host_and_unknown_or_encoded_paths(settings) ->
         assert client.get("/api/not-a-real-route").status_code == 404
         assert client.get("/api/%2e%2e/security/bootstrap").status_code == 404
         assert client.get("/api/health/ready?apiKey=query-secret").status_code == 404
+
+
+@pytest.mark.parametrize("query", ["key=AIza-example", "credential=secret-value", "api-key=secret-value", "token=secret-value"])
+def test_api_rejects_secret_query_parameter_variants(settings, query: str) -> None:
+    with TestClient(create_app(settings=settings, acquire_lock=False), base_url=LOOPBACK) as client:
+        assert client.get(f"/api/health/ready?{query}").status_code == 404
 
 
 def test_api_state_changes_require_exact_host_origin_and_csrf(settings) -> None:

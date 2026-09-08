@@ -27,6 +27,7 @@ JSONL_FIELDS = (
 
 SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"\bAIza[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"\b(?:bearer|token|api[_-]?key|secret)\s+['\"]?[A-Za-z0-9._\-:/+=]{4,}", re.IGNORECASE),
     re.compile(r"\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),
     re.compile(r"([?&](?:api[_-]?key|token|secret|access[_-]?token)=[^&#\s]+)", re.IGNORECASE),

@@ -380,11 +380,11 @@ function TranslationScreen() {
         method: 'PUT',
         body: { secret },
       });
-      setGeminiApiKey('');
       setMessage('Đã lưu credential vào keyring cục bộ và xóa key khỏi biểu mẫu.');
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'CREDENTIAL_PROVISIONING_FAILED');
     } finally {
+      setGeminiApiKey('');
       setBusy(false);
     }
   }

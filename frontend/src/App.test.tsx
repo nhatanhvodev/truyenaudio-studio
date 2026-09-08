@@ -143,6 +143,27 @@ describe('App', () => {
     expect(String(inferenceCall?.[1]?.body)).not.toContain('secret');
   });
 
+  it('clears a transient Gemini credential after failed provisioning', async () => {
+    window.history.replaceState(null, '', '/chapters/chapter-1/translation');
+    vi.stubGlobal('EventSource', undefined);
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/chapters/chapter-1/translation') return jsonResponse({ detail: 'TRANSLATION_RUN_NOT_FOUND' }, false, 404);
+      if (url === '/api/security/bootstrap') return jsonResponse({ csrfToken: 'token-1' });
+      if (url === '/api/cloud-profiles/profile-gemini-1/credential' && init?.method === 'PUT') return jsonResponse({ detail: 'KEYRING_UNAVAILABLE' }, false, 503);
+      if (url === '/api/jobs/snapshot') return jsonResponse({ events: [] });
+      throw new Error(`unexpected url ${url}`);
+    }));
+    const { default: App } = await import('./App');
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText('Gemini profile ID'), { target: { value: 'profile-gemini-1' } });
+    fireEvent.change(screen.getByPlaceholderText(/Dán AIzaSy/), { target: { value: 'failed-transient-secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu API key vào profile' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('KEYRING_UNAVAILABLE');
+    expect(screen.getByPlaceholderText(/Dán AIzaSy/)).toHaveValue('');
+  });
+
   it('previews folder imports and confirms only after mapping review', async () => {
     window.history.replaceState(null, '', '/projects/project-1/import');
     vi.stubGlobal('EventSource', undefined);
