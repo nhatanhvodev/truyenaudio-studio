@@ -7,6 +7,8 @@ import httpx
 
 from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked
+from app.modules.execution.contracts import BillingState
+from app.providers.transport import ProviderTransportError, normalize_http_error
 
 
 PROVIDER = "openrouter"
@@ -58,22 +60,29 @@ class OpenRouterAdapter:
                 response = await response
         except (TimeoutError, httpx.TimeoutException, httpx.TransportError) as exc:
             raise ProviderBillingUnknown("OPENROUTER_BILLING_UNKNOWN") from exc
-        if getattr(response, "status_code", 200) != 200:
-            raise ValueError(f"OPENROUTER_HTTP_{getattr(response, 'status_code', 0)}")
-        body = response.json()
+        status_code = getattr(response, "status_code", 200)
+        if status_code != 200:
+            raise normalize_http_error(status_code, "provider error", request_sent=True)
+        try:
+            body = response.json()
+        except Exception as exc:
+            raise ProviderTransportError("MALFORMED_RESPONSE", "provider response is not JSON", False, BillingState.UNKNOWN, status_code) from exc
+        if not isinstance(body, dict):
+            raise ProviderTransportError("MALFORMED_RESPONSE", "provider response shape is invalid", False, BillingState.UNKNOWN, status_code)
         choices = body.get("choices") or []
         content = choices[0].get("message", {}).get("content") if choices else None
         if not isinstance(content, str) or not content.strip():
-            raise ValueError("OPENROUTER_EMPTY_RESPONSE")
+            raise ProviderTransportError("EMPTY_RESPONSE", "provider returned no translation", False, BillingState.UNKNOWN, status_code)
         usage = body.get("usage") or {}
+        provider_request_id = body.get("id") if isinstance(body.get("id"), str) else None
         return TranslationResult(
             target_text=content.strip(),
             provider=PROVIDER,
             model=str(body.get("model") or self.model),
             provider_version="chat.completions",
             usage=(
-                Usage(UsageUnit.INPUT_TOKEN.value, _usage(usage.get("prompt_tokens"))),
-                Usage(UsageUnit.OUTPUT_TOKEN.value, _usage(usage.get("completion_tokens"))),
+                Usage(UsageUnit.INPUT_TOKEN.value, _usage(usage.get("prompt_tokens")), provider_request_id),
+                Usage(UsageUnit.OUTPUT_TOKEN.value, _usage(usage.get("completion_tokens")), provider_request_id),
             ),
         )
 
@@ -107,4 +116,3 @@ def _usage(value: Any) -> int:
     if type(value) is not int or value < 0:
         return 0
     return value
-

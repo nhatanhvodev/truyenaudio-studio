@@ -70,6 +70,8 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
         request: ProviderProfileRequest,
         session=Depends(session_dependency),
     ) -> dict[str, object]:
+        if _contains_secret_key(request.config):
+            raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
         profile_id = new_id()
         secret_write = _store_secret(profile_id, request.secret)
         profile = ProviderProfile(
@@ -94,7 +96,7 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=404, detail="PROFILE_NOT_FOUND")
         if profile.revision != request.expected_revision:
             raise HTTPException(status_code=409, detail="PROFILE_REVISION_CONFLICT")
-        if request.config is not None and any(key.lower() in {"key", "api_key", "token", "secret"} for key in request.config):
+        if request.config is not None and _contains_secret_key(request.config):
             raise HTTPException(status_code=422, detail="SECRET_IN_CONFIG_FORBIDDEN")
         for field_name in ("display_name", "model", "region", "config", "enabled"):
             value = getattr(request, field_name)
@@ -168,7 +170,38 @@ def _profile_payload(profile: ProviderProfile) -> dict[str, object]:
         "region": profile.region,
         "revision": profile.revision,
         "secretConfigured": bool(profile.secret_ref),
-        "config": profile.config_json or {},
+        "config": _safe_config(profile.config_json or {}),
         "enabled": profile.enabled,
         "status": "ready" if profile.enabled and profile.secret_ref else ("disabled" if not profile.enabled else "invalid"),
     }
+
+
+_SECRET_KEY_PARTS = ("secret", "token", "password", "apikey", "api_key", "accesskey", "access_key")
+
+
+def _contains_secret_key(value: object) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normalized = "".join(character for character in str(key).lower() if character.isalnum())
+            if any(part in normalized for part in _SECRET_KEY_PARTS):
+                return True
+            if _contains_secret_key(item):
+                return True
+    elif isinstance(value, (list, tuple)):
+        return any(_contains_secret_key(item) for item in value)
+    return False
+
+
+def _safe_config(value: dict[str, object]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, item in value.items():
+        normalized = "".join(character for character in key.lower() if character.isalnum())
+        if any(part in normalized for part in _SECRET_KEY_PARTS):
+            continue
+        if isinstance(item, dict):
+            result[key] = _safe_config(item)
+        elif isinstance(item, list):
+            result[key] = [_safe_config(entry) if isinstance(entry, dict) else entry for entry in item]
+        else:
+            result[key] = item
+    return result

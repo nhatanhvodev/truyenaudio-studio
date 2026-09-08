@@ -46,6 +46,8 @@ class IncrementalSseParser:
             self._buffer += self._decoder.decode(chunk if isinstance(chunk, bytes) else chunk.encode(), final=False)
         except UnicodeDecodeError as exc:
             raise ProviderTransportError("MALFORMED_STREAM", "invalid UTF-8 stream", False, BillingState.UNKNOWN) from exc
+        # SSE permits CRLF; normalize only complete pairs so split boundaries remain safe.
+        self._buffer = self._buffer.replace("\r\n", "\n")
         events: list[dict[str, Any]] = []
         while "\n\n" in self._buffer:
             frame, self._buffer = self._buffer.split("\n\n", 1)
@@ -75,4 +77,3 @@ class IncrementalSseParser:
             raise ProviderTransportError("TRUNCATED_STREAM", "stream ended inside UTF-8 codepoint", False, BillingState.UNKNOWN) from exc
         if self._buffer.strip():
             raise ProviderTransportError("TRUNCATED_STREAM", "stream ended before an SSE frame boundary", False, BillingState.UNKNOWN)
-

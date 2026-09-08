@@ -15,6 +15,14 @@ def test_sse_parser_handles_utf8_and_json_split_across_frames() -> None:
     parser.finish()
 
 
+def test_sse_parser_accepts_crlf_frames() -> None:
+    parser = IncrementalSseParser()
+    assert parser.feed(b"event: delta\r\ndata: {\"ok\": true}\r\n\r\n") == [
+        {"event": "delta", "data": {"ok": True}}
+    ]
+    parser.finish()
+
+
 def test_sse_parser_rejects_malformed_json_and_truncated_frame() -> None:
     parser = IncrementalSseParser()
     with pytest.raises(ProviderTransportError) as error:

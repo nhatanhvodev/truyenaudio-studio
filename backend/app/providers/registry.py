@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from app.modules.execution.contracts import Availability, CapabilityState
 from app.providers.catalog import ProviderCatalog
@@ -18,6 +19,7 @@ class RegistryAuthorization:
     profile_revision: int
     model_snapshot_id: str
     stage: str = "translate"
+    provider_id: str | None = None
 
 
 class ProviderRegistry:
@@ -34,13 +36,19 @@ class ProviderRegistry:
             raise RegistryError("MODEL_SNAPSHOT_MISMATCH")
 
         model = next((item for item in self.catalog.list_models() if item.id == snapshot_id), None)
-        if model is None or model.provider_id != authorization.profile_id:
+        if model is None:
             raise RegistryError("MODEL_UNAVAILABLE")
         descriptor = self.catalog.get(model.provider_id)
+        if authorization.provider_id is not None and authorization.provider_id != descriptor.provider_id:
+            raise RegistryError("PROFILE_PROVIDER_MISMATCH")
+        if descriptor.profile_ids and authorization.profile_id not in descriptor.profile_ids:
+            raise RegistryError("PROFILE_NOT_REGISTERED")
         if not descriptor.enabled:
             raise RegistryError("PROFILE_DISABLED")
         if model.availability != Availability.AVAILABLE:
             raise RegistryError("MODEL_UNAVAILABLE")
+        if model.expires_at <= datetime.now(UTC):
+            raise RegistryError("MODEL_SNAPSHOT_EXPIRED")
         if model.capabilities.translation != CapabilityState.SUPPORTED:
             raise RegistryError("CAPABILITY_UNKNOWN")
         if descriptor.factory is None:

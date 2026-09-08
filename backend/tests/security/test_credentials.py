@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.modules.security.credentials import CredentialStore
+from app.api.cloud_profiles import _contains_secret_key, _safe_config
 
 
 class FakeKeyring:
@@ -42,3 +43,12 @@ def test_credential_store_reads_legacy_ref_and_fails_closed() -> None:
         store.resolve("profile-1", "keyring:truyenaudio-studio/provider-profile:missing")
     with pytest.raises(ValueError, match="SECRET_REQUIRED"):
         store.set("profile-1", " ")
+
+
+def test_cloud_profile_config_rejects_nested_secret_keys_and_redacts_legacy_values() -> None:
+    assert _contains_secret_key({"provider": {"apiKey": "secret"}})
+    assert _contains_secret_key({"headers": [{"access_token": "secret"}]})
+    assert _safe_config({"provider": "gemini", "apiKey": "secret", "nested": {"token": "secret", "x": 1}}) == {
+        "provider": "gemini",
+        "nested": {"x": 1},
+    }

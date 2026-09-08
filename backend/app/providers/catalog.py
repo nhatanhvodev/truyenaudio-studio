@@ -26,6 +26,7 @@ class ProviderDescriptor:
     display_name: str
     adapter_name: str
     models: tuple[ModelSnapshot, ...] = field(default_factory=tuple)
+    profile_ids: tuple[str, ...] = field(default_factory=tuple)
     enabled: bool = True
     factory: Callable[[object], object] | None = None
 
@@ -36,6 +37,7 @@ class ProviderDescriptor:
         adapter_name: str,
         *,
         models: Iterable[ModelSnapshot] = (),
+        profile_ids: Iterable[str] = (),
         enabled: bool = True,
         factory: Callable[[object], object] | None = None,
     ) -> None:
@@ -45,6 +47,7 @@ class ProviderDescriptor:
         object.__setattr__(self, "display_name", display_name)
         object.__setattr__(self, "adapter_name", adapter_name)
         object.__setattr__(self, "models", tuple(models))
+        object.__setattr__(self, "profile_ids", tuple(profile_ids))
         object.__setattr__(self, "enabled", enabled)
         object.__setattr__(self, "factory", factory)
 

@@ -73,3 +73,15 @@ def test_prompt_builder_rejects_empty_segments_and_invalid_model_budget(model_sn
             ),
             model_snapshot,
         )
+
+    with pytest.raises(ValueError, match="SEGMENT_IDS_NOT_UNIQUE"):
+        PromptBuilder().build(
+            PromptBuildInput(
+                source_language="zh-CN",
+                target_language="vi-VN",
+                style_revision_id="style-1",
+                context_snapshot_id="context-1",
+                segments=(("same", "一"), ("same", "二")),
+            ),
+            model_snapshot,
+        )
