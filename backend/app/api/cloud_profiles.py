@@ -154,7 +154,10 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             except CredentialUnavailable as exc:
                 raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
             else:
-                store.delete(profile_id, previous_ref)
+                try:
+                    store.delete(profile_id, previous_ref)
+                except CredentialUnavailable as exc:
+                    raise HTTPException(status_code=503, detail="KEYRING_UNAVAILABLE") from exc
         else:
             store = None
             previous_secret = None
@@ -175,7 +178,11 @@ def create_cloud_profiles_router(settings: Settings | None = None) -> APIRouter:
             return {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
         try:
             CredentialStore().resolve(profile_id, profile.secret_ref)
-        except Exception:
+        except ValueError as exc:
+            if str(exc) == "SECRET_MISSING":
+                return {"state": "invalid", "error": {"code": "CREDENTIAL_MISSING"}}
+            return {"state": "unavailable", "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
+        except CredentialUnavailable:
             return {"state": "unavailable", "error": {"code": "CREDENTIAL_UNAVAILABLE"}}
         return {"state": "ready", "error": None}
 
