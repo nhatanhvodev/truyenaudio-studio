@@ -77,11 +77,11 @@ class ProviderCatalog:
             for model in descriptor.models:
                 if filters.language and filters.language not in model.languages:
                     continue
-                if filters.pricing is not None and model.pricing.pricing_class is not filters.pricing:
+                if filters.pricing is not None and model.pricing.pricing_class != filters.pricing:
                     continue
-                if filters.stream is not None and model.capabilities.stream is not filters.stream:
+                if filters.stream is not None and model.capabilities.stream != filters.stream:
                     continue
-                if filters.structured is not None and model.capabilities.structured is not filters.structured:
+                if filters.structured is not None and model.capabilities.structured != filters.structured:
                     continue
                 result.append(model)
         return sorted(result, key=lambda model: (model.provider_id, model.model_id, model.id))

@@ -39,11 +39,10 @@ class ProviderRegistry:
         descriptor = self.catalog.get(model.provider_id)
         if not descriptor.enabled:
             raise RegistryError("PROFILE_DISABLED")
-        if model.availability is not Availability.AVAILABLE:
+        if model.availability != Availability.AVAILABLE:
             raise RegistryError("MODEL_UNAVAILABLE")
-        if model.capabilities.translation is not CapabilityState.SUPPORTED:
+        if model.capabilities.translation != CapabilityState.SUPPORTED:
             raise RegistryError("CAPABILITY_UNKNOWN")
         if descriptor.factory is None:
             raise RegistryError("ADAPTER_FACTORY_MISSING")
         return descriptor.factory(authorization)
-
