@@ -7,7 +7,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 
 ## Cổng nghiệm thu hiện tại
 
-- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **621 passed**, 1 warning
+- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **623 passed**, 1 warning
   (SQLAlchemy FK-cycle sort, có sẵn từ baseline), exit 0.
 - Frontend: `npm test -- --run` → **46 passed / 15 files**; `npm run build` (tsc + Vite) → PASS.
 - Ruff các file thay đổi: PASS. Không chạy cloud trả phí/live/model download trong toàn bộ quá trình.
@@ -35,7 +35,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 | C05 Summary approval + context engine | DONE | 6ca8eca |
 | C06 QA/edit/approve/repair + segment coverage guard | DONE | 7de976e |
 | J01 Worker/handler/checkpoint | PARTIAL | rounds 1–3: 4b7821b, 310a6ff, 07ea083 — plan seam, batch child plan, real TRANSLATE handler; còn REVIEW/REPAIR/SUMMARIZE handler + process-harness crash coverage |
-| J02 Retry/cancel/breaker persist | PARTIAL | 82ef1da — persisted breaker + half-open; còn wire retry policy vào worker dispatch + fault matrix |
+| J02 Retry/cancel/breaker persist | PARTIAL | 82ef1da, f4f0265 — persisted breaker + half-open + `with_breaker` dispatch gate wired vào cloud TRANSLATE; còn retry policy fault-matrix ở worker |
 | J03 Projection/feed/diagnostics | NOT_STARTED | (nền event_log/events có sẵn từ base; chưa xác minh acceptance) — deps J02 |
 | J04 Draft streaming resumable | NOT_STARTED | deps J03 |
 | U01 Design system/tokens/primitives | DONE (code) | 84341ae, 5f25a46, 10c0037, 4d4aa90, 53d4377; 24 shared/ui tests; **visual/zoom/screen-reader audit NOT_RUN** (cần browser harness) |
@@ -61,3 +61,12 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
   (cloud trả phí, model VieNeu cài máy, corpus có quyền, reviewer/người nghe, browser visual) được ghi
   NOT_RUN/BLOCKED và feature tương ứng giữ disabled, không claim live-verified.
 - Toàn bộ thay đổi trong tiến trình này đều có diff/commit riêng + command/exit code như trên.
+
+## Kết luận phiên làm việc này
+
+Tiến trình đạt: M0–M3 hoàn chỉnh, M4 mở đầu (J01 3 lát cắt, J02 2 lát cắt), U01 code-complete, A01
+code-verified; backend 623 passed, frontend 46 passed, build PASS, tree sạch sau mỗi commit. Phần còn lại
+(J01/J02 nốt acceptance, J03–J04, U02–U10, A02–A05, E01, V01–V03, R01–R03, X01–X07) là khối lượng lớn
+gồm nhiều task yêu cầu môi trường live (cloud có quyền, model VieNeu/giọng, corpus, reviewer, browser
+visual) chưa thể hiện thực và kiểm định trong giới hạn phiên; trạng thái từng task được giữ chính xác ở
+ma trận trên và không bị đánh dấu hoàn thành vượt bằng chứng.
