@@ -290,3 +290,54 @@ def _seed_cloud_authorization(db_session: Session, project_id: str) -> str:
     assert decision.allowed
     assert decision.authorization_id is not None
     return decision.authorization_id
+
+
+def test_cloud_translate_children_carry_immutable_plan(
+    batch: BatchCoordinator,
+    project_with_50: Project,
+    db_session: Session,
+) -> None:
+    from app.modules.jobs.handlers import require_plan
+
+    auth_id = _seed_cloud_authorization(db_session, project_with_50.id)
+    chapter_id = db_session.scalar(select(Chapter.id).where(Chapter.project_id == project_with_50.id).limit(1))
+    assert chapter_id is not None
+    guard = CloudCallGuard(db_session, BudgetGuard(db_session, now=lambda: NOW), now=lambda: NOW)
+
+    view = batch.enqueue_batch(
+        project_with_50.id,
+        (chapter_id,),
+        JobKind.TRANSLATE,
+        "batch-cloud-quote",
+        cloud_authorization=BatchCloudAuthorization(
+            provider_profile_id=PROFILE_ID,
+            cloud_consent_id=CONSENT_ID,
+            budget_authorization_id=auth_id,
+            estimated_usage=(Usage(UsageUnit.INPUT_TOKEN.value, 100),),
+        ),
+        cloud_guard=guard,
+    )
+
+    child = batch.job_runner.get(view.job_ids[0])
+    assert child.plan is not None
+    assert child.plan["profileId"] == PROFILE_ID
+    assert child.plan["cloudConsentId"] == CONSENT_ID
+    assert child.plan["budgetAuthorizationId"] == auth_id
+    assert child.plan["projectId"] == project_with_50.id
+    assert child.plan["quoteId"] == "batch-cloud-quote"
+    resolved = require_plan(JobKind.TRANSLATE, child.plan)
+    assert resolved["profileId"] == PROFILE_ID
+
+
+def test_non_cloud_stage_children_carry_no_plan(
+    batch: BatchCoordinator,
+    project_with_50: Project,
+    db_session: Session,
+) -> None:
+    chapter_id = db_session.scalar(select(Chapter.id).where(Chapter.project_id == project_with_50.id).limit(1))
+    assert chapter_id is not None
+
+    view = batch.enqueue_batch(project_with_50.id, (chapter_id,), JobKind.IMPORT, None)
+
+    child = batch.job_runner.get(view.job_ids[0])
+    assert child.plan is None

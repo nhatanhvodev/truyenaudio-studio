@@ -112,6 +112,13 @@ class BatchCoordinator:
                     project_id,
                     chapter.id,
                     _child_idempotency_key(batch_input, chapter.id, stage, chapter.active_source_revision_id or ""),
+                    plan=_child_plan(
+                        stage,
+                        project_id,
+                        quote_id,
+                        chapter.active_source_revision_id or "",
+                        cloud_authorization,
+                    ),
                 )
                 job_ids.append(job.id)
             return self._view(project_id, stage, batch_input, tuple(job_ids), paused=paused)
@@ -194,3 +201,25 @@ def _child_idempotency_key(batch_input: str, chapter_id: str, stage: JobKind, ac
     return hashlib.sha256(
         f"{batch_input}:{chapter_id}:{stage.value}:{active_revision_id}".encode("utf-8")
     ).hexdigest()
+
+
+def _child_plan(
+    stage: JobKind,
+    project_id: str,
+    quote_id: str | None,
+    active_revision_id: str,
+    cloud_authorization: BatchCloudAuthorization | None,
+) -> dict[str, object] | None:
+    """Immutable plan carried on each cloud-stage child job (J01)."""
+    if stage not in CLOUD_CAPABLE_STAGES or cloud_authorization is None:
+        return None
+    return {
+        "stage": stage.value,
+        "projectId": project_id,
+        "quoteId": quote_id,
+        "revisionId": active_revision_id,
+        "profileId": cloud_authorization.provider_profile_id,
+        "cloudConsentId": cloud_authorization.cloud_consent_id,
+        "budgetAuthorizationId": cloud_authorization.budget_authorization_id,
+        "category": cloud_authorization.category,
+    }
