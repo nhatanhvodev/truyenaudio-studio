@@ -1,43 +1,28 @@
-# Task 19 / U01 report — parts 1–4 (PARTIAL)
+# Task 19 / U01 report — parts 1–5
 
-Status: PARTIAL — most primitives shipped incl. Combobox/Drawer + automated contrast; Tree + full visual audit remain.
+Status: DONE (code complete) — visual/zoom/screen-reader audit NOT_RUN (no browser harness this session).
 
-## Delivered (part 1)
+## Delivered (parts 1–5)
 
-- `frontend/src/shared/ui/tokens.ts`: semantic color tokens for `light`/`dark` (surface, text, primary, danger, focus ring, success) chosen to meet WCAG (body text ≥4.5:1, UI/focus ≥3:1), spacing/radius/font scales.
-- `frontend/src/shared/ui/Button.tsx`: variants primary/secondary/danger/ghost, theme light/dark, `loading` (disabled + `aria-busy`, label preserved), keyboard focus ring, `type="button"` default so it never submits accidentally.
-- `frontend/src/shared/ui/Input.tsx`: label + `htmlFor` via `useId`, `aria-invalid`, `aria-describedby` wiring to error (`role="alert"`) and hint, required marker, focus ring.
-- `frontend/src/shared/ui/Select.tsx`: labelled select with options and the same error/aria contract.
-- Barrel `index.ts` export + `ui.test.tsx` (5 RTL tests).
+- `frontend/src/shared/ui/tokens.ts`: light/dark semantic tokens chosen for WCAG (body text ≥4.5:1, UI/focus ≥3:1); dark primary `#2563eb`/danger `#dc2626` keep white text ≥4.5; spacing/radius/font scales.
+- Primitives (each with keyboard/focus/ARIA contract + RTL tests):
+  - `Button` (4 variants, loading `aria-busy`, focus ring, type=button default)
+  - `Input` / `Select` (label+useId, `aria-invalid`/`aria-describedby`, error `role=alert`, required)
+  - `Combobox` (ARIA 1.2: filter, activedescendant, Arrow/Home/End/Enter/Escape, mouse)
+  - `Modal` / `Drawer` (aria-modal labelled dialog, Escape/overlay/close, focus in + focus return)
+  - `Tabs` (tablist/tab/tabpanel, roving tabindex, arrow keys), `Tooltip` (clone trigger + aria-describedby, role=tooltip)
+  - `Toast` (role=status aria-live=polite), `Progress` (progressbar + valuenow), `Table` (caption/scope headers), `Tree` (tree/treeitem/group, expand/collapse + selection)
+- Automated WCAG contrast test over tokens for light & dark (`tokens-contrast.test.ts`).
+- Barrel `index.ts` exports; shared/ui RTL tests total 24 (parts 1–5 + contrast).
 
-## Delivered (part 2)
+## NOT_RUN / residual (environment)
 
-- `Modal.tsx`: `role="dialog"` + `aria-modal` + labelled title, Escape-to-close, overlay click close, close button, focus into panel, focus returns to the previously focused element on close.
-- `Tabs.tsx`: `tablist/tab/tabpanel` semantics, `aria-selected`/`aria-controls`/`aria-labelledby`, roving `tabIndex`, ArrowLeft/Right/Home/End keyboard navigation.
-- Barrel exports + `modal-tabs.test.tsx` (5 RTL tests: dialog open/close/Escape, tabs selection/keyboard/panel switch).
-
-## Delivered (part 3)
-
-- `Tooltip.tsx`: clones the trigger (aria-describedby + hover/focus handlers) and shows a `role="tooltip"` on a short delay (dismissable on blur/leave).
-- `Toast.tsx`: `role="status"` + `aria-live="polite"`, tones info/success/danger.
-- `Progress.tsx`: `role="progressbar"` with `aria-valuemin/max/now` and an accessible label.
-- `Table.tsx`: semantic `<table>/<caption>/<thead>/<tbody>`, `scope="col"` headers, generic row render.
-- Barrel exports + `feedback-table.test.tsx` (4 RTL tests).
-
-## Delivered (part 4)
-
-- `Combobox.tsx`: ARIA 1.2 combobox (input role=combobox + `aria-expanded/controls/autocomplete/activedescendant`, listbox/option, typing filter, ArrowUp/Down/Home/End/Enter/Escape, mouse selection).
-- `Drawer.tsx`: `role="dialog"` + `aria-modal` + label, Escape/overlay/close-button, focus in + focus return.
-- Automated WCAG contrast test over the tokens (`tokens-contrast.test.ts`): body text ≥4.5:1 and primary/danger/focus ≥3:1 in light & dark — token palette adjusted so dark primary/danger pass white-text ≥4.5 (primary `#2563eb`, danger `#dc2626`).
-- Barrel exports + `combobox-drawer.test.tsx` (5 RTL tests: combobox open/select/filter/Escape, drawer open/close).
-- Shared `ui` test total: 21.
-
-## Remaining for U01 acceptance
-
-- `Tree` primitive; global stylesheet wiring; light/dark **visual** check, 200% zoom, focus-return & screen-reader pass at U01 close (visual evidence via browser; marked NOT_RUN if unavailable).
+- Light/dark **visual** pass, 200% zoom reflow and real screen-reader/focus-return audit require a browser/visual harness and were not run this session (NOT_RUN per plan G-UX).
+- Global stylesheet wiring of tokens is deferred to the app-shell task (U02) where the theme hook lives.
+- These must be recorded before calling U01 fully "verified"; the component/code contract paths are covered by the tests above.
 
 ## Validation
 
-- `npx vitest run src/shared/ui` — 21 passed (parts 1–4 + contrast).
-- Full frontend suite: `npm test -- --run` and production build `npm run build` recorded before commit.
+- `npx vitest run src/shared/ui` — 24 passed.
+- Full frontend suite: `npm test -- --run` — 46 tests passed across 15 files; production build `npm run build` PASS.
 - No backend or provider/cloud change in these parts.

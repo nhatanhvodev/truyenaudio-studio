@@ -9,5 +9,6 @@ export { Table } from './Table';
 export { Tabs } from './Tabs';
 export { Toast } from './Toast';
 export { Tooltip } from './Tooltip';
+export { Tree } from './Tree';
 export { colors, font, radius, spacing } from './tokens';
 export type { UiTheme } from './tokens';
