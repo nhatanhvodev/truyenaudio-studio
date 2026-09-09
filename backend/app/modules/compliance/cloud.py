@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,7 +18,7 @@ from app.contracts import (
     Usage,
 )
 from app.db.models import Artifact, CloudProcessingConsent, Project, ProviderProfile, RightsGrant
-from app.modules.budgets.guard import BudgetBlocked, BudgetGuard
+from app.modules.budgets.guard import BudgetBlocked, BudgetGuard, CostQuote
 from app.modules.budgets.quota import QuotaUnavailable, evaluate_profile_quota
 
 
@@ -29,6 +31,15 @@ class CloudCallDecision:
     remaining_quota: tuple[Usage, ...]
     reasons: tuple[str, ...]
     warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _PreparedQuote:
+    quote: CostQuote
+    cloud_consent_id: str
+    rate_card_ids: tuple[str, ...]
+    remaining_quota: tuple[Usage, ...]
+    warnings: tuple[str, ...]
 
 
 class CloudCallBlocked(Exception):
@@ -53,7 +64,84 @@ class CloudCallGuard:
         *,
         cloud_consent_id: str | None = None,
         budget_authorization_id: str | None = None,
+        stage: str | None = None,
     ) -> CloudCallDecision:
+        prepared = self._prepare_quote(
+            project_id=project_id,
+            provider_profile_id=provider_profile_id,
+            operation_id=operation_id,
+            estimated_usage=estimated_usage,
+            category=category,
+            cloud_consent_id=cloud_consent_id,
+            stage=stage,
+        )
+        if isinstance(prepared, CloudCallDecision):
+            return prepared
+        if budget_authorization_id is None:
+            return _deny("BUDGET_AUTHORIZATION_REQUIRED")
+        try:
+            authorization = self.budget_guard.validate_authorization_for_quote(budget_authorization_id, prepared.quote)
+        except BudgetBlocked as exc:
+            return _deny(exc.reason)
+
+        return CloudCallDecision(
+            allowed=True,
+            cloud_consent_id=prepared.cloud_consent_id,
+            authorization_id=authorization.id,
+            rate_card_ids=prepared.rate_card_ids,
+            remaining_quota=prepared.remaining_quota,
+            reasons=(),
+            warnings=prepared.warnings,
+        )
+
+    def reserve(
+        self,
+        project_id: str,
+        provider_profile_id: str,
+        operation_id: str,
+        estimated_usage: tuple[Usage, ...],
+        category: str,
+        *,
+        cloud_consent_id: str | None = None,
+        stage: str | None = None,
+    ) -> CloudCallDecision:
+        prepared = self._prepare_quote(
+            project_id=project_id,
+            provider_profile_id=provider_profile_id,
+            operation_id=operation_id,
+            estimated_usage=estimated_usage,
+            category=category,
+            cloud_consent_id=cloud_consent_id,
+            stage=stage,
+        )
+        if isinstance(prepared, CloudCallDecision):
+            return prepared
+        try:
+            authorization = self.budget_guard.authorize(prepared.quote)
+        except BudgetBlocked as exc:
+            return _deny(exc.reason)
+
+        return CloudCallDecision(
+            allowed=True,
+            cloud_consent_id=prepared.cloud_consent_id,
+            authorization_id=authorization.id,
+            rate_card_ids=prepared.rate_card_ids,
+            remaining_quota=prepared.remaining_quota,
+            reasons=(),
+            warnings=prepared.warnings,
+        )
+
+    def _prepare_quote(
+        self,
+        project_id: str,
+        provider_profile_id: str,
+        operation_id: str,
+        estimated_usage: tuple[Usage, ...],
+        category: str,
+        *,
+        cloud_consent_id: str | None = None,
+        stage: str | None = None,
+    ) -> _PreparedQuote | CloudCallDecision:
         profile = self.session.get(ProviderProfile, provider_profile_id)
         if profile is None or not profile.enabled:
             return _deny("PROVIDER_PROFILE_DISABLED")
@@ -79,8 +167,6 @@ class CloudCallGuard:
             return _deny("RIGHTS_CLOUD_NOT_PERMITTED")
 
         provider = _provider_name(profile)
-        if profile.provider_kind == ProviderKind.TTS.value and budget_authorization_id is None:
-            return _deny("BUDGET_AUTHORIZATION_REQUIRED")
         try:
             quota = evaluate_profile_quota(
                 self.session,
@@ -90,9 +176,16 @@ class CloudCallGuard:
                 now=self.now(),
                 require_config=profile.provider_kind == ProviderKind.TTS.value,
             )
-        except QuotaUnavailable as exc:
-            return _deny(str(exc))
-        try:
+            plan_hash = _plan_hash(
+                project_id=project_id,
+                provider_profile_id=provider_profile_id,
+                provider_profile_revision=profile.revision,
+                operation_id=operation_id,
+                estimated_usage=estimated_usage,
+                category=category,
+                cloud_consent_id=consent.id,
+                stage=stage or category,
+            )
             quote = self.budget_guard.quote_usage(
                 operation_id=operation_id,
                 provider=provider,
@@ -100,21 +193,22 @@ class CloudCallGuard:
                 region=profile.region,
                 usage=quota.billable_usage,
                 category=category,
+                provider_profile_id=provider_profile_id,
+                provider_profile_revision=profile.revision,
+                cloud_consent_id=consent.id,
+                stage=stage or category,
+                plan_hash=plan_hash,
             )
-            if budget_authorization_id is None:
-                authorization = self.budget_guard.authorize(quote)
-            else:
-                authorization = self.budget_guard.validate_authorization_for_quote(budget_authorization_id, quote)
+        except QuotaUnavailable as exc:
+            return _deny(str(exc))
         except BudgetBlocked as exc:
             return _deny(exc.reason)
 
-        return CloudCallDecision(
-            allowed=True,
+        return _PreparedQuote(
+            quote=quote,
             cloud_consent_id=consent.id,
-            authorization_id=authorization.id,
             rate_card_ids=quote.rate_card_ids,
             remaining_quota=quota.remaining_quota,
-            reasons=(),
             warnings=quote.warnings,
         )
 
@@ -180,3 +274,31 @@ def _provider_name(profile: ProviderProfile) -> str:
 
 def _profile_config(profile: ProviderProfile) -> dict[str, object]:
     return profile.config_json or {}
+
+
+def _plan_hash(
+    *,
+    project_id: str,
+    provider_profile_id: str,
+    provider_profile_revision: int,
+    operation_id: str,
+    estimated_usage: tuple[Usage, ...],
+    category: str,
+    cloud_consent_id: str,
+    stage: str,
+) -> str:
+    payload = {
+        "category": category,
+        "cloud_consent_id": cloud_consent_id,
+        "estimated_usage": [
+            {"unit": item.unit, "measured_units": item.measured_units}
+            for item in estimated_usage
+        ],
+        "operation_id": operation_id,
+        "profile_id": provider_profile_id,
+        "profile_revision": provider_profile_revision,
+        "project_id": project_id,
+        "stage": stage,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()

@@ -522,7 +522,10 @@ class RateCard(MutableMixin, Base):
 
 class BudgetAuthorization(MutableMixin, Base):
     __tablename__ = "budget_authorizations"
-    __table_args__ = (CheckConstraint("status IN ('HELD', 'COMMITTED', 'RELEASED')", name="status_enum"),)
+    __table_args__ = (
+        CheckConstraint("status IN ('HELD', 'COMMITTED', 'RELEASED')", name="status_enum"),
+        Index("ix_budget_authorizations_profile_stage", "provider_profile_id", "stage"),
+    )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
     job_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("jobs.id"))
@@ -531,6 +534,12 @@ class BudgetAuthorization(MutableMixin, Base):
     contingency_vnd: Mapped[int] = mapped_column(BigInteger, nullable=False)
     category: Mapped[str | None] = mapped_column(String(32))
     rate_card_ids_json: Mapped[list[str] | None] = mapped_column(JSON)
+    provider_profile_id: Mapped[str | None] = mapped_column(UUID)
+    provider_profile_revision: Mapped[int | None] = mapped_column(Integer)
+    cloud_consent_id: Mapped[str | None] = mapped_column(UUID)
+    stage: Mapped[str | None] = mapped_column(String(64))
+    plan_hash: Mapped[str | None] = mapped_column(String(64))
+    quote_hash: Mapped[str | None] = mapped_column(String(64))
     expires_at: Mapped[object] = mapped_column(TZDateTime, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
 

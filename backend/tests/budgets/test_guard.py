@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import threading
 
 import pytest
 
@@ -125,6 +126,38 @@ def test_warning_threshold_marks_quote_without_blocking(db_session, guard: Budge
     assert authorization.id == quote.id
 
 
+def test_concurrent_regular_reservations_do_not_exceed_cap(migrated_engine) -> None:
+    from app.db.base import session_factory
+
+    factory = session_factory(migrated_engine)
+    barrier = threading.Barrier(2)
+    results: list[str] = []
+
+    def reserve(operation_id: str) -> None:
+        with factory() as session:
+            guard = BudgetGuard(session, now=lambda: NOW)
+            quote = guard.quote(operation_id, 200_000, "REGULAR")
+            barrier.wait(timeout=5)
+            try:
+                guard.authorize(quote)
+            except BudgetBlocked as exc:
+                results.append(exc.reason)
+            else:
+                results.append("AUTHORIZED")
+
+    threads = [threading.Thread(target=reserve, args=(f"parallel-{index}",)) for index in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert sorted(results) == ["AUTHORIZED", "BUDGET_REGULAR_CAP_EXCEEDED"]
+    with factory() as session:
+        authorizations = session.query(BudgetAuthorization).all()
+    assert len(authorizations) == 1
+    assert authorizations[0].estimate_vnd + authorizations[0].contingency_vnd == 230_000
+
+
 def test_quote_from_usage_requires_exact_current_rate_card(db_session, guard: BudgetGuard) -> None:
     _seed_rate_card(db_session, unit=UsageUnit.OUTPUT_TOKEN.value)
 
@@ -187,6 +220,64 @@ def test_commit_usage_moves_hold_to_committed_and_writes_integer_ledger(db_sessi
     assert ledger.fx_rate == 26_500
     assert ledger.actual_vnd == 26_500
     assert ledger.billing_confidence == "CONFIRMED"
+
+
+def test_quote_authorization_stores_execution_metadata(db_session, guard: BudgetGuard) -> None:
+    _seed_rate_card(db_session, unit=UsageUnit.INPUT_TOKEN.value, usd_micros_per_million=1_000_000)
+    quote = guard.quote_usage(
+        operation_id="translate:chapter-001",
+        provider="qwen",
+        model="qwen-mt-flash",
+        region="frankfurt",
+        usage=(Usage(UsageUnit.INPUT_TOKEN.value, 1_000),),
+        category="REGULAR",
+        provider_profile_id="profile-001",
+        provider_profile_revision=3,
+        cloud_consent_id="consent-001",
+        stage="TRANSLATE",
+        plan_hash="a" * 64,
+    )
+
+    authorization = guard.authorize(quote)
+    stored = db_session.get(BudgetAuthorization, authorization.id)
+
+    assert stored.provider_profile_id == "profile-001"
+    assert stored.provider_profile_revision == 3
+    assert stored.cloud_consent_id == "consent-001"
+    assert stored.stage == "TRANSLATE"
+    assert stored.plan_hash == "a" * 64
+    assert stored.quote_hash == quote.quote_hash
+
+
+def test_duplicate_settlement_is_idempotent(db_session, guard: BudgetGuard) -> None:
+    _seed_rate_card(db_session, unit=UsageUnit.INPUT_TOKEN.value, usd_micros_per_million=1_000_000)
+    quote = guard.quote_usage(
+        operation_id="translate:chapter-001",
+        provider="qwen",
+        model="qwen-mt-flash",
+        region="frankfurt",
+        usage=(Usage(UsageUnit.INPUT_TOKEN.value, 1_000),),
+        category="REGULAR",
+    )
+    authorization = guard.authorize(quote)
+
+    guard.commit_usage(
+        authorization.id,
+        provider="qwen",
+        model="qwen-mt-flash",
+        region="frankfurt",
+        usage=(Usage(UsageUnit.INPUT_TOKEN.value, 1_000, provider_request_id="req-001"),),
+    )
+    guard.commit_usage(
+        authorization.id,
+        provider="qwen",
+        model="qwen-mt-flash",
+        region="frankfurt",
+        usage=(Usage(UsageUnit.INPUT_TOKEN.value, 1_000, provider_request_id="req-001"),),
+    )
+
+    assert db_session.query(UsageLedger).count() == 1
+    assert db_session.get(BudgetAuthorization, authorization.id).status == "COMMITTED"
 
 
 def _seed_confirmed_usage(db_session, actual_vnd: int) -> None:

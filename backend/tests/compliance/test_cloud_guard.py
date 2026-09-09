@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
 from app.contracts import ArtifactKind, ArtifactStatus, CloudConsentStatus, ExportKind, ProviderKind, RightsScope, RightsStatus, SourceType, Usage, UsageUnit
 from app.db.models import Artifact, BudgetAuthorization, Chapter, CloudProcessingConsent, Project, ProviderProfile, RateCard, RightsEvidence, RightsGrant
@@ -55,6 +56,7 @@ def test_cloud_call_fails_closed(db_session, missing: str) -> None:
 def test_cloud_call_reports_remaining_quota_and_authorizes_billable_overage(db_session) -> None:
     _seed_valid_tts_case(db_session)
     guard = CloudCallGuard(db_session, BudgetGuard(db_session, now=lambda: NOW), now=lambda: NOW)
+    auth_id = _budget_authorization_id(db_session, "tts-segment-001")
 
     decision = guard.evaluate(
         project_id=PROJECT_ID,
@@ -63,11 +65,11 @@ def test_cloud_call_reports_remaining_quota_and_authorizes_billable_overage(db_s
         estimated_usage=(Usage(UsageUnit.CHARACTER.value, 1_500),),
         category="REGULAR",
         cloud_consent_id=CONSENT_ID,
-        budget_authorization_id=AUTH_ID,
+        budget_authorization_id=auth_id,
     )
 
     assert decision.allowed
-    assert decision.authorization_id == AUTH_ID
+    assert decision.authorization_id == auth_id
     assert decision.rate_card_ids == (RATE_ID,)
     assert decision.remaining_quota == (Usage(UsageUnit.CHARACTER.value, 1_000, "quota:2026-08"),)
 
@@ -92,6 +94,7 @@ def test_tts_cloud_call_requires_explicit_budget_authorization(db_session) -> No
 def test_private_attestation_allows_processing_not_publication(db_session, tmp_path) -> None:
     _seed_valid_tts_case(db_session, source_type=SourceType.USER_SUPPLIED_PRIVATE)
     guard = CloudCallGuard(db_session, BudgetGuard(db_session, now=lambda: NOW), now=lambda: NOW)
+    auth_id = _budget_authorization_id(db_session, "tts-private-001")
 
     decision = guard.evaluate(
         project_id=PROJECT_ID,
@@ -100,7 +103,7 @@ def test_private_attestation_allows_processing_not_publication(db_session, tmp_p
         estimated_usage=(Usage(UsageUnit.CHARACTER.value, 200),),
         category="REGULAR",
         cloud_consent_id=CONSENT_ID,
-        budget_authorization_id="018f0000-0000-7000-8000-000000013009",
+        budget_authorization_id=auth_id,
     )
 
     assert decision.allowed
@@ -205,28 +208,29 @@ def _seed_valid_tts_case(db_session, *, source_type: SourceType = SourceType.SEL
                 valid_from=NOW - timedelta(days=1),
             )
         )
-    db_session.add(
-        BudgetAuthorization(
-            id=AUTH_ID,
-            operation_id="tts-segment-001",
-            estimate_vnd=53,
-            contingency_vnd=8,
-            category="REGULAR",
-            rate_card_ids_json=[RATE_ID],
-            expires_at=NOW + timedelta(minutes=10),
-            status="HELD",
-        )
-    )
-    db_session.add(
-        BudgetAuthorization(
-            id="018f0000-0000-7000-8000-000000013009",
-            operation_id="tts-private-001",
-            estimate_vnd=0,
-            contingency_vnd=0,
-            category="REGULAR",
-            rate_card_ids_json=[RATE_ID],
-            expires_at=NOW + timedelta(minutes=10),
-            status="HELD",
-        )
-    )
     db_session.commit()
+    guard = CloudCallGuard(db_session, BudgetGuard(db_session, now=lambda: NOW), now=lambda: NOW)
+    first = guard.reserve(
+        project_id=PROJECT_ID,
+        provider_profile_id=PROFILE_ID,
+        operation_id="tts-segment-001",
+        estimated_usage=(Usage(UsageUnit.CHARACTER.value, 1_500),),
+        category="REGULAR",
+        cloud_consent_id=CONSENT_ID,
+    )
+    second = guard.reserve(
+        project_id=PROJECT_ID,
+        provider_profile_id=PROFILE_ID,
+        operation_id="tts-private-001",
+        estimated_usage=(Usage(UsageUnit.CHARACTER.value, 200),),
+        category="REGULAR",
+        cloud_consent_id=CONSENT_ID,
+    )
+    assert first.allowed
+    assert second.allowed
+
+
+def _budget_authorization_id(db_session, operation_id: str) -> str:
+    value = db_session.scalar(select(BudgetAuthorization.id).where(BudgetAuthorization.operation_id == operation_id))
+    assert value is not None
+    return value

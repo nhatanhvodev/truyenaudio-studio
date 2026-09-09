@@ -11,7 +11,8 @@ from sqlalchemy import select
 
 from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.db.base import create_engine_for, session_factory
-from app.db.models import ProviderProfile
+from app.db.models import BudgetAuthorization as BudgetAuthorizationRow
+from app.db.models import Chapter, ProviderProfile, SourceSegment
 from app.modules.budgets.guard import BudgetGuard
 from app.modules.compliance.cloud import CloudCallBlocked, CloudCallGuard
 from app.modules.security.credentials import CredentialUnavailable
@@ -36,7 +37,7 @@ class ReviseSegmentRequest(BaseModel):
 
 
 class ApproveTranslationRequest(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
     run_id: str = Field(alias="runId")
     expected_run_hash: str = Field(alias="expectedRunHash")
@@ -61,6 +62,14 @@ class GeminiTranslationRequest(BaseModel):
     budget_authorization_id: str | None = Field(
         default=None, alias="budgetAuthorizationId"
     )
+
+
+class TranslationQuoteRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="forbid")
+
+    profile_id: str = Field(alias="profileId", min_length=1)
+    cloud_consent_id: str = Field(alias="cloudConsentId", min_length=1)
+    category: str = "REGULAR"
 
 
 def create_translation_router(settings: Settings | None = None) -> APIRouter:
@@ -142,6 +151,24 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=_public_provider_error(str(exc))) from exc
+
+    @router.post("/quote")
+    def quote_translation(
+        chapter_id: str,
+        request: TranslationQuoteRequest,
+    ) -> dict[str, object]:
+        try:
+            return _translation_quote_payload(
+                active_settings,
+                chapter_id,
+                request.profile_id,
+                request.cloud_consent_id,
+                request.category,
+            )
+        except CloudCallBlocked as exc:
+            raise HTTPException(status_code=403, detail=",".join(exc.reasons)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get("")
     def read_translation(
@@ -302,12 +329,85 @@ class _gemini_workflow:
 
 
 def _chapter_project_id(session, chapter_id: str) -> str:
-    from app.db.models import Chapter
-
     chapter = session.get(Chapter, chapter_id)
     if chapter is None:
         raise ValueError("CHAPTER_NOT_FOUND")
     return chapter.project_id
+
+
+def _translation_quote_payload(
+    active_settings: Settings,
+    chapter_id: str,
+    profile_id: str,
+    cloud_consent_id: str,
+    category: str,
+) -> dict[str, object]:
+    engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+    factory = session_factory(engine)
+    try:
+        with factory() as session:
+            chapter = session.get(Chapter, chapter_id)
+            if chapter is None:
+                raise ValueError("CHAPTER_NOT_FOUND")
+            profile = _resolve_translation_profile(session, profile_id, {"gemini", "gemini_mt", "qwen", "qwen-mt", "qwen_mt"})
+            if not profile.model or not profile.secret_ref:
+                raise ValueError("PROVIDER_PROFILE_INCOMPLETE")
+            validate_model_identifier(profile.model)
+            estimated_usage = _estimated_translation_usage(session, chapter, profile)
+            decision = CloudCallGuard(session, BudgetGuard(session)).reserve(
+                project_id=chapter.project_id,
+                provider_profile_id=profile.id,
+                operation_id=_translation_operation_id(chapter.id),
+                estimated_usage=estimated_usage,
+                category=category,
+                cloud_consent_id=cloud_consent_id,
+                stage="TRANSLATE",
+            )
+            if not decision.allowed or decision.authorization_id is None:
+                raise CloudCallBlocked(decision.reasons)
+            row = session.get(BudgetAuthorizationRow, decision.authorization_id)
+            if row is None:
+                raise ValueError("BUDGET_AUTHORIZATION_INVALID")
+            return {
+                "budgetAuthorizationId": row.id,
+                "operationId": row.operation_id,
+                "category": row.category,
+                "stage": row.stage,
+                "estimateVnd": row.estimate_vnd,
+                "contingencyVnd": row.contingency_vnd,
+                "totalVnd": row.estimate_vnd + row.contingency_vnd,
+                "expiresAt": row.expires_at.isoformat(),
+                "rateCardIds": row.rate_card_ids_json or (),
+                "profileId": row.provider_profile_id,
+                "profileRevision": row.provider_profile_revision,
+                "cloudConsentId": row.cloud_consent_id,
+                "planHash": row.plan_hash,
+                "quoteHash": row.quote_hash,
+                "warnings": decision.warnings,
+            }
+    finally:
+        engine.dispose()
+
+
+def _estimated_translation_usage(
+    session,
+    chapter: Chapter,
+    profile: ProviderProfile,
+) -> tuple[Usage, ...]:
+    if not chapter.active_source_revision_id:
+        raise ValueError("SOURCE_REVISION_NOT_FOUND")
+    segments = session.scalars(
+        select(SourceSegment).where(SourceSegment.source_revision_id == chapter.active_source_revision_id)
+    ).all()
+    if not segments:
+        raise ValueError("SOURCE_SEGMENTS_NOT_FOUND")
+    source_characters = sum(len(segment.source_text) for segment in segments)
+    unit = UsageUnit.INPUT_TOKEN.value if profile.adapter_name in {"qwen", "qwen-mt", "qwen_mt"} else UsageUnit.CHARACTER.value
+    return (Usage(unit, source_characters),)
+
+
+def _translation_operation_id(chapter_id: str) -> str:
+    return f"translate:{chapter_id}"
 
 
 def _resolve_translation_profile(session, profile_id: str, adapter_names: set[str]) -> ProviderProfile:

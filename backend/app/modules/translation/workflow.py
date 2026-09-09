@@ -136,6 +136,7 @@ class TranslationWorkflow:
         memory = self._story_memory(project.id, chapter.ordinal)
         memory_hash = _canonical_sha256(memory)
         source_segments = self._source_segments(revision)
+        estimated_units = sum(len(segment.source_text) for segment in source_segments)
 
         if chapter.state == ChapterState.NORMALIZED.value:
             chapter.state = next_state(
@@ -178,6 +179,7 @@ class TranslationWorkflow:
                     cache_key,
                     locked_terms,
                     memory,
+                    estimated_units,
                     cloud_consent_id=cloud_consent_id,
                     budget_authorization_id=budget_authorization_id,
                 )
@@ -395,15 +397,16 @@ class TranslationWorkflow:
         cache_key: str,
         locked_terms: tuple[tuple[str, str], ...],
         story_memory: tuple[str, ...],
+        estimated_units: int,
         cloud_consent_id: str | None,
         budget_authorization_id: str | None,
     ) -> TranslationResult:
         request = TranslationRequest(
             context=OperationContext(
-                operation_id=f"translate:{chapter.id}:{source_segment.id}",
+                operation_id=_translation_operation_id(chapter.id),
                 cache_key=cache_key,
                 timeout_seconds=60,
-                estimated_units=len(source_segment.source_text),
+                estimated_units=estimated_units,
                 budget_authorization_id=budget_authorization_id,
                 cloud_consent_id=cloud_consent_id,
             ),
@@ -751,6 +754,10 @@ def _canonical_sha256(payload: object) -> str:
 
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _translation_operation_id(chapter_id: str) -> str:
+    return f"translate:{chapter_id}"
 
 
 def _provider_request_id(result: TranslationResult) -> str | None:

@@ -129,7 +129,13 @@ def test_revoked_consent_blocks_new_cloud_calls(cloud_guard, qwen_case, db_sessi
 def test_valid_cloud_call_returns_current_consent_rate_cards_and_budget_hold(cloud_guard, qwen_case, db_session) -> None:
     rate_card = db_session.query(RateCard).one()
 
-    decision = cloud_guard.evaluate(**qwen_case.request)
+    reservation = cloud_guard.reserve(**qwen_case.request, cloud_consent_id=CONSENT_ID, stage="TRANSLATE")
+    decision = cloud_guard.evaluate(
+        **qwen_case.request,
+        cloud_consent_id=CONSENT_ID,
+        budget_authorization_id=reservation.authorization_id,
+        stage="TRANSLATE",
+    )
 
     assert decision.allowed
     assert decision.cloud_consent_id == CONSENT_ID
@@ -138,24 +144,80 @@ def test_valid_cloud_call_returns_current_consent_rate_cards_and_budget_hold(clo
     assert decision.reasons == ()
 
 
-def test_cloud_call_rejects_underfunded_budget_authorization(cloud_guard, qwen_case, db_session) -> None:
-    db_session.add(
-        BudgetAuthorization(
-            id="018f0000-0000-7000-8000-000000003101",
-            operation_id="translate-segment-001",
-            estimate_vnd=1,
-            contingency_vnd=1,
-            category="REGULAR",
-            rate_card_ids_json=["018f0000-0000-7000-8000-000000003006"],
-            expires_at=NOW + timedelta(minutes=10),
-            status="HELD",
-        )
-    )
+def test_cloud_call_requires_explicit_budget_reservation(cloud_guard, qwen_case) -> None:
+    decision = cloud_guard.evaluate(**qwen_case.request, cloud_consent_id=CONSENT_ID, stage="TRANSLATE")
+
+    assert not decision.allowed
+    assert decision.reasons == ("BUDGET_AUTHORIZATION_REQUIRED",)
+    assert decision.authorization_id is None
+
+
+def test_cloud_call_rejects_profile_revision_changed_after_reservation(cloud_guard, qwen_case, db_session) -> None:
+    reservation = cloud_guard.reserve(**qwen_case.request, cloud_consent_id=CONSENT_ID, stage="TRANSLATE")
+    assert reservation.allowed
+    qwen_case.profile.revision += 1
     db_session.commit()
 
     decision = cloud_guard.evaluate(
         **qwen_case.request,
-        budget_authorization_id="018f0000-0000-7000-8000-000000003101",
+        cloud_consent_id=CONSENT_ID,
+        budget_authorization_id=reservation.authorization_id,
+        stage="TRANSLATE",
+    )
+
+    assert not decision.allowed
+    assert decision.reasons == ("BUDGET_AUTHORIZATION_METADATA_MISMATCH",)
+    assert decision.authorization_id is None
+
+
+def test_cloud_call_rejects_expired_reservation(cloud_guard, qwen_case, db_session) -> None:
+    reservation = cloud_guard.reserve(**qwen_case.request, cloud_consent_id=CONSENT_ID, stage="TRANSLATE")
+    row = db_session.get(BudgetAuthorization, reservation.authorization_id)
+    row.expires_at = NOW - timedelta(minutes=1)
+    db_session.commit()
+
+    decision = cloud_guard.evaluate(
+        **qwen_case.request,
+        cloud_consent_id=CONSENT_ID,
+        budget_authorization_id=reservation.authorization_id,
+        stage="TRANSLATE",
+    )
+
+    assert not decision.allowed
+    assert decision.reasons == ("BUDGET_AUTHORIZATION_EXPIRED",)
+    assert decision.authorization_id is None
+
+
+def test_cloud_call_rejects_committed_reservation_reuse(cloud_guard, qwen_case, db_session) -> None:
+    reservation = cloud_guard.reserve(**qwen_case.request, cloud_consent_id=CONSENT_ID, stage="TRANSLATE")
+    row = db_session.get(BudgetAuthorization, reservation.authorization_id)
+    row.status = "COMMITTED"
+    db_session.commit()
+
+    decision = cloud_guard.evaluate(
+        **qwen_case.request,
+        cloud_consent_id=CONSENT_ID,
+        budget_authorization_id=reservation.authorization_id,
+        stage="TRANSLATE",
+    )
+
+    assert not decision.allowed
+    assert decision.reasons == ("BUDGET_AUTHORIZATION_NOT_HELD",)
+    assert decision.authorization_id is None
+
+
+def test_cloud_call_rejects_underfunded_budget_authorization(cloud_guard, qwen_case, db_session) -> None:
+    reservation = cloud_guard.reserve(**qwen_case.request, cloud_consent_id=CONSENT_ID, stage="TRANSLATE")
+    row = db_session.get(BudgetAuthorization, reservation.authorization_id)
+    row.estimate_vnd = 1
+    row.contingency_vnd = 1
+    db_session.commit()
+
+    decision = cloud_guard.evaluate(
+        **qwen_case.request,
+        cloud_consent_id=CONSENT_ID,
+        budget_authorization_id=reservation.authorization_id,
+        stage="TRANSLATE",
     )
 
     assert not decision.allowed
@@ -181,7 +243,7 @@ def test_cloud_call_surfaces_budget_warning_without_blocking(cloud_guard, qwen_c
     )
     db_session.commit()
 
-    decision = cloud_guard.evaluate(**qwen_case.request)
+    decision = cloud_guard.reserve(**qwen_case.request, cloud_consent_id=CONSENT_ID, stage="TRANSLATE")
 
     assert decision.allowed
     assert decision.warnings == ("BUDGET_WARNING_THRESHOLD_EXCEEDED",)

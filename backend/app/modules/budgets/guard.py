@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import hashlib
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -37,6 +39,12 @@ class CostQuote:
     expires_at: datetime
     rate_card_ids: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    provider_profile_id: str | None = None
+    provider_profile_revision: int | None = None
+    cloud_consent_id: str | None = None
+    stage: str | None = None
+    plan_hash: str | None = None
+    quote_hash: str | None = None
 
     @property
     def total_vnd(self) -> int:
@@ -53,6 +61,12 @@ class BudgetAuthorization:
     status: str
     category: str | None = None
     rate_card_ids: tuple[str, ...] = ()
+    provider_profile_id: str | None = None
+    provider_profile_revision: int | None = None
+    cloud_consent_id: str | None = None
+    stage: str | None = None
+    plan_hash: str | None = None
+    quote_hash: str | None = None
 
 
 class BudgetBlocked(Exception):
@@ -90,6 +104,11 @@ class BudgetGuard:
         region: str | None,
         usage: tuple[Usage, ...],
         category: str,
+        provider_profile_id: str | None = None,
+        provider_profile_revision: int | None = None,
+        cloud_consent_id: str | None = None,
+        stage: str | None = None,
+        plan_hash: str | None = None,
     ) -> CostQuote:
         if not usage:
             raise BudgetBlocked("BUDGET_USAGE_REQUIRED")
@@ -105,6 +124,19 @@ class BudgetGuard:
             usd_micros = _usd_micros(rate_card.price_usd_micros_per_million_units, item.measured_units)
             estimate_vnd += _vnd_from_usd_micros(usd_micros)
 
+        expires_at = self.now() + timedelta(minutes=QUOTE_TTL_MINUTES)
+        quote_hash = _quote_hash(
+            operation_id=operation_id,
+            estimate_vnd=estimate_vnd,
+            contingency_vnd=_contingency(estimate_vnd),
+            category=category,
+            rate_card_ids=tuple(rate_card_ids),
+            provider_profile_id=provider_profile_id,
+            provider_profile_revision=provider_profile_revision,
+            cloud_consent_id=cloud_consent_id,
+            stage=stage,
+            plan_hash=plan_hash,
+        )
         return CostQuote(
             id=new_id(),
             operation_id=operation_id,
@@ -113,22 +145,19 @@ class BudgetGuard:
             category=category,
             rate_card_id=rate_card_ids[0] if len(rate_card_ids) == 1 else None,
             rate_card_ids=tuple(rate_card_ids),
-            expires_at=self.now() + timedelta(minutes=QUOTE_TTL_MINUTES),
+            expires_at=expires_at,
             warnings=self._warnings_for(estimate_vnd + _contingency(estimate_vnd)),
+            provider_profile_id=provider_profile_id,
+            provider_profile_revision=provider_profile_revision,
+            cloud_consent_id=cloud_consent_id,
+            stage=stage,
+            plan_hash=plan_hash,
+            quote_hash=quote_hash,
         )
 
     def authorize(self, quote: CostQuote) -> BudgetAuthorization:
         if quote.expires_at <= self.now():
             raise BudgetBlocked("BUDGET_QUOTE_EXPIRED")
-
-        total_after = self._committed_vnd() + quote.total_vnd
-        reserve_limit = RESERVE_LIMITS.get(quote.category)
-        if reserve_limit is not None and self._category_authorized_vnd(quote.category) + quote.total_vnd > reserve_limit:
-            raise BudgetBlocked(f"BUDGET_{quote.category}_RESERVE_EXCEEDED")
-        if quote.category == "REGULAR" and total_after > REGULAR_CAP_VND:
-            raise BudgetBlocked("BUDGET_REGULAR_CAP_EXCEEDED")
-        if total_after > HARD_LIMIT_VND:
-            raise BudgetBlocked("BUDGET_HARD_LIMIT_EXCEEDED")
 
         row = BudgetAuthorizationRow(
             id=quote.id,
@@ -137,10 +166,30 @@ class BudgetGuard:
             contingency_vnd=quote.contingency_vnd,
             category=quote.category,
             rate_card_ids_json=list(quote.rate_card_ids),
+            provider_profile_id=quote.provider_profile_id,
+            provider_profile_revision=quote.provider_profile_revision,
+            cloud_consent_id=quote.cloud_consent_id,
+            stage=quote.stage,
+            plan_hash=quote.plan_hash,
+            quote_hash=quote.quote_hash,
             expires_at=quote.expires_at,
             status="HELD",
         )
         self.session.add(row)
+        self.session.flush()
+
+        total_after = self._committed_vnd()
+        reserve_limit = RESERVE_LIMITS.get(quote.category)
+        if reserve_limit is not None and self._category_authorized_vnd(quote.category) > reserve_limit:
+            self.session.rollback()
+            raise BudgetBlocked(f"BUDGET_{quote.category}_RESERVE_EXCEEDED")
+        if quote.category == "REGULAR" and total_after > REGULAR_CAP_VND:
+            self.session.rollback()
+            raise BudgetBlocked("BUDGET_REGULAR_CAP_EXCEEDED")
+        if total_after > HARD_LIMIT_VND:
+            self.session.rollback()
+            raise BudgetBlocked("BUDGET_HARD_LIMIT_EXCEEDED")
+
         self.session.commit()
         return _authorization_view(row)
 
@@ -154,10 +203,21 @@ class BudgetGuard:
 
     def validate_authorization_for_quote(self, authorization_id: str, quote: CostQuote) -> BudgetAuthorization:
         authorization = self.validate_authorization(authorization_id, quote.operation_id)
+        if authorization.status != "HELD":
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_NOT_HELD")
         if authorization.category != quote.category or authorization.rate_card_ids != quote.rate_card_ids:
             raise BudgetBlocked("BUDGET_AUTHORIZATION_METADATA_MISMATCH")
         if authorization.estimate_vnd < quote.estimate_vnd or authorization.contingency_vnd < quote.contingency_vnd:
             raise BudgetBlocked("BUDGET_AUTHORIZATION_UNDERFUNDED")
+        if (
+            authorization.provider_profile_id != quote.provider_profile_id
+            or authorization.provider_profile_revision != quote.provider_profile_revision
+            or authorization.cloud_consent_id != quote.cloud_consent_id
+            or authorization.stage != quote.stage
+            or authorization.plan_hash != quote.plan_hash
+            or authorization.quote_hash != quote.quote_hash
+        ):
+            raise BudgetBlocked("BUDGET_AUTHORIZATION_METADATA_MISMATCH")
         return authorization
 
     def commit_usage(
@@ -172,6 +232,8 @@ class BudgetGuard:
         row = self.session.get(BudgetAuthorizationRow, authorization_id)
         if row is None:
             raise BudgetBlocked("BUDGET_AUTHORIZATION_INVALID")
+        if row.status == "COMMITTED":
+            return
         if row.status != "HELD":
             raise BudgetBlocked("BUDGET_AUTHORIZATION_NOT_HELD")
         if row.expires_at <= self.now():
@@ -288,7 +350,42 @@ def _authorization_view(row: BudgetAuthorizationRow) -> BudgetAuthorization:
         status=row.status,
         category=row.category,
         rate_card_ids=tuple(row.rate_card_ids_json or ()),
+        provider_profile_id=row.provider_profile_id,
+        provider_profile_revision=row.provider_profile_revision,
+        cloud_consent_id=row.cloud_consent_id,
+        stage=row.stage,
+        plan_hash=row.plan_hash,
+        quote_hash=row.quote_hash,
     )
+
+
+def _quote_hash(
+    *,
+    operation_id: str,
+    estimate_vnd: int,
+    contingency_vnd: int,
+    category: str,
+    rate_card_ids: tuple[str, ...],
+    provider_profile_id: str | None,
+    provider_profile_revision: int | None,
+    cloud_consent_id: str | None,
+    stage: str | None,
+    plan_hash: str | None,
+) -> str:
+    payload = {
+        "category": category,
+        "cloud_consent_id": cloud_consent_id,
+        "contingency_vnd": contingency_vnd,
+        "estimate_vnd": estimate_vnd,
+        "operation_id": operation_id,
+        "plan_hash": plan_hash,
+        "provider_profile_id": provider_profile_id,
+        "provider_profile_revision": provider_profile_revision,
+        "rate_card_ids": list(rate_card_ids),
+        "stage": stage,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _contingency(estimate_vnd: int) -> int:

@@ -160,6 +160,7 @@ class QwenMtAdapter:
             category=request.context.billing_category,
             cloud_consent_id=request.context.cloud_consent_id,
             budget_authorization_id=request.context.budget_authorization_id,
+            stage="TRANSLATE",
         )
         if not decision.allowed:
             raise CloudCallBlocked(decision.reasons)

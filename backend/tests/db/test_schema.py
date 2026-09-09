@@ -497,6 +497,14 @@ EXPECTED_COLUMNS = {
         "operation_id",
         "estimate_vnd",
         "contingency_vnd",
+        "category",
+        "rate_card_ids_json",
+        "provider_profile_id",
+        "provider_profile_revision",
+        "cloud_consent_id",
+        "stage",
+        "plan_hash",
+        "quote_hash",
         "expires_at",
         "status",
         "created_at",
@@ -632,6 +640,11 @@ def test_required_indexes_and_unique_constraints_exist(migrated_engine) -> None:
     assert ("ix_usage_ledger_created_provider_model", ("created_at", "provider", "model"), False) in indexes[
         "usage_ledger"
     ]
+    assert (
+        "ix_budget_authorizations_profile_stage",
+        ("provider_profile_id", "stage"),
+        False,
+    ) in indexes["budget_authorizations"]
 
     assert ("uq_projects_slug", ("slug",)) in unique_constraints["projects"]
     assert (

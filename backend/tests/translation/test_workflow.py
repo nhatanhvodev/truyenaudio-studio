@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -13,9 +14,12 @@ from app.contracts import (
     ArtifactKind,
     ArtifactStatus,
     ChapterState,
+    CloudConsentStatus,
     ImportKind,
+    ProviderKind,
     QaCategory,
     QaSeverity,
+    RightsScope,
     RunStatus,
     SourceType,
     RightsStatus,
@@ -25,11 +29,15 @@ from app.contracts import (
 )
 from app.db.models import (
     Artifact,
+    BudgetAuthorization,
     Chapter,
+    CloudProcessingConsent,
     Export,
     GlossaryEntry,
     Project,
     ProviderProfile,
+    RateCard,
+    RightsGrant,
     SourceRevision,
     SourceSegment,
     UsageLedger,
@@ -308,6 +316,102 @@ def test_translation_api_fake_and_force_approve(tmp_path: Path) -> None:
         assert approve_resp.json()["run"]["status"] == "APPROVED"
 
 
+def test_translation_approve_rejects_budget_authorization_fields(tmp_path: Path) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    db_path = tmp_path / "studio.sqlite3"
+    backend_root = Path(__file__).parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+    command.upgrade(config, "head")
+
+    engine = create_engine_for(db_path)
+    with session_factory(engine)() as session:
+        fixture = _source_chapter(session)
+        chapter_id = fixture.chapter_id
+    engine.dispose()
+
+    app = FastAPI()
+    app.include_router(create_translation_router(Settings(data_root=tmp_path)))
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/chapters/{chapter_id}/translation/approve",
+            json={
+                "runId": "run-001",
+                "expectedRunHash": "0" * 64,
+                "budgetAuthorizationId": "polish-budget",
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_translation_quote_reserves_budget_and_stale_profile_blocks_dispatch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from alembic import command
+    from alembic.config import Config
+    from app.api import translation
+    from app.providers.qwen_mt import Secret
+
+    db_path = tmp_path / "studio.sqlite3"
+    backend_root = Path(__file__).parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.set_main_option("script_location", str(backend_root / "migrations"))
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path.as_posix()}")
+    command.upgrade(config, "head")
+
+    engine = create_engine_for(db_path)
+    with session_factory(engine)() as session:
+        fixture = _source_chapter(session)
+        _seed_cloud_translation_quote_case(session, fixture.chapter_id)
+        chapter_id = fixture.chapter_id
+    engine.dispose()
+
+    app = FastAPI()
+    app.include_router(create_translation_router(Settings(data_root=tmp_path)))
+
+    with TestClient(app) as client:
+        quote = client.post(
+            f"/api/chapters/{chapter_id}/translation/quote",
+            json={"profileId": "018f0000-0000-7000-8000-700000000001", "cloudConsentId": "018f0000-0000-7000-8000-700000000003"},
+        )
+
+    assert quote.status_code == 200
+    payload = quote.json()
+    assert payload["budgetAuthorizationId"]
+    assert payload["operationId"] == f"translate:{chapter_id}"
+    assert payload["stage"] == "TRANSLATE"
+    assert len(payload["planHash"]) == 64
+    assert len(payload["quoteHash"]) == 64
+
+    engine = create_engine_for(db_path)
+    with session_factory(engine)() as session:
+        stored = session.get(BudgetAuthorization, payload["budgetAuthorizationId"])
+        assert stored.status == "HELD"
+        assert stored.provider_profile_revision == 1
+        session.get(ProviderProfile, "018f0000-0000-7000-8000-700000000001").revision += 1
+        session.commit()
+    engine.dispose()
+
+    monkeypatch.setattr(translation.Secret, "from_ref", lambda *_args, **_kwargs: Secret("qwen-secret"))
+    with TestClient(app) as client:
+        stale = client.post(
+            f"/api/chapters/{chapter_id}/translation/qwen",
+            json={
+                "profileId": "018f0000-0000-7000-8000-700000000001",
+                "cloudConsentId": "018f0000-0000-7000-8000-700000000003",
+                "budgetAuthorizationId": payload["budgetAuthorizationId"],
+            },
+        )
+
+    assert stale.status_code == 403
+    assert stale.json()["detail"] == "BUDGET_AUTHORIZATION_METADATA_MISMATCH"
+
+
 def test_translation_api_gemini_route(tmp_path: Path, monkeypatch) -> None:
     from alembic import command
     from alembic.config import Config
@@ -569,6 +673,74 @@ def _provider_profile(db_session, project_id: str) -> None:
     db_session.flush()
     db_session.get(Project, project_id).default_translator_profile_id = profile.id
     db_session.flush()
+
+
+def _seed_cloud_translation_quote_case(db_session, chapter_id: str) -> None:
+    chapter = db_session.get(Chapter, chapter_id)
+    project = db_session.get(Project, chapter.project_id)
+    project.source_type = SourceType.SELF_AUTHORED.value
+    project.rights_status = RightsStatus.CLEARED.value
+    profile = ProviderProfile(
+        id="018f0000-0000-7000-8000-700000000001",
+        provider_kind=ProviderKind.TRANSLATOR.value,
+        adapter_name="qwen",
+        display_name="Qwen",
+        model="qwen-mt-flash",
+        region="frankfurt",
+        secret_ref="keyring:truyenaudio-studio/provider-profile:qwen",
+        config_json={"provider": "qwen", "policy_sha256": "7" * 64},
+        enabled=True,
+        revision=1,
+    )
+    db_session.add(profile)
+    db_session.flush()
+    project.default_translator_profile_id = profile.id
+    policy = Artifact(
+        id="018f0000-0000-7000-8000-700000000002",
+        kind=ArtifactKind.LICENSE_SNAPSHOT.value,
+        status=ArtifactStatus.READY.value,
+        relative_path="providers/qwen-policy.json",
+        sha256="7" * 64,
+        byte_size=32,
+        mime_type="application/json",
+        input_hash="1" * 64,
+        settings_hash="2" * 64,
+    )
+    db_session.add(policy)
+    db_session.flush()
+    db_session.add(
+        CloudProcessingConsent(
+            id="018f0000-0000-7000-8000-700000000003",
+            project_id=project.id,
+            provider_profile_id=profile.id,
+            status=CloudConsentStatus.GRANTED.value,
+            policy_snapshot_artifact_id=policy.id,
+            accepted_at=datetime(2026, 8, 19, 8, 0, 0, tzinfo=UTC),
+        )
+    )
+    db_session.add(
+        RightsGrant(
+            id="018f0000-0000-7000-8000-700000000004",
+            project_id=project.id,
+            scope=RightsScope.TRANSLATE_VI.value,
+            territory="WORLD",
+            allows_ai_processing=True,
+            allows_third_party_cloud=True,
+            valid_from=datetime(2026, 8, 18, 8, 0, 0, tzinfo=UTC),
+        )
+    )
+    db_session.add(
+        RateCard(
+            id="018f0000-0000-7000-8000-700000000005",
+            provider="qwen",
+            model="qwen-mt-flash",
+            region="frankfurt",
+            unit=UsageUnit.INPUT_TOKEN.value,
+            price_usd_micros_per_million_units=1_000_000,
+            effective_from=datetime(2026, 8, 18, 8, 0, 0, tzinfo=UTC),
+        )
+    )
+    db_session.commit()
 
 
 _ID_COUNTER = 0

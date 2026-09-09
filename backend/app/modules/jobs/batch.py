@@ -140,6 +140,7 @@ class BatchCoordinator:
             operation_id=quote_id,
             estimated_usage=cloud_authorization.estimated_usage,
             category=cloud_authorization.category,
+            stage=stage.value,
             cloud_consent_id=cloud_authorization.cloud_consent_id,
             budget_authorization_id=cloud_authorization.budget_authorization_id,
         )

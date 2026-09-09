@@ -23,7 +23,6 @@ from app.contracts import (
 )
 from app.db.models import (
     Artifact,
-    BudgetAuthorization,
     Chapter,
     CloudProcessingConsent,
     Job,
@@ -139,7 +138,7 @@ def test_cloud_translate_batch_validates_existing_consent_and_budget_before_enqu
     project_with_50: Project,
     db_session: Session,
 ) -> None:
-    _seed_cloud_authorization(db_session, project_with_50.id)
+    auth_id = _seed_cloud_authorization(db_session, project_with_50.id)
     chapter_ids = tuple(
         db_session.scalars(
             select(Chapter.id)
@@ -158,7 +157,7 @@ def test_cloud_translate_batch_validates_existing_consent_and_budget_before_enqu
         cloud_authorization=BatchCloudAuthorization(
             provider_profile_id=PROFILE_ID,
             cloud_consent_id=CONSENT_ID,
-            budget_authorization_id=BUDGET_AUTH_ID,
+            budget_authorization_id=auth_id,
             estimated_usage=(Usage(UsageUnit.INPUT_TOKEN.value, 100),),
         ),
         cloud_guard=guard,
@@ -211,7 +210,7 @@ def test_pause_blocks_subsequent_child_jobs_without_canceling_existing_children(
     assert stored.status == JobStatus.QUEUED.value
 
 
-def _seed_cloud_authorization(db_session: Session, project_id: str) -> None:
+def _seed_cloud_authorization(db_session: Session, project_id: str) -> str:
     db_session.add(
         ProviderProfile(
             id=PROFILE_ID,
@@ -274,16 +273,20 @@ def _seed_cloud_authorization(db_session: Session, project_id: str) -> None:
             verified_at=NOW,
         )
     )
-    db_session.add(
-        BudgetAuthorization(
-            id=BUDGET_AUTH_ID,
-            operation_id="batch-cloud-quote",
-            estimate_vnd=10,
-            contingency_vnd=2,
-            category="REGULAR",
-            rate_card_ids_json=[RATE_CARD_ID],
-            expires_at=NOW.replace(hour=4),
-            status="HELD",
-        )
-    )
     db_session.commit()
+    decision = CloudCallGuard(
+        db_session,
+        BudgetGuard(db_session, now=lambda: NOW),
+        now=lambda: NOW,
+    ).reserve(
+        project_id=project_id,
+        provider_profile_id=PROFILE_ID,
+        operation_id="batch-cloud-quote",
+        estimated_usage=(Usage(UsageUnit.INPUT_TOKEN.value, 100),),
+        category="REGULAR",
+        cloud_consent_id=CONSENT_ID,
+        stage=JobKind.TRANSLATE.value,
+    )
+    assert decision.allowed
+    assert decision.authorization_id is not None
+    return decision.authorization_id

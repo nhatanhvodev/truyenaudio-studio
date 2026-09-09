@@ -127,7 +127,7 @@ class GeminiMtAdapter:
             )
 
         if self.cloud_guard and self.project_id and self.provider_profile_id:
-            estimated_usage = (Usage(UsageUnit.CHARACTER.value, len(source_text)),)
+            estimated_usage = (Usage(UsageUnit.CHARACTER.value, request.context.estimated_units),)
             decision = self.cloud_guard.evaluate(
                 project_id=self.project_id,
                 provider_profile_id=self.provider_profile_id,
@@ -136,6 +136,7 @@ class GeminiMtAdapter:
                 category=request.context.billing_category,
                 cloud_consent_id=request.context.cloud_consent_id,
                 budget_authorization_id=request.context.budget_authorization_id,
+                stage="TRANSLATE",
             )
             if not decision.allowed:
                 raise CloudCallBlocked(decision.reasons)
