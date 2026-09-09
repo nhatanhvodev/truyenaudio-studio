@@ -1,6 +1,6 @@
-# Task 19 / U01 report — parts 1–3 (PARTIAL)
+# Task 19 / U01 report — parts 1–4 (PARTIAL)
 
-Status: PARTIAL — tokens + Button/Input/Select/Modal/Tabs/Table/Tooltip/Toast/Progress shipped; Combobox/Drawer/Tree + visual audit remain.
+Status: PARTIAL — most primitives shipped incl. Combobox/Drawer + automated contrast; Tree + full visual audit remain.
 
 ## Delivered (part 1)
 
@@ -24,12 +24,20 @@ Status: PARTIAL — tokens + Button/Input/Select/Modal/Tabs/Table/Tooltip/Toast/
 - `Table.tsx`: semantic `<table>/<caption>/<thead>/<tbody>`, `scope="col"` headers, generic row render.
 - Barrel exports + `feedback-table.test.tsx` (4 RTL tests).
 
-## Remaining for U01 acceptance (later parts)
+## Delivered (part 4)
 
-- Combobox/Drawer/Tree primitives; global stylesheet wiring; full component interaction + contrast + keyboard/focus-return + light/dark audit at U01 close (visual check per acceptance).
+- `Combobox.tsx`: ARIA 1.2 combobox (input role=combobox + `aria-expanded/controls/autocomplete/activedescendant`, listbox/option, typing filter, ArrowUp/Down/Home/End/Enter/Escape, mouse selection).
+- `Drawer.tsx`: `role="dialog"` + `aria-modal` + label, Escape/overlay/close-button, focus in + focus return.
+- Automated WCAG contrast test over the tokens (`tokens-contrast.test.ts`): body text ≥4.5:1 and primary/danger/focus ≥3:1 in light & dark — token palette adjusted so dark primary/danger pass white-text ≥4.5 (primary `#2563eb`, danger `#dc2626`).
+- Barrel exports + `combobox-drawer.test.tsx` (5 RTL tests: combobox open/select/filter/Escape, drawer open/close).
+- Shared `ui` test total: 21.
+
+## Remaining for U01 acceptance
+
+- `Tree` primitive; global stylesheet wiring; light/dark **visual** check, 200% zoom, focus-return & screen-reader pass at U01 close (visual evidence via browser; marked NOT_RUN if unavailable).
 
 ## Validation
 
-- `npx vitest run src/shared/ui` — 14 passed (5 + 5 + 4).
+- `npx vitest run src/shared/ui` — 21 passed (parts 1–4 + contrast).
 - Full frontend suite: `npm test -- --run` and production build `npm run build` recorded before commit.
 - No backend or provider/cloud change in these parts.

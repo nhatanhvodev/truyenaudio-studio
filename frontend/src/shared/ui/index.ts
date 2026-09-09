@@ -1,4 +1,6 @@
 export { Button } from './Button';
+export { Combobox } from './Combobox';
+export { Drawer } from './Drawer';
 export { Input } from './Input';
 export { Modal } from './Modal';
 export { Progress } from './Progress';
