@@ -182,15 +182,20 @@ def build_default_worker(settings: Settings | None = None) -> Worker:
     runner = JobRunner(engine)
     return Worker(
         runner,
-        handlers=build_default_handlers(),
+        handlers=build_default_handlers(settings),
         worker_id="studio-worker-1",
         artifact_root=settings.data_root / "artifacts",
         process_heartbeat_path=settings.data_root / "worker-heartbeat.json",
     )
 
 
-def build_default_handlers() -> dict[JobKind, Handler]:
-    return {kind: _unconfigured_recovery_handler for kind in JobKind}
+def build_default_handlers(settings: Settings | None = None) -> dict[JobKind, Handler]:
+    handlers = {kind: _unconfigured_recovery_handler for kind in JobKind}
+    if settings is not None:
+        from app.modules.jobs.execution_handlers import build_translate_handler
+
+        handlers[JobKind.TRANSLATE] = build_translate_handler(settings)
+    return handlers
 
 
 async def _unconfigured_recovery_handler(lease: JobLease, recovery: RecoveryJobContext) -> str | None:
