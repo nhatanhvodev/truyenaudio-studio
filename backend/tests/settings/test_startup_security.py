@@ -8,6 +8,9 @@ from app.settings.startup_lock import AlreadyRunning, StartupLock
 from app.main import app
 
 
+LOOPBACK = "http://127.0.0.1:8765"
+
+
 def test_rejects_non_loopback(monkeypatch):
     monkeypatch.setenv("STUDIO_HOST", "0.0.0.0")
 
@@ -52,7 +55,7 @@ def test_release_is_idempotent_and_unlocks_file(tmp_path):
 
 
 def test_health_live_returns_live_status():
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOOPBACK) as client:
         response = client.get("/api/health/live")
 
         assert response.status_code == 200
@@ -60,7 +63,7 @@ def test_health_live_returns_live_status():
 
 
 def test_health_ready_fails_closed_without_runtime_prerequisites():
-    with TestClient(app) as client:
+    with TestClient(app, base_url=LOOPBACK) as client:
         response = client.get("/api/health/ready")
 
         assert response.status_code == 503
