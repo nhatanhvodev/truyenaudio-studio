@@ -804,3 +804,46 @@ def test_runner_rejects_naive_now_values(runner: JobRunner) -> None:
             "attempt-a",
             now=naive,
         )
+
+
+def test_enqueue_round_trips_immutable_plan(runner: JobRunner, migrated_engine: Engine) -> None:
+    plan = {
+        "projectId": PROJECT_ID,
+        "profileId": "profile-1",
+        "cloudConsentId": "consent-1",
+        "budgetAuthorizationId": "auth-1",
+        "stage": "translate",
+    }
+
+    job = runner.enqueue(
+        JobKind.TRANSLATE,
+        PROJECT_ID,
+        CHAPTER_ID,
+        "plan-key-1",
+        plan=plan,
+    )
+
+    assert job.plan is not None
+    assert job.plan["profileId"] == "profile-1"
+    assert runner.get(job.id).plan == plan
+
+
+def test_enqueue_plan_is_immutable_across_idempotent_repeat(runner: JobRunner, migrated_engine: Engine) -> None:
+    first = runner.enqueue(
+        JobKind.TRANSLATE,
+        PROJECT_ID,
+        CHAPTER_ID,
+        "plan-key-2",
+        plan={"profileId": "profile-first", "cloudConsentId": "c1", "budgetAuthorizationId": "a1"},
+    )
+    second = runner.enqueue(
+        JobKind.TRANSLATE,
+        PROJECT_ID,
+        CHAPTER_ID,
+        "plan-key-2",
+        plan={"profileId": "profile-second", "cloudConsentId": "c2", "budgetAuthorizationId": "a2"},
+    )
+
+    assert second.id == first.id
+    assert second.plan == first.plan
+    assert second.plan["profileId"] == "profile-first"

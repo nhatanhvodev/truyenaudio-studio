@@ -574,6 +574,7 @@ class Job(MutableMixin, Base):
     project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
     chapter_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("chapters.id"))
     plan_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("execution_snapshots.id"))
+    plan_json: Mapped[dict | None] = mapped_column(JSON)
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     progress_current: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

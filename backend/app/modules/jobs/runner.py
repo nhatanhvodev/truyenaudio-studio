@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Callable
@@ -64,6 +67,7 @@ class JobView:
     result_artifact_id: str | None
     error_code: str | None
     error_summary: str | None
+    plan: Mapping[str, object] | None = None
 
 
 @dataclass(frozen=True)
@@ -97,11 +101,12 @@ class JobRunner:
         chapter_id: str | None,
         idempotency_key: str,
         priority: int = 100,
+        plan: Mapping[str, object] | None = None,
     ) -> JobView:
         now = datetime.now(UTC)
         job_id = self._id_factory()
         with self.engine.begin() as connection:
-            connection.execute(
+            insert_result = connection.execute(
                 text(
                     """
                     INSERT OR IGNORE INTO jobs
@@ -123,6 +128,15 @@ class JobRunner:
                     "now": now.isoformat(),
                 },
             )
+            if plan is not None and insert_result.rowcount > 0:
+                connection.execute(
+                    text("UPDATE jobs SET plan_json = :plan, updated_at = :now WHERE id = :id"),
+                    {
+                        "plan": _dump_plan(plan),
+                        "now": now.isoformat(),
+                        "id": job_id,
+                    },
+                )
             row = connection.execute(
                 text(
                     """
@@ -929,7 +943,29 @@ def _job_view(row: RowMapping) -> JobView:
         result_artifact_id=row["result_artifact_id"],
         error_code=row["error_code"],
         error_summary=row["error_summary"],
+        plan=_parse_plan(row.get("plan_json")),
     )
+
+
+def _dump_plan(plan: Mapping[str, object] | None) -> str | None:
+    if plan is None:
+        return None
+    return json.dumps(dict(plan), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _parse_plan(value: object) -> Mapping[str, object] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, dict):
+            return parsed
+    return None
 
 
 def _parse_dt(value: object) -> datetime | None:
