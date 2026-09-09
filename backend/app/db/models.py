@@ -245,6 +245,9 @@ class StoryMemoryEntry(MutableMixin, Base):
     valid_from_ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     valid_to_ordinal: Mapped[int | None] = mapped_column(Integer)
     revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="APPROVED", server_default="APPROVED")
+    source_run_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("translation_runs.id"))
+    evidence_segment_ids_json: Mapped[list[str] | None] = mapped_column(JSON)
 
 
 class TranslationStyle(MutableMixin, Base):

@@ -31,7 +31,6 @@ from app.db.models import (
     QaIssue,
     SourceRevision,
     SourceSegment,
-    StoryMemoryEntry,
     TranslationRun,
     TranslationSegment,
 )
@@ -42,6 +41,7 @@ from app.modules.translation.glossary import (
     locked_rules_for_chapter,
 )
 from app.modules.translation.qa import QaIssueDraft, run_deterministic_qa
+from app.modules.translation.story_memory import StoryMemoryService
 from app.modules.translation.translation_memory import exact_match, record_approved_run
 
 
@@ -752,23 +752,7 @@ class TranslationWorkflow:
         )
 
     def _story_memory(self, project_id: str, ordinal: int) -> tuple[str, ...]:
-        rows = self.session.scalars(
-            select(StoryMemoryEntry)
-            .where(
-                StoryMemoryEntry.project_id == project_id,
-                StoryMemoryEntry.valid_from_ordinal <= ordinal,
-                (
-                    StoryMemoryEntry.valid_to_ordinal.is_(None)
-                    | (StoryMemoryEntry.valid_to_ordinal >= ordinal)
-                ),
-            )
-            .order_by(
-                StoryMemoryEntry.entity_key,
-                StoryMemoryEntry.revision_no,
-                StoryMemoryEntry.id,
-            )
-        ).all()
-        return tuple(row.summary for row in rows)
+        return StoryMemoryService(self.session).summaries_for(project_id, ordinal)
 
 
 def _translation_cache_key(
