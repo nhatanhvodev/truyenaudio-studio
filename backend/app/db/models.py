@@ -266,6 +266,26 @@ class TranslationStyle(MutableMixin, Base):
     prompt_template_version: Mapped[str] = mapped_column(String(64), nullable=False, default="prompt-builder.v1")
 
 
+class TranslationMemoryEntry(MutableMixin, Base):
+    __tablename__ = "translation_memory"
+    __table_args__ = (
+        hash_constraint("source_hash"),
+        hash_constraint("glossary_hash"),
+        Index("ix_translation_memory_project_source", "project_id", "source_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_text: Mapped[str] = mapped_column(Text, nullable=False)
+    target_text: Mapped[str] = mapped_column(Text, nullable=False)
+    source_language: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_language: Mapped[str] = mapped_column(String(32), nullable=False)
+    style_revision_id: Mapped[str | None] = mapped_column(String(36))
+    glossary_hash: Mapped[str | None] = mapped_column(String(64))
+    approved_run_id: Mapped[str] = mapped_column(UUID, ForeignKey("translation_runs.id"), nullable=False)
+
+
 class TranslationRun(MutableMixin, Base):
     __tablename__ = "translation_runs"
     __table_args__ = (

@@ -42,6 +42,7 @@ from app.modules.translation.glossary import (
     locked_rules_for_chapter,
 )
 from app.modules.translation.qa import QaIssueDraft, run_deterministic_qa
+from app.modules.translation.translation_memory import exact_match, record_approved_run
 
 
 PROMPT_VERSION = "translation-v1"
@@ -183,6 +184,19 @@ class TranslationWorkflow:
             )
             cached = self._cached_segment(cache_key)
             if cached is None:
+                tm_match = exact_match(
+                    self.session,
+                    project_id=project.id,
+                    source_text=source_segment.source_text,
+                    source_language=project.default_language,
+                    target_language=project.target_language,
+                    glossary_hash=glossary_hash,
+                )
+                tm_list = (
+                    ((tm_match.source_text, tm_match.target_text),)
+                    if tm_match is not None
+                    else ()
+                )
                 result = self._translate_segment(
                     provider,
                     project,
@@ -194,6 +208,7 @@ class TranslationWorkflow:
                     estimated_units,
                     cloud_consent_id=cloud_consent_id,
                     budget_authorization_id=budget_authorization_id,
+                    tm_list=tm_list,
                 )
                 target_text = result.target_text
                 provider_request_id = _provider_request_id(result)
@@ -360,6 +375,7 @@ class TranslationWorkflow:
                 ),
             )
         )
+        record_approved_run(self.session, run.id, id_factory=self.id_factory)
         self.session.commit()
         return self._run_view(run.id)
 
@@ -421,6 +437,7 @@ class TranslationWorkflow:
         estimated_units: int,
         cloud_consent_id: str | None,
         budget_authorization_id: str | None,
+        tm_list: tuple[tuple[str, str], ...] = (),
     ) -> TranslationResult:
         request = TranslationRequest(
             context=OperationContext(
@@ -436,7 +453,7 @@ class TranslationWorkflow:
             source_language=project.default_language,
             target_language=project.target_language,
             terms=locked_terms,
-            tm_list=(),
+            tm_list=tm_list,
             domain_instruction=project.style_guide_text or "",
             story_memory=story_memory,
         )
