@@ -72,3 +72,10 @@ Validation for round 5: RED first produced 4 static fallback failures for API-sh
 - Diagnostics text redaction now redacts query parameters whose decoded key matches the shared normalized secret-key classifier, including `x-goog-api-key`, `google_api_key`, `authorization`, `credential`, `password`, and nested encoded `api%254Bey`.
 
 Validation for round 6: reviewer r6 reported one P1 and two P2 repros. RED added those repros and produced 12 failures. After remediation, the regression group passed 21 tests, the expanded S02 backend set passed 125 tests, targeted Ruff passed, and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.
+
+## S02 round 7 remediation
+
+- The shared secret-key classifier now considers bounded percent-decoded key candidates before normalization. Encoded structured keys such as `api%254Bey`, `x%252Dgoog%252Dapi%252Dkey`, `google%255Fapi%255Fkey`, and `authoriz%2561tion` are classified as secret-bearing keys.
+- Profile config create/patch checks, legacy profile payload redaction, and structured diagnostics redaction all inherit the encoded-key handling through the shared classifier.
+
+Validation for round 7: reviewer r7 reported one P2 encoded structured/config secret-key bypass. Targeted encoded-key regression tests passed 20 tests, the expanded S02 backend set passed 127 tests, targeted Ruff passed, and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.

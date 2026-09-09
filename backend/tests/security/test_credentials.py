@@ -674,13 +674,16 @@ def test_cloud_profile_config_rejects_nested_secret_keys_and_redacts_legacy_valu
     assert _contains_secret_key({"headers": [{"access_token": "secret"}]})
     assert _contains_secret_key({"headers": {"Authorization": "Bearer secret", "credential": "secret"}})
     assert _contains_secret_key({"x-goog-api-key": "secret", "google_api_key": "secret", "Bearer": "secret"})
+    assert _contains_secret_key({"api%254Bey": "secret", "authoriz%2561tion": "secret"})
+    assert _contains_secret_key({"headers": {"x%252Dgoog%252Dapi%252Dkey": "secret"}})
     assert _safe_config(
         {
             "provider": "gemini",
             "apiKey": "secret",
+            "api%254Bey": "secret",
             "google_api_key": "secret",
             "headers": {"Authorization": "Bearer secret", "credential": "secret", "safe": "value"},
-            "nested": {"token": "secret", "x": 1},
+            "nested": {"token": "secret", "google%255Fapi%255Fkey": "secret", "x": 1},
         }
     ) == {
         "provider": "gemini",
@@ -697,6 +700,8 @@ def test_cloud_profile_config_rejects_nested_secret_keys_and_redacts_legacy_valu
         ({"headers": {"x-goog-api-key": "config-secret"}}, "config-secret"),
         ({"google_api_key": "config-secret"}, "config-secret"),
         ({"headers": {"Bearer": "config-secret"}}, "config-secret"),
+        ({"api%254Bey": "config-secret"}, "config-secret"),
+        ({"headers": {"authoriz%2561tion": "Bearer config-secret"}}, "config-secret"),
     ],
 )
 def test_profile_config_rejects_sensitive_header_variants_without_echoing(
@@ -740,6 +745,7 @@ def test_profile_response_redacts_legacy_sensitive_config_keys(settings, migrate
             "headers": {"Authorization": f"Bearer {legacy_secret}", "credential": legacy_secret, "safe": "value"},
             "x-goog-api-key": legacy_secret,
             "google_api_key": legacy_secret,
+            "api%254Bey": legacy_secret,
             "safe": True,
         },
         enabled=False,

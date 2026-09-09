@@ -124,6 +124,7 @@ def test_scrubber_redacts_normalized_credential_and_bearer_keys_in_structured_lo
             provider={
                 "x_credential": secret,
                 "X-Bearer": secret,
+                "api%254Bey": secret,
                 "nested": {"bearerToken": secret, "safe": "value"},
             }
         )
