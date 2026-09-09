@@ -1,7 +1,11 @@
 export { Button } from './Button';
 export { Input } from './Input';
 export { Modal } from './Modal';
+export { Progress } from './Progress';
 export { Select } from './Select';
+export { Table } from './Table';
 export { Tabs } from './Tabs';
+export { Toast } from './Toast';
+export { Tooltip } from './Tooltip';
 export { colors, font, radius, spacing } from './tokens';
 export type { UiTheme } from './tokens';
