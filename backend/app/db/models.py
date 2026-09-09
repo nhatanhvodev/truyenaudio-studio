@@ -247,6 +247,25 @@ class StoryMemoryEntry(MutableMixin, Base):
     revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class TranslationStyle(MutableMixin, Base):
+    __tablename__ = "translation_styles"
+    __table_args__ = (
+        Index("ix_translation_styles_project_active", "project_id", "revision_no"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    project_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("projects.id"))
+    revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersedes_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("translation_styles.id"))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    genre: Mapped[str] = mapped_column(String(64), nullable=False)
+    tone: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_language: Mapped[str] = mapped_column(String(32), nullable=False)
+    target_language: Mapped[str] = mapped_column(String(32), nullable=False)
+    user_instruction: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    prompt_template_version: Mapped[str] = mapped_column(String(64), nullable=False, default="prompt-builder.v1")
+
+
 class TranslationRun(MutableMixin, Base):
     __tablename__ = "translation_runs"
     __table_args__ = (
