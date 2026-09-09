@@ -1,6 +1,6 @@
-# Task 19 / U01 report — part 1 (PARTIAL)
+# Task 19 / U01 report — parts 1–2 (PARTIAL)
 
-Status: PARTIAL — tokens + Button/Input/Select shipped; remaining primitives in later parts.
+Status: PARTIAL — tokens + Button/Input/Select/Modal/Tabs shipped; remaining primitives in later parts.
 
 ## Delivered (part 1)
 
@@ -10,13 +10,18 @@ Status: PARTIAL — tokens + Button/Input/Select shipped; remaining primitives i
 - `frontend/src/shared/ui/Select.tsx`: labelled select with options and the same error/aria contract.
 - Barrel `index.ts` export + `ui.test.tsx` (5 RTL tests).
 
+## Delivered (part 2)
+
+- `Modal.tsx`: `role="dialog"` + `aria-modal` + labelled title, Escape-to-close, overlay click close, close button, focus into panel, focus returns to the previously focused element on close.
+- `Tabs.tsx`: `tablist/tab/tabpanel` semantics, `aria-selected`/`aria-controls`/`aria-labelledby`, roving `tabIndex`, ArrowLeft/Right/Home/End keyboard navigation.
+- Barrel exports + `modal-tabs.test.tsx` (5 RTL tests: dialog open/close/Escape, tabs selection/keyboard/panel switch).
+
 ## Remaining for U01 acceptance (later parts)
 
-- Combobox/Modal/Drawer/Tooltip/Toast/Tabs/Table/Tree/Progress primitives; global stylesheet wiring; full component interaction + contrast + keyboard/focus-return + light/dark audit at U01 close (visual check per acceptance).
+- Combobox/Drawer/Tooltip/Toast/Table/Tree/Progress primitives; global stylesheet wiring; full component interaction + contrast + keyboard/focus-return + light/dark audit at U01 close (visual check per acceptance).
 
-## Validation (part 1)
+## Validation
 
-- `npx vitest run src/shared/ui` — 5 passed.
-- Full frontend suite: `npm test -- --run` — 10 files / 27 tests passed.
-- Production build `npm run build` — tsc + Vite PASS (dist emitted).
-- No backend or provider/cloud change in this part.
+- `npx vitest run src/shared/ui` — 10 passed (5 + 5).
+- Full frontend suite: `npm test -- --run` and production build `npm run build` recorded before commit.
+- No backend or provider/cloud change in these parts.
