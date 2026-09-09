@@ -558,6 +558,20 @@ class ExecutionSnapshot(CreatedAtMixin, Base):
     payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
+class BreakerState(Base):
+    """Persisted circuit-breaker state per provider/profile/model key (J02)."""
+
+    __tablename__ = "breaker_states"
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    opened_at: Mapped[object | None] = mapped_column(TZDateTime)
+    cooldown_until: Mapped[object | None] = mapped_column(TZDateTime)
+    updated_at: Mapped[object] = mapped_column(TZDateTime, default=utc_now, nullable=False)
+
+
 class Job(MutableMixin, Base):
     __tablename__ = "jobs"
     __table_args__ = (
