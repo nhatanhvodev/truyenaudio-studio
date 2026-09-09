@@ -122,21 +122,35 @@ def _run_guarded_translate(
     cloud_consent_id: str,
     budget_authorization_id: str,
 ) -> None:
-    if provider == "qwen":
-        from app.api.translation import _qwen_workflow
+    def dispatch() -> None:
+        if provider == "qwen":
+            from app.api.translation import _qwen_workflow
 
-        with _qwen_workflow(settings, chapter_id, profile_id) as workflow:
+            with _qwen_workflow(settings, chapter_id, profile_id) as workflow:
+                workflow.enqueue_translation(
+                    chapter_id,
+                    cloud_consent_id=cloud_consent_id,
+                    budget_authorization_id=budget_authorization_id,
+                )
+            return
+        from app.api.translation import _gemini_workflow
+
+        with _gemini_workflow(settings, chapter_id, profile_id) as workflow:
             workflow.enqueue_translation(
                 chapter_id,
                 cloud_consent_id=cloud_consent_id,
                 budget_authorization_id=budget_authorization_id,
             )
-        return
-    from app.api.translation import _gemini_workflow
 
-    with _gemini_workflow(settings, chapter_id, profile_id) as workflow:
-        workflow.enqueue_translation(
-            chapter_id,
-            cloud_consent_id=cloud_consent_id,
-            budget_authorization_id=budget_authorization_id,
-        )
+    engine = create_engine_for(_database_path(settings, None))
+    try:
+        with session_factory(engine)() as session:
+            from app.modules.execution.breaker import with_breaker
+
+            with_breaker(
+                session,
+                scope_key=f"provider:{provider}:profile:{profile_id}",
+                fn=dispatch,
+            )
+    finally:
+        engine.dispose()

@@ -84,3 +84,34 @@ def test_breaker_state_persists_across_instances(db_session) -> None:
     fresh = CircuitBreaker(db_session, KEY, clock=lambda: NOW)
     with pytest.raises(BreakerOpen):
         fresh.allow()
+
+
+def test_with_breaker_gates_dispatch_and_counts_failures(db_session) -> None:
+    from app.modules.execution.breaker import with_breaker
+
+    calls = {"count": 0}
+
+    def failing() -> object:
+        calls["count"] += 1
+        raise RuntimeError("provider rejected")
+
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            with_breaker(db_session, KEY, failing, threshold=3)
+
+    with pytest.raises(BreakerOpen):
+        with_breaker(db_session, KEY, failing, threshold=3)
+
+    assert calls["count"] == 3
+    assert CircuitBreaker(db_session, KEY, clock=lambda: NOW).snapshot()["state"] == "OPEN"
+
+
+def test_with_breaker_closes_after_success(db_session) -> None:
+    from app.modules.execution.breaker import with_breaker
+
+    def ok() -> object:
+        return "ok"
+
+    result = with_breaker(db_session, KEY + ":ok", ok)
+    assert result == "ok"
+    assert CircuitBreaker(db_session, KEY + ":ok", clock=lambda: NOW).snapshot()["state"] == "CLOSED"

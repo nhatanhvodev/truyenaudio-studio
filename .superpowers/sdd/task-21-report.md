@@ -1,23 +1,25 @@
-# Task 21 / J02 report — round 1 (PARTIAL)
+# Task 21 / J02 report — rounds 1–2a (PARTIAL)
 
-Status: PARTIAL — persisted circuit breaker done; retry/cancel re-quote wiring under worker tracked as round 2.
+Status: PARTIAL — persisted breaker + dispatch gate helper wired into the cloud TRANSLATE handler; retry-policy fault matrix under worker remains.
 
 ## Delivered (round 1)
 
-- `breaker_states` table (additive migration `0014`) + `BreakerState` model: per scope-key (provider/profile/model) state with consecutive failures, opened_at, cooldown_until.
-- `modules/execution/breaker.py`: `CircuitBreaker(session, scope_key, threshold=5, cooldown_seconds=60, clock, id_factory)`:
-  - `allow()` raises `BreakerOpen` (code `PROVIDER_CIRCUIT_OPEN`) while OPEN inside cooldown; after cooldown the next probe flips to HALF_OPEN and is allowed once; a second allow while HALF_OPEN is rejected (single probe per cycle).
-  - `record_failure()` increments and opens/reopens at threshold or on a half-open failure; `record_success()` resets to CLOSED.
-  - State is DB-persisted and read by later instances (survives worker restarts).
-- Tests (4): close→open at threshold, cooldown→half-open→success closes, half-open failure reopens, persistence across instances.
+- `breaker_states` table (additive migration `0014`) + `BreakerState` model: per scope-key state with consecutive failures, opened_at, cooldown_until.
+- `modules/execution/breaker.py` `CircuitBreaker`: CLOSED→OPEN at threshold (`PROVIDER_CIRCUIT_OPEN`), HALF_OPEN single probe after cooldown, success closes/failure reopens, state survives restarts.
+- Tests (4): open-at-threshold, cooldown→half→close, half-fail reopen, persistence.
 
-## Remaining for J02 acceptance (round 2)
+## Delivered (round 2a)
 
-- Wire breaker + retry policy into the worker/execution dispatch (shared persisted policy, Retry-After/deadline, cancel safe point p95 ≤5 s at checkpoint, billingUnknown never resend/fallback) with fault-matrix tests; re-quote/re-guard on fallback.
+- `with_breaker(session, scope_key, fn, ...)`: dispatch gate that rejects before invoking `fn` while open and records success/failure; used by the worker TRANSLATE handler's qwen/gemini cloud paths (`scope provider:<p>:profile:<id>`); local fake path stays breaker-free (deterministic local).
+- Tests added: gate counts failures then raises `BreakerOpen` without further `fn` calls; success closes the circuit (total 6 breaker tests).
 
-## Validation (round 1)
+## Remaining for J02 acceptance
 
-- `backend/tests/execution/test_circuit_breaker.py backend/tests/db/test_schema.py -q` — 22 passed (incl. schema parity + migration round-trip).
-- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 621 passed, 1 warning (pre-existing SQLAlchemy FK-cycle sort warning), exit 0.
+- Retry policy at the worker boundary (Retry-After/deadline/attempt cap, cancel safe-point p95 at checkpoint, `billingUnknown` never resend/fallback) with a fault matrix; re-quote/re-guard on fallback.
+
+## Validation
+
+- `backend/tests/execution/test_circuit_breaker.py backend/tests/execution backend/tests/jobs -q` — 80 passed.
+- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 623 passed, 1 warning (pre-existing SQLAlchemy FK-cycle sort warning), exit 0.
 - Changed-file Ruff passed.
 - No provider/cloud call added.

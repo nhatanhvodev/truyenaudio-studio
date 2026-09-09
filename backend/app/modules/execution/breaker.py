@@ -122,3 +122,36 @@ def _parse(value: object) -> datetime:
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value)).astimezone(UTC)
+
+
+def with_breaker(
+    session: Session,
+    scope_key: str,
+    fn: Callable[[], object],
+    *,
+    threshold: int = 5,
+    cooldown_seconds: int = 60,
+    clock: Callable[[], datetime] | None = None,
+    id_factory: Callable[[], str] = new_id,
+) -> object:
+    """Run ``fn`` behind a persisted breaker for one dispatch.
+
+    Rejects with ``BreakerOpen`` before invoking ``fn`` while the circuit is
+    open; records success/failure so consecutive failures open the circuit.
+    """
+    breaker = CircuitBreaker(
+        session,
+        scope_key,
+        threshold=threshold,
+        cooldown_seconds=cooldown_seconds,
+        clock=clock,
+        id_factory=id_factory,
+    )
+    breaker.allow()
+    try:
+        result = fn()
+    except Exception:
+        breaker.record_failure()
+        raise
+    breaker.record_success()
+    return result
