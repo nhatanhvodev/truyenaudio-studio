@@ -32,6 +32,9 @@ def test_api_rejects_noncanonical_host_and_unknown_or_encoded_paths(settings) ->
         "authorization=Bearer+secret-value",
         "authorization-header=Bearer+secret-value",
         "token=secret-value",
+        "api%254Bey=secret-value",
+        "x%252Dgoog%252Dapi%252Dkey=secret-value",
+        "authoriz%2561tion=Bearer+secret-value",
     ],
 )
 def test_api_rejects_secret_query_parameter_variants(settings, query: str) -> None:

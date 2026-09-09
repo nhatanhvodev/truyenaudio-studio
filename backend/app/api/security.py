@@ -4,7 +4,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.routing import Match
 from starlette.responses import JSONResponse
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, unquote
 
 from app.settings.csrf import CsrfService, LOOPBACK_HOST, STATE_CHANGING_METHODS
 
@@ -28,7 +28,7 @@ def install_csrf_middleware(app: FastAPI, csrf: CsrfService) -> None:
 
     @app.middleware("http")
     async def require_csrf(request: Request, call_next):
-        if _is_api_path(request.url.path):
+        if _targets_api_boundary(request):
             if not _is_canonical_api_request(app, request):
                 return JSONResponse({"detail": "API_ROUTE_NOT_FOUND"}, status_code=404)
             if request.headers.get("host") != LOOPBACK_HOST:
@@ -45,7 +45,7 @@ def _is_canonical_api_request(app: FastAPI, request: Request) -> bool:
         return False
     if b"%" in raw_path or b"\\" in raw_path or b".." in raw_path:
         return False
-    if any(_is_secret_query_key(key) for key, _value in parse_qsl(request.url.query, keep_blank_values=True)):
+    if any(_is_forbidden_query_key(key) for key, _value in parse_qsl(request.url.query, keep_blank_values=True)):
         return False
     return any(
         getattr(route, "path", "").startswith("/api")
@@ -54,8 +54,30 @@ def _is_canonical_api_request(app: FastAPI, request: Request) -> bool:
     )
 
 
+def _targets_api_boundary(request: Request) -> bool:
+    raw_path = request.scope.get("raw_path", b"")
+    candidates = [request.url.path]
+    if isinstance(raw_path, bytes):
+        candidates.append(raw_path.decode("latin-1"))
+    return any(_is_api_path(candidate) for candidate in candidates)
+
+
 def _is_api_path(path: str) -> bool:
-    return path == "/api" or path.startswith("/api/")
+    normalized = _decode_percent_repeatedly(path).replace("\\", "/").casefold()
+    return normalized == "/api" or normalized.startswith("/api/")
+
+
+def _decode_percent_repeatedly(value: str) -> str:
+    for _round in range(4):
+        decoded = unquote(value)
+        if decoded == value:
+            return decoded
+        value = decoded
+    return value
+
+
+def _is_forbidden_query_key(key: str) -> bool:
+    return "%" in key or _is_secret_query_key(key)
 
 
 def _is_secret_query_key(key: str) -> bool:

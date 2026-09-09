@@ -56,3 +56,11 @@ Validation for round 3: RED exposed one incorrect readiness expectation in the n
 - Test coverage includes POST/PATCH non-echo rejection, accepted Gemini/Qwen/OpenRouter-style identifiers, direct Gemini constructor rejection before credential lookup, legacy Gemini profile rejection before dispatch, and structured JSONL/stream redaction variants.
 
 Validation for round 4: RED first produced one diagnostics log failure and 12 model-boundary failures. After the implementation, `pytest tests/diagnostics/test_redaction.py tests/security/test_credentials.py tests/providers/test_gemini_mt_security.py -q` passed 58 tests; targeted Ruff and `git diff --check` passed. Frontend was unchanged and not rerun. Paid-cloud smoke remains `NOT_RUN`.
+
+## S02 round 5 remediation
+
+- API boundary detection now checks both the decoded request path and raw ASGI path, repeatedly percent-decodes with a fixed bound, normalizes backslashes to slashes, and case-folds only for boundary targeting. API-shaped paths such as `/api\health/ready`, encoded/double-encoded backslashes, encoded `api`, and `/API/...` are intercepted by middleware and rejected by the canonical API guard instead of reaching the SPA fallback.
+- Secret query detection now rejects parsed query keys that still contain `%`, closing nested percent-encoding bypasses such as `api%254Bey`, `x%252Dgoog%252Dapi%252Dkey`, and `authoriz%2561tion` while leaving non-secret identifiers such as `cursor` and `id` routable.
+- Static UI regression coverage proves valid frontend routes still receive the SPA `index.html`, while API-shaped malformed routes receive `404`.
+
+Validation for round 5: RED first produced 4 static fallback failures for API-shaped paths. After the implementation, `pytest backend\tests\api\test_static_ui.py backend\tests\security\test_api_boundary.py -q` passed 25 tests, the expanded S02 backend set passed 105 tests, targeted Ruff passed, and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.
