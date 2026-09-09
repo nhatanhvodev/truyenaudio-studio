@@ -45,23 +45,35 @@ def run_probe(
         http_client = httpx.Client()
 
     payload = {
-        "segments": [{"segment_id": "seg-001", "source_sha256": hashlib.sha256(b"synthetic segment").hexdigest()}],
-        "terms": [{"source": "ten rieng", "target": "ten rieng"}],
-        "tm_list": [{"source_sha256": hashlib.sha256(b"old").hexdigest(), "target": "ban dich cu"}],
-        "domain": "Vietnamese audiobook translation POC",
+        "model": gate["model"],
+        "input": {
+            "messages": [{"role": "user", "content": "你好，世界。这是一次连接测试。"}]
+        },
+        "parameters": {
+            "result_format": "message",
+            "translation_options": {
+                "source_lang": "zh",
+                "target_lang": "vi",
+            },
+        },
     }
     response = http_client.post(
         "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
         json=payload,
-        headers={"Authorization": f"Bearer {api_key}"},
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         timeout=30,
     )
     response.raise_for_status()
     body = response.json()
-    translations = body.get("translations")
+    output = body.get("output")
+    choices = output.get("choices") if isinstance(output, dict) else None
     usage = body.get("usage")
-    if not isinstance(translations, list) or not translations:
-        return {"status": "error", "error_code": "PROVIDER_SCHEMA", "reason": "missing translations"}
+    content = None
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        message = choices[0].get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+    if not isinstance(content, str) or not content.strip():
+        return {"status": "error", "error_code": "PROVIDER_SCHEMA", "reason": "missing output choices message content"}
     if not isinstance(usage, dict):
         return {"status": "error", "error_code": "PROVIDER_SCHEMA", "reason": "missing usage"}
 

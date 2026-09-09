@@ -9,11 +9,13 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
+import httpx
+
 from app.modules.execution.contracts import BillingState
 
 
 @dataclass
-class ProviderTransportError(Exception):
+class ProviderTransportError(RuntimeError):
     code: str
     message: str
     retryable: bool
@@ -21,7 +23,7 @@ class ProviderTransportError(Exception):
     status_code: int | None = None
 
     def __post_init__(self) -> None:
-        Exception.__init__(self, self.message)
+        RuntimeError.__init__(self, self.message)
 
 
 def normalize_http_error(status_code: int, detail: str, *, request_sent: bool) -> ProviderTransportError:
@@ -44,14 +46,14 @@ def normalize_transport_exception(exc: BaseException, *, request_started: bool) 
             False,
             BillingState.UNKNOWN if request_started else BillingState.NOT_SENT,
         )
-    if isinstance(exc, TimeoutError):
+    if isinstance(exc, (TimeoutError, httpx.TimeoutException)):
         return ProviderTransportError(
             "PROVIDER_TIMEOUT",
             "provider request timed out",
             True,
             BillingState.UNKNOWN if request_started else BillingState.NOT_SENT,
         )
-    if isinstance(exc, (ConnectionError, OSError)):
+    if isinstance(exc, (ConnectionError, OSError, httpx.TransportError)):
         return ProviderTransportError(
             "PROVIDER_NETWORK",
             "provider network error",
@@ -71,6 +73,23 @@ def bearer_json_headers(token: str, *, extra: Mapping[str, str] | None = None) -
         raise ProviderTransportError("PROVIDER_AUTH_MISSING", "provider credential missing", False, BillingState.NOT_SENT)
     headers = {
         "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    headers.update(extra or {})
+    return headers
+
+
+def api_key_json_headers(
+    header_name: str,
+    token: str,
+    *,
+    extra: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    if not token.strip():
+        raise ProviderTransportError("PROVIDER_AUTH_MISSING", "provider credential missing", False, BillingState.NOT_SENT)
+    headers = {
+        header_name: token,
         "Content-Type": "application/json",
         "Accept": "application/json",
     }

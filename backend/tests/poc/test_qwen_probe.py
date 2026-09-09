@@ -141,10 +141,11 @@ class _Response:
 
     def json(self) -> dict[str, Any]:
         return {
-            "translations": [{"segment_id": "seg-001", "target_text": "Ban dich mau"}],
+            "output": {
+                "choices": [{"message": {"role": "assistant", "content": "Ban dich mau"}}]
+            },
             "usage": {"input_tokens": 10, "output_tokens": 8},
-            "model": "qwen-mt-flash",
-            "provider_version": "2026-08-19",
+            "request_id": "poc-req-001",
         }
 
 
@@ -241,8 +242,11 @@ def test_qwen_probe_valid_gate_makes_exactly_one_redacted_batch_call(
     assert result["status"] == "ok"
     assert len(http.calls) == 1
     assert http.calls[0]["headers"]["Authorization"] == "Bearer secret-value"
-    assert "terms" in http.calls[0]["json"]
-    assert "tm_list" in http.calls[0]["json"]
-    assert "domain" in http.calls[0]["json"]
+    call_json = http.calls[0]["json"]
+    assert call_json["input"]["messages"][0]["role"] == "user"
+    assert call_json["input"]["messages"][0]["content"]
+    assert call_json["parameters"]["translation_options"]["source_lang"] == "zh"
+    assert call_json["parameters"]["translation_options"]["target_lang"] == "vi"
+    assert "system" not in str(call_json)
     assert "source_text" not in str(result)
     assert "secret-value" not in str(result)

@@ -1,15 +1,22 @@
 {
-  "request_id": "qwen-req-001",
-  "translations": [
-    {
-      "segment_id": "seg-001",
-      "target_text": "Co ay mo cua."
-    }
-  ],
+  "output": {
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "message": {
+          "role": "assistant",
+          "content": "Co ay mo cua."
+        }
+      }
+    ]
+  },
   "usage": {
     "input_tokens": 21,
-    "output_tokens": 9
+    "output_tokens": 9,
+    "total_tokens": 30
   },
-  "model": "qwen-mt-flash",
-  "provider_version": "2026-08-19"
+  "request_id": "qwen-req-001",
+  "wireSource": "https://www.alibabacloud.com/help/en/model-studio/machine-translation",
+  "wireFetchedAt": "2026-09-09",
+  "modelRevision": "qwen-mt-flash (DashScope Generation result_format=message)"
 }

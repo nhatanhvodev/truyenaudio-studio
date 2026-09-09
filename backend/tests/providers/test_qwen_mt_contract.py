@@ -9,7 +9,9 @@ import pytest
 
 from app.contracts import OperationContext, TranslationRequest, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked, CloudCallDecision
+from app.modules.execution.contracts import BillingState
 from app.providers.qwen_mt import ProviderBillingUnknown, QwenMtAdapter, Secret
+from app.providers.transport import ProviderTransportError
 
 
 @pytest.fixture
@@ -39,6 +41,24 @@ def http_fixture() -> HttpFixture:
     return HttpFixture(Path(__file__).parents[1] / "fixtures" / "qwen_translation.json")
 
 
+def _replace_languages(
+    request: TranslationRequest,
+    source_language: str,
+    target_language: str,
+) -> TranslationRequest:
+    return TranslationRequest(
+        context=request.context,
+        source_segment_id=request.source_segment_id,
+        source_text=request.source_text,
+        source_language=source_language,
+        target_language=target_language,
+        terms=request.terms,
+        tm_list=request.tm_list,
+        domain_instruction=request.domain_instruction,
+        story_memory=request.story_memory,
+    )
+
+
 @pytest.mark.asyncio
 async def test_qwen_maps_terms_tm_usage(http_fixture, translation_request) -> None:
     adapter = QwenMtAdapter(
@@ -59,13 +79,75 @@ async def test_qwen_maps_terms_tm_usage(http_fixture, translation_request) -> No
     assert result.usage[0].unit == UsageUnit.INPUT_TOKEN.value
     assert result.usage[0].measured_units == 21
     assert result.usage[1].unit == UsageUnit.OUTPUT_TOKEN.value
-    assert http_fixture.last_json["translation_options"]["terms"] == [{"source": "门", "target": "cua"}]
-    assert http_fixture.last_json["translation_options"]["tm_list"] == [
-        {"source": "她打开门。", "target": "Co ay mo cua."}
-    ]
-    assert http_fixture.last_json["translation_options"]["domain"] == "Tien hiep, giu xung ho nhat quan."
+    payload = http_fixture.last_json
+    options = payload["parameters"]["translation_options"]
+    assert options["source_lang"] == "zh"
+    assert options["target_lang"] == "vi"
+    assert options["terms"] == [{"source": "门", "target": "cua"}]
+    assert options["tm_list"] == [{"source": "她打开门。", "target": "Co ay mo cua."}]
+    assert "domains" not in options
+    assert payload["parameters"]["result_format"] == "message"
+    assert payload["input"]["messages"] == [{"role": "user", "content": "她打开门。"}]
+    assert "system" not in json.dumps(payload)
     assert http_fixture.last_headers["Authorization"] == "Bearer x"
     assert http_fixture.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_language", "target_language", "expected_source", "expected_target"),
+    [
+        ("zh-CN", "vi-VN", "zh", "vi"),
+        ("zh", "vi", "zh", "vi"),
+        ("zh-Hans", "vi", "zh", "vi"),
+        ("zh-TW", "zh", "zh_tw", "zh"),
+        ("zh-Hant", "en", "zh_tw", "en"),
+    ],
+)
+async def test_qwen_maps_app_language_tags_to_official_codes(
+    http_fixture,
+    translation_request,
+    source_language: str,
+    target_language: str,
+    expected_source: str,
+    expected_target: str,
+) -> None:
+    request = _replace_languages(translation_request, source_language, target_language)
+    adapter = QwenMtAdapter(
+        http_fixture.client,
+        "qwen-mt-flash",
+        "frankfurt",
+        Secret("x"),
+        cloud_guard=AllowingGuard(),
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+
+    result = await adapter.translate(request)
+
+    assert result.target_text == "Co ay mo cua."
+    options = http_fixture.last_json["parameters"]["translation_options"]
+    assert options["source_lang"] == expected_source
+    assert options["target_lang"] == expected_target
+
+
+@pytest.mark.asyncio
+async def test_qwen_rejects_unsupported_language_before_http(http_fixture, translation_request) -> None:
+    request = _replace_languages(translation_request, "xx-XX", "vi-VN")
+    adapter = QwenMtAdapter(
+        http_fixture.client,
+        "qwen-mt-flash",
+        "frankfurt",
+        Secret("x"),
+        cloud_guard=AllowingGuard(),
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+
+    with pytest.raises(ValueError, match="QWEN_LANGUAGE_UNSUPPORTED:xx-XX"):
+        await adapter.translate(request)
+
+    assert http_fixture.calls == 0
 
 
 def test_qwen_rejects_an_arbitrary_endpoint_before_a_bearer_request(translation_request) -> None:
@@ -174,7 +256,7 @@ async def test_qwen_timeout_after_send_marks_billing_unknown_without_retry(trans
         await adapter.translate(translation_request)
 
     assert http.calls == 1
-    assert "她打开门" in http.last_json["segments"][0]["source_text"]
+    assert "她打开门" in http.last_json["input"]["messages"][0]["content"]
     assert "secret-value" not in repr(http.last_json)
 
 
@@ -199,6 +281,64 @@ async def test_qwen_httpx_timeout_or_transport_after_dispatch_marks_billing_unkn
         await adapter.translate(translation_request)
 
     assert http.calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "billing_state", "retryable"),
+    [
+        (400, BillingState.KNOWN, False),
+        (401, BillingState.KNOWN, False),
+        (403, BillingState.KNOWN, False),
+        (404, BillingState.KNOWN, False),
+        (429, BillingState.UNKNOWN, True),
+        (500, BillingState.UNKNOWN, True),
+    ],
+)
+async def test_qwen_http_error_matrix_uses_shared_transport(
+    translation_request,
+    status_code: int,
+    billing_state: BillingState,
+    retryable: bool,
+) -> None:
+    http = StatusHttp(status_code)
+    adapter = QwenMtAdapter(
+        http,
+        "qwen-mt-flash",
+        "frankfurt",
+        Secret("secret-value"),
+        cloud_guard=AllowingGuard(),
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+
+    with pytest.raises(ProviderTransportError) as exc:
+        await adapter.translate(translation_request)
+
+    assert exc.value.code == f"HTTP_{status_code}"
+    assert exc.value.billing_state is billing_state
+    assert exc.value.retryable is retryable
+    assert "secret-value" not in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_qwen_malformed_response_uses_shared_transport_error(translation_request) -> None:
+    http = MalformedJsonHttp()
+    adapter = QwenMtAdapter(
+        http,
+        "qwen-mt-flash",
+        "frankfurt",
+        Secret("secret-value"),
+        cloud_guard=AllowingGuard(),
+        project_id="project-001",
+        provider_profile_id="profile-001",
+    )
+
+    with pytest.raises(ProviderTransportError) as exc:
+        await adapter.translate(translation_request)
+
+    assert exc.value.code == "MALFORMED_RESPONSE"
+    assert exc.value.billing_state is BillingState.UNKNOWN
 
 
 @pytest.mark.asyncio
@@ -263,6 +403,8 @@ class HttpxExceptionHttp:
 
 
 class StubResponse:
+    status_code = 200
+
     def __init__(self, payload: dict[str, Any]) -> None:
         self.payload = payload
 
@@ -271,6 +413,36 @@ class StubResponse:
 
     def json(self) -> dict[str, Any]:
         return self.payload
+
+
+class StatusHttp:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+        self.calls = 0
+
+    async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str], timeout: int):
+        self.calls += 1
+        return StatusResponse(self.status_code)
+
+
+class StatusResponse:
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+    def json(self) -> dict[str, Any]:
+        return {"error": "secret=do-not-leak"}
+
+
+class MalformedJsonHttp:
+    async def post(self, url: str, *, json: dict[str, Any], headers: dict[str, str], timeout: int):
+        return MalformedJsonResponse()
+
+
+class MalformedJsonResponse:
+    status_code = 200
+
+    def json(self) -> dict[str, Any]:
+        raise ValueError("secret=do-not-leak")
 
 
 class DenyingGuard:

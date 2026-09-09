@@ -5,8 +5,8 @@ using an API key from aistudio.google.com.
 from __future__ import annotations
 
 import re
-from typing import Any
 from inspect import isawaitable
+from typing import Any
 
 import httpx
 
@@ -17,8 +17,15 @@ from app.contracts import (
     UsageUnit,
 )
 from app.modules.compliance.cloud import CloudCallBlocked
+from app.modules.execution.contracts import BillingState
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 from app.modules.security.model_identifier import validate_model_identifier
+from app.providers.transport import (
+    ProviderTransportError,
+    api_key_json_headers,
+    normalize_http_error,
+    normalize_transport_exception,
+)
 
 
 DEFAULT_MODEL = "gemini-2.5-flash"
@@ -37,11 +44,11 @@ def normalize_model_name(raw_model: str | None) -> str:
 async def list_models(api_key: str, http_client: httpx.AsyncClient | None = None) -> list[dict[str, Any]]:
     """Fetch available models from Google AI Studio to help users pick the right one."""
     client = http_client or httpx.AsyncClient()
-    response = client.get(GEMINI_API_BASE, headers={"x-goog-api-key": api_key}, timeout=15)
+    response = client.get(GEMINI_API_BASE, headers=api_key_json_headers("x-goog-api-key", api_key), timeout=15)
     if isawaitable(response):
         response = await response
     if response.status_code != 200:
-        return []
+        raise normalize_http_error(response.status_code, "provider error", request_sent=True)
     data = response.json()
     models = data.get("models", [])
     return [
@@ -126,20 +133,21 @@ class GeminiMtAdapter:
                 usage=(),
             )
 
-        if self.cloud_guard and self.project_id and self.provider_profile_id:
-            estimated_usage = (Usage(UsageUnit.CHARACTER.value, request.context.estimated_units),)
-            decision = self.cloud_guard.evaluate(
-                project_id=self.project_id,
-                provider_profile_id=self.provider_profile_id,
-                operation_id=request.context.operation_id,
-                estimated_usage=estimated_usage,
-                category=request.context.billing_category,
-                cloud_consent_id=request.context.cloud_consent_id,
-                budget_authorization_id=request.context.budget_authorization_id,
-                stage="TRANSLATE",
-            )
-            if not decision.allowed:
-                raise CloudCallBlocked(decision.reasons)
+        if not self.cloud_guard or not self.project_id or not self.provider_profile_id:
+            raise CloudCallBlocked(("CLOUD_GUARD_REQUIRED",))
+        estimated_usage = (Usage(UsageUnit.CHARACTER.value, request.context.estimated_units),)
+        decision = self.cloud_guard.evaluate(
+            project_id=self.project_id,
+            provider_profile_id=self.provider_profile_id,
+            operation_id=request.context.operation_id,
+            estimated_usage=estimated_usage,
+            category=request.context.billing_category,
+            cloud_consent_id=request.context.cloud_consent_id,
+            budget_authorization_id=request.context.budget_authorization_id,
+            stage="TRANSLATE",
+        )
+        if not decision.allowed:
+            raise CloudCallBlocked(decision.reasons)
 
         system_instruction = (
             "Bạn là dịch giả văn học và tiểu thuyết Trung - Việt hàng đầu. "
@@ -184,55 +192,61 @@ class GeminiMtAdapter:
         }
 
         timeout = max(30, request.context.timeout_seconds)
-        successful_response_data = None
-        actual_model_used = self.model
+        endpoint = f"{GEMINI_API_BASE}/{self.model}:generateContent"
+        headers = api_key_json_headers("x-goog-api-key", self.api_key)
+        try:
+            response = self.http_client.post(
+                endpoint,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
+            if isawaitable(response):
+                response = await response
+        except (TimeoutError, httpx.TimeoutException, httpx.TransportError, OSError) as exc:
+            raise normalize_transport_exception(exc, request_started=True) from exc
 
-        for current_model in (self.model,):
-            endpoint = f"{GEMINI_API_BASE}/{current_model}:generateContent"
-            headers = {"Content-Type": "application/json", "x-goog-api-key": self.api_key}
+        if response.status_code != 200:
+            raise normalize_http_error(response.status_code, "provider error", request_sent=True)
 
-            try:
-                response = self.http_client.post(
-                    endpoint,
-                    json=payload,
-                    headers=headers,
-                    timeout=timeout,
-                )
-                if isawaitable(response):
-                    response = await response
-            except Exception:
-                continue
-
-            if response.status_code == 200:
-                successful_response_data = response.json()
-                actual_model_used = current_model
-                break
-
-            if response.status_code in {404, 503}:
-                raise RuntimeError("GEMINI_PROVIDER_UNAVAILABLE")
-
-            # Hard stop for auth / quota / bad request errors
-            if response.status_code == 400:
-                raise ValueError("GEMINI_INVALID_REQUEST")
-            elif response.status_code in {401, 403}:
-                raise ValueError("GEMINI_API_KEY_INVALID")
-            elif response.status_code == 429:
-                raise RuntimeError("GEMINI_RATE_LIMIT_EXCEEDED")
-            elif response.status_code >= 500 and response.status_code != 503:
-                raise RuntimeError("GEMINI_PROVIDER_UNAVAILABLE")
-
-        if not successful_response_data:
-            raise RuntimeError("GEMINI_PROVIDER_UNAVAILABLE")
-
-        data = successful_response_data
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise ProviderTransportError(
+                "MALFORMED_RESPONSE",
+                "provider response is not JSON",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            ) from exc
+        if not isinstance(data, dict):
+            raise ProviderTransportError(
+                "MALFORMED_RESPONSE",
+                "provider response shape is invalid",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            )
 
         candidates = data.get("candidates") or []
-        if not candidates:
-            raise ValueError("GEMINI_EMPTY_RESPONSE")
+        if not candidates or not isinstance(candidates[0], dict):
+            raise ProviderTransportError(
+                "EMPTY_RESPONSE",
+                "provider returned no translation",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            )
 
         content_parts = candidates[0].get("content", {}).get("parts", [])
-        if not content_parts or not content_parts[0].get("text"):
-            raise ValueError("GEMINI_NO_TEXT_RETURNED")
+        if not content_parts or not isinstance(content_parts[0], dict) or not content_parts[0].get("text"):
+            raise ProviderTransportError(
+                "EMPTY_RESPONSE",
+                "provider returned no text",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            )
 
         target_text = content_parts[0]["text"].strip()
         # Clean up any markdown code fencing if model accidentally returned it
@@ -246,12 +260,14 @@ class GeminiMtAdapter:
             target_text = convert_hanviet(target_text, request.terms)
 
         usage_meta = data.get("usageMetadata", {})
-        prompt_tokens = usage_meta.get("promptTokenCount", 0)
-        candidates_tokens = usage_meta.get("candidatesTokenCount", 0)
+        prompt_tokens = _non_negative_int(usage_meta.get("promptTokenCount", 0))
+        candidates_tokens = _non_negative_int(usage_meta.get("candidatesTokenCount", 0))
+        actual_model_used = data.get("modelVersion") if isinstance(data.get("modelVersion"), str) else self.model
+        provider_request_id = _provider_request_id(response, data)
 
         usage = (
-            Usage(UsageUnit.INPUT_TOKEN.value, prompt_tokens),
-            Usage(UsageUnit.OUTPUT_TOKEN.value, candidates_tokens),
+            Usage(UsageUnit.INPUT_TOKEN.value, prompt_tokens, provider_request_id),
+            Usage(UsageUnit.OUTPUT_TOKEN.value, candidates_tokens, provider_request_id),
         )
 
         return TranslationResult(
@@ -261,3 +277,19 @@ class GeminiMtAdapter:
             provider_version="v1beta",
             usage=usage,
         )
+
+
+def _non_negative_int(value: object) -> int:
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 0
+
+
+def _provider_request_id(response: object, data: dict[str, object]) -> str | None:
+    headers = getattr(response, "headers", {})
+    if hasattr(headers, "get"):
+        request_id = headers.get("x-request-id") or headers.get("x-goog-request-id")
+        if isinstance(request_id, str):
+            return request_id
+    response_id = data.get("responseId")
+    return response_id if isinstance(response_id, str) else None

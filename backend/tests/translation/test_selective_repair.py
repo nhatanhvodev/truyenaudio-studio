@@ -208,15 +208,19 @@ class RepairHttpFixture:
 
 
 class RepairHttpResponse:
+    status_code = 200
+
     def raise_for_status(self) -> None:
         return None
 
     def json(self) -> dict:
         return {
             "request_id": "repair-request-001",
-            "model": "qwen-mt-plus",
-            "provider_version": "fixture",
-            "translations": [{"target_text": "Lam Dong da sua."}],
+            "output": {
+                "choices": [
+                    {"message": {"role": "assistant", "content": "Lam Dong da sua."}}
+                ]
+            },
             "usage": {"input_tokens": 12, "output_tokens": 6},
         }
 

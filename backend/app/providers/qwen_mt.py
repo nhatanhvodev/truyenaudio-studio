@@ -8,14 +8,50 @@ import httpx
 
 from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked
+from app.modules.execution.contracts import BillingState
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 from app.modules.security.model_identifier import validate_model_identifier
+from app.providers.transport import (
+    ProviderTransportError,
+    bearer_json_headers,
+    normalize_http_error,
+    normalize_transport_exception,
+)
 
 
 PROVIDER = "qwen"
 PROVIDER_VERSION_FALLBACK = "unknown"
 MAX_SOURCE_CHARS = 30_000
 QWEN_ENDPOINT = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
+
+# DashScope Qwen-MT language codes per the official docs (2026-09-09): the wire
+# accepts official codes such as "zh"/"vi"/"zh_tw"/"en", not BCP-47 app tags.
+# The adapter maps the app-level tags it is given and fails closed on anything
+# it cannot map instead of silently sending a wrong language code.
+_QWEN_LANGUAGE_CODES: dict[str, str] = {
+    "zh": "zh",
+    "zh-CN": "zh",
+    "zh-Hans": "zh",
+    "zh-Hant": "zh_tw",
+    "zh-TW": "zh_tw",
+    "vi": "vi",
+    "vi-VN": "vi",
+    "en": "en",
+    "en-US": "en",
+    "en-GB": "en",
+    "ja": "ja",
+    "ko": "ko",
+    "es": "es",
+    "fr": "fr",
+    "de": "de",
+    "ru": "ru",
+    "th": "th",
+    "id": "id",
+    "ms": "ms",
+    "pt": "pt",
+    "it": "it",
+    "ar": "ar",
+}
 
 
 @dataclass(frozen=True)
@@ -95,7 +131,7 @@ class QwenMtAdapter:
         self._validate_request(request)
         self._evaluate_cloud_guard(request)
         payload = self._payload(request)
-        headers = {"Authorization": f"Bearer {self.secret.value}", "Content-Type": "application/json"}
+        headers = bearer_json_headers(self.secret.value)
 
         request_started = False
         try:
@@ -109,25 +145,59 @@ class QwenMtAdapter:
             if isawaitable(response):
                 response = await response
         except (TimeoutError, httpx.TimeoutException, httpx.TransportError) as exc:
-            if request_started:
+            error = normalize_transport_exception(exc, request_started=request_started)
+            if error.billing_state is BillingState.UNKNOWN:
                 raise ProviderBillingUnknown("QWEN_BILLING_UNKNOWN") from exc
-            raise
+            raise error from exc
 
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise RuntimeError("QWEN_PROVIDER_REJECTED") from exc
+        if response.status_code != 200:
+            raise normalize_http_error(response.status_code, "provider error", request_sent=True)
         try:
             body = response.json()
         except (TypeError, ValueError) as exc:
-            raise RuntimeError("QWEN_PROVIDER_INVALID_RESPONSE") from exc
-        translations = body.get("translations") or []
-        if not translations or not str(translations[0].get("target_text", "")).strip():
-            raise ValueError("QWEN_EMPTY_TRANSLATION")
-        usage = body.get("usage") or {}
+            raise ProviderTransportError(
+                "MALFORMED_RESPONSE",
+                "provider response is not JSON",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            ) from exc
+        if not isinstance(body, dict):
+            raise ProviderTransportError(
+                "MALFORMED_RESPONSE",
+                "provider response shape is invalid",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            )
+        output = body.get("output")
+        choices = output.get("choices") if isinstance(output, dict) else None
+        if not choices or not isinstance(choices[0], dict):
+            raise ProviderTransportError(
+                "EMPTY_RESPONSE",
+                "provider returned no translation",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            )
+        message = choices[0].get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise ProviderTransportError(
+                "EMPTY_RESPONSE",
+                "provider returned no translation",
+                False,
+                BillingState.UNKNOWN,
+                response.status_code,
+            )
+        usage = body.get("usage")
+        if not isinstance(usage, dict):
+            usage = {}
         provider_request_id = body.get("request_id")
+        if provider_request_id is not None and not isinstance(provider_request_id, str):
+            provider_request_id = None
         return TranslationResult(
-            target_text=str(translations[0]["target_text"]),
+            target_text=content.strip(),
             provider=PROVIDER,
             model=str(body.get("model") or self.model),
             provider_version=str(body.get("provider_version") or PROVIDER_VERSION_FALLBACK),
@@ -166,17 +236,24 @@ class QwenMtAdapter:
             raise CloudCallBlocked(decision.reasons)
 
     def _payload(self, request: TranslationRequest) -> dict[str, object]:
+        translation_options: dict[str, object] = {
+            "source_lang": qwen_language_code(request.source_language),
+            "target_lang": qwen_language_code(request.target_language),
+        }
+        if request.terms:
+            translation_options["terms"] = [
+                {"source": source, "target": target} for source, target in request.terms
+            ]
+        if request.tm_list:
+            translation_options["tm_list"] = [
+                {"source": source, "target": target} for source, target in request.tm_list
+            ]
         return {
             "model": self.model,
-            "region": self.region,
-            "source_language": request.source_language,
-            "target_language": request.target_language,
-            "segments": [{"segment_id": request.source_segment_id, "source_text": request.source_text}],
-            "translation_options": {
-                "terms": [{"source": source, "target": target} for source, target in request.terms],
-                "tm_list": [{"source": source, "target": target} for source, target in request.tm_list],
-                "domain": request.domain_instruction,
-                "story_memory": list(request.story_memory),
+            "input": {"messages": [{"role": "user", "content": request.source_text}]},
+            "parameters": {
+                "result_format": "message",
+                "translation_options": translation_options,
             },
         }
 
@@ -185,6 +262,18 @@ def _non_negative_usage(value: Any) -> int:
     if type(value) is not int or value < 0:
         raise ValueError("QWEN_USAGE_INVALID")
     return value
+
+
+def qwen_language_code(language: str) -> str:
+    """Map an app language tag to the official DashScope Qwen-MT language code.
+
+    Fails closed on tags the adapter cannot map instead of silently sending a
+    language code the provider does not understand.
+    """
+    code = _QWEN_LANGUAGE_CODES.get(language)
+    if code is None:
+        raise ValueError(f"QWEN_LANGUAGE_UNSUPPORTED:{language}")
+    return code
 
 
 def canonical_qwen_endpoint(value: object) -> str:
