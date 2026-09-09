@@ -79,3 +79,7 @@ Validation for round 6: reviewer r6 reported one P1 and two P2 repros. RED added
 - Profile config create/patch checks, legacy profile payload redaction, and structured diagnostics redaction all inherit the encoded-key handling through the shared classifier.
 
 Validation for round 7: reviewer r7 reported one P2 encoded structured/config secret-key bypass. Targeted encoded-key regression tests passed 20 tests, the expanded S02 backend set passed 127 tests, targeted Ruff passed, and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.
+
+## Closeout
+
+Independent reviewer r8 PASS: no remaining P1/P2 S02 findings in `bef85e7..HEAD`. Final validation on HEAD: full backend `504 passed` with the known SQLAlchemy FK-cycle warning, frontend Vitest `22 passed`, frontend build passed, targeted Ruff passed, and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.
