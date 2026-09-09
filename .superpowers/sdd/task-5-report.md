@@ -64,3 +64,11 @@ Validation for round 4: RED first produced one diagnostics log failure and 12 mo
 - Static UI regression coverage proves valid frontend routes still receive the SPA `index.html`, while API-shaped malformed routes receive `404`.
 
 Validation for round 5: RED first produced 4 static fallback failures for API-shaped paths. After the implementation, `pytest backend\tests\api\test_static_ui.py backend\tests\security\test_api_boundary.py -q` passed 25 tests, the expanded S02 backend set passed 105 tests, targeted Ruff passed, and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.
+
+## S02 round 6 remediation
+
+- API boundary targeting now treats repeated leading slashes as still pointing at the `/api` boundary after bounded percent decoding and slash normalization. Absolute raw targets such as `//api/health/ready`, encoded leading slash variants, and case variants are intercepted before the SPA fallback.
+- Qwen workflow now validates the stored model identifier before resolving the keyring credential. The Qwen adapter also validates model identifiers during construction, so unsafe model strings cannot later enter provider payloads.
+- Diagnostics text redaction now redacts query parameters whose decoded key matches the shared normalized secret-key classifier, including `x-goog-api-key`, `google_api_key`, `authorization`, `credential`, `password`, and nested encoded `api%254Bey`.
+
+Validation for round 6: reviewer r6 reported one P1 and two P2 repros. RED added those repros and produced 12 failures. After remediation, the regression group passed 21 tests, the expanded S02 backend set passed 125 tests, targeted Ruff passed, and `git diff --check` passed. Paid-cloud smoke remains `NOT_RUN`.

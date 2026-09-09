@@ -83,6 +83,20 @@ def test_qwen_rejects_an_arbitrary_endpoint_before_a_bearer_request(translation_
     assert attacker.calls == 0
 
 
+def test_qwen_rejects_unsafe_model_before_http(translation_request) -> None:
+    http = HttpFixture(Path(__file__).parents[1] / "fixtures" / "qwen_translation.json")
+
+    with pytest.raises(ValueError, match="MODEL_IDENTIFIER_INVALID"):
+        QwenMtAdapter(
+            http.client,
+            "qwen?key=payload-secret",
+            "frankfurt",
+            Secret("bearer-secret"),
+        )
+
+    assert http.calls == 0
+
+
 @pytest.mark.asyncio
 async def test_qwen_blocks_without_cloud_guard_before_http(http_fixture, translation_request) -> None:
     adapter = QwenMtAdapter(http_fixture.client, "qwen-mt-flash", "frankfurt", Secret("x"))

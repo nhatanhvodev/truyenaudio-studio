@@ -44,6 +44,10 @@ def test_spa_fallback_serves_dashboard_for_frontend_routes(tmp_path: Path) -> No
         "/%61pi/health/ready",
         "/%2561pi%252Fhealth%252Fready",
         "/API/health/ready",
+        "//api/health/ready",
+        "/%2Fapi/health/ready",
+        "/%252Fapi%252Fhealth%252Fready",
+        "//API/health/ready",
     ),
 )
 def test_spa_fallback_never_serves_api_shaped_paths(tmp_path: Path, path: str) -> None:
@@ -55,7 +59,8 @@ def test_spa_fallback_never_serves_api_shaped_paths(tmp_path: Path, path: str) -
         create_app(frontend_dist=dist, acquire_lock=False),
         base_url="http://127.0.0.1:8765",
     ) as client:
-        response = client.get(path)
+        target = f"http://127.0.0.1:8765{path}" if path.startswith("//") else path
+        response = client.get(target)
 
     assert response.status_code == 404
 

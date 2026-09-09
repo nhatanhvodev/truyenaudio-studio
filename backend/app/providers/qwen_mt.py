@@ -9,6 +9,7 @@ import httpx
 from app.contracts import TranslationRequest, TranslationResult, Usage, UsageUnit
 from app.modules.compliance.cloud import CloudCallBlocked
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
+from app.modules.security.model_identifier import validate_model_identifier
 
 
 PROVIDER = "qwen"
@@ -66,7 +67,7 @@ class QwenMtAdapter:
         endpoint: str = QWEN_ENDPOINT,
     ) -> None:
         self.http_client = http_client
-        self.model = model
+        self.model = validate_model_identifier(model)
         self.region = region
         self.secret = secret
         self.cloud_guard = cloud_guard

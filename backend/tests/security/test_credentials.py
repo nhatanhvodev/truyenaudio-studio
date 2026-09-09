@@ -319,6 +319,28 @@ def test_legacy_qwen_endpoint_fails_before_credential_or_network_dispatch(settin
         _qwen_workflow(settings, "chapter-not-needed", profile.id).__enter__()
 
 
+def test_legacy_qwen_profile_with_unsafe_model_fails_before_credential_dispatch(
+    settings, db_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    profile = ProviderProfile(
+        id="018f0000-0000-7000-8000-000000000800",
+        provider_kind="TRANSLATOR",
+        adapter_name="qwen",
+        display_name="Legacy Qwen",
+        model="qwen?key=legacy-model-secret",
+        region="frankfurt",
+        secret_ref="keyring:truyenaudio-studio/provider-profile:legacy-qwen",
+        config_json={"endpoint": QWEN_ENDPOINT},
+        enabled=True,
+    )
+    db_session.add(profile)
+    db_session.commit()
+    monkeypatch.setattr(translation.Secret, "from_ref", lambda *_args, **_kwargs: pytest.fail("credential must not resolve"))
+
+    with pytest.raises(ValueError, match="MODEL_IDENTIFIER_INVALID"):
+        _qwen_workflow(settings, "chapter-not-needed", profile.id).__enter__()
+
+
 def test_credential_reentry_recovers_from_missing_prior_key_and_increments_revision(settings, migrated_engine, monkeypatch) -> None:
     store = CredentialStore(FakeKeyring())
     monkeypatch.setattr(cloud_profiles, "CredentialStore", lambda: store)

@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import re
 from typing import Any
+from urllib.parse import unquote
 
 from app.modules.security.secret_keys import is_secret_key as _is_secret_key
 
@@ -34,6 +35,7 @@ SECRET_PATTERNS = (
     re.compile(r"\b[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"),
     re.compile(r"([?&](?:api[_-]?key|token|secret|access[_-]?token)=[^&#\s]+)", re.IGNORECASE),
 )
+QUERY_PARAMETER_PATTERN = re.compile(r"([?&])([^=&#\s]+)=([^&#\s]+)")
 
 
 class DiagnosticsLogger:
@@ -144,8 +146,30 @@ def scrub_text(value: Any) -> Any:
     scrubbed = value
     for pattern in SECRET_PATTERNS:
         scrubbed = pattern.sub("[REDACTED]", scrubbed)
-    return scrubbed
+    return _scrub_query_parameters(scrubbed)
 
 
 def _redacted_payload(record: dict[str, object]) -> dict[str, object]:
     return {field: scrub_text(record.get(field)) for field in JSONL_FIELDS if field in record}
+
+
+def _scrub_query_parameters(value: str) -> str:
+    def redact_secret_param(match: re.Match[str]) -> str:
+        separator, key, _secret = match.groups()
+        if _is_secret_query_key(key):
+            return f"{separator}{key}=[REDACTED]"
+        return match.group(0)
+
+    return QUERY_PARAMETER_PATTERN.sub(redact_secret_param, value)
+
+
+def _is_secret_query_key(key: str) -> bool:
+    candidate = key
+    for _round in range(4):
+        if _is_secret_key(candidate):
+            return True
+        decoded = unquote(candidate)
+        if decoded == candidate:
+            return False
+        candidate = decoded
+    return "%" in candidate or _is_secret_key(candidate)

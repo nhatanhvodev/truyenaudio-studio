@@ -64,7 +64,10 @@ def _targets_api_boundary(request: Request) -> bool:
 
 def _is_api_path(path: str) -> bool:
     normalized = _decode_percent_repeatedly(path).replace("\\", "/").casefold()
-    return normalized == "/api" or normalized.startswith("/api/")
+    if not normalized.startswith("/"):
+        return False
+    tail = normalized.lstrip("/")
+    return tail == "api" or tail.startswith("api/")
 
 
 def _decode_percent_repeatedly(value: str) -> str:

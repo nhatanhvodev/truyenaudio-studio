@@ -228,17 +228,18 @@ class _qwen_workflow:
             profile = _resolve_translation_profile(session, self.profile_id, {"qwen"})
             if not profile.model or not profile.region or not profile.secret_ref:
                 raise ValueError("QWEN_PROVIDER_PROFILE_INCOMPLETE")
+            model = validate_model_identifier(profile.model)
             endpoint = _qwen_endpoint_from_config(profile.config_json or {})
             adapter = QwenMtAdapter(
                 httpx.AsyncClient(),
-                profile.model,
+                model,
                 profile.region,
                 Secret.from_ref(profile.secret_ref),
                 cloud_guard=CloudCallGuard(session, BudgetGuard(session)),
                 project_id=_chapter_project_id(session, self.chapter_id),
                 provider_profile_id=profile.id,
                 dispatch_registry=ProviderRegistry(profile_revision_resolver=_db_profile_revision_resolver(session)),
-                dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, profile.model),
+                dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, model),
                 endpoint=endpoint,
             )
             return TranslationWorkflow(session, translator=adapter)

@@ -5,6 +5,8 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from app.modules.diagnostics.logging import DiagnosticsLogger, scrub_text, summarize_error
 
 
@@ -86,6 +88,24 @@ def test_scrubber_redacts_structured_secrets_and_query_credentials() -> None:
 
     assert "raw-secret" not in rendered
     assert "query-secret" not in rendered
+
+
+@pytest.mark.parametrize(
+    "query",
+    (
+        "x-goog-api-key=query-secret",
+        "google_api_key=query-secret",
+        "authorization=Bearer+query-secret",
+        "credential=query-secret",
+        "password=query-secret",
+        "api%254Bey=query-secret",
+    ),
+)
+def test_scrubber_redacts_normalized_query_credential_keys(query: str) -> None:
+    rendered = scrub_text(f"https://provider.test/infer?{query}&safe=1")
+
+    assert "query-secret" not in rendered
+    assert "safe=1" in rendered
 
 
 def test_scrubber_redacts_normalized_credential_and_bearer_keys_in_structured_logs(
