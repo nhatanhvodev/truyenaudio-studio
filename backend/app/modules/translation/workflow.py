@@ -329,6 +329,7 @@ class TranslationWorkflow:
         if chapter is None:
             raise ValueError("CHAPTER_NOT_FOUND")
         self._require_current_approvable_run(chapter, run)
+        self._require_complete_segment_coverage(run)
         blockers = self.session.scalars(
             select(QaIssue).where(
                 QaIssue.chapter_id == chapter_id,
@@ -378,6 +379,23 @@ class TranslationWorkflow:
         record_approved_run(self.session, run.id, id_factory=self.id_factory)
         self.session.commit()
         return self._run_view(run.id)
+
+    def _require_complete_segment_coverage(self, run: TranslationRun) -> None:
+        """Approve must never confirm a run that lost or gained source segments."""
+        source_ids = set(
+            self.session.scalars(
+                select(SourceSegment.id).where(
+                    SourceSegment.source_revision_id == run.source_revision_id
+                )
+            ).all()
+        )
+        run_ids = {segment.source_segment_id for segment in self._translation_segments(run.id)}
+        if source_ids != run_ids:
+            missing = len(source_ids - run_ids)
+            extra = len(run_ids - source_ids)
+            raise ApprovalBlocked(
+                f"TRANSLATION_RUN_SEGMENTS_INCOMPLETE:missing={missing},extra={extra}"
+            )
 
     def _require_current_approvable_run(
         self, chapter: Chapter, run: TranslationRun
