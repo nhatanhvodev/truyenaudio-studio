@@ -21,6 +21,7 @@ from app.api.events import create_events_router
 from app.api.exports import create_exports_router
 from app.api.health import create_health_router
 from app.api.glossary import create_glossary_router
+from app.api.characters import create_characters_router
 from app.api.poc import create_poc_router
 from app.api.jobs import create_jobs_router
 from app.api.projects import create_projects_router
@@ -71,6 +72,7 @@ def create_app(
     app.include_router(create_wenku_router(active_settings))
     app.include_router(create_glossary_router(active_settings))
     app.include_router(create_styles_router(active_settings))
+    app.include_router(create_characters_router(active_settings))
     app.include_router(create_translation_router(active_settings))
     app.include_router(create_review_router(active_settings))
     app.include_router(create_rights_router(active_settings))

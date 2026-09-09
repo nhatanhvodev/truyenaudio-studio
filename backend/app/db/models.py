@@ -286,6 +286,56 @@ class TranslationMemoryEntry(MutableMixin, Base):
     approved_run_id: Mapped[str] = mapped_column(UUID, ForeignKey("translation_runs.id"), nullable=False)
 
 
+class Character(MutableMixin, Base):
+    """Stable character identity; name/alias facts live in character_revisions."""
+
+    __tablename__ = "characters"
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
+
+
+class CharacterRevision(MutableMixin, Base):
+    __tablename__ = "character_revisions"
+    __table_args__ = (
+        UniqueConstraint("character_id", "revision_no", name="uq_character_revisions_id_revision"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    character_id: Mapped[str] = mapped_column(UUID, ForeignKey("characters.id"), nullable=False)
+    revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    supersedes_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("character_revisions.id"))
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    aliases_json: Mapped[list[str] | None] = mapped_column(JSON)
+    entity_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    role: Mapped[str | None] = mapped_column(String(128))
+    gender: Mapped[str | None] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    evidence_source_revision_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("source_revisions.id"))
+    evidence_segment_ids_json: Mapped[list[str] | None] = mapped_column(JSON)
+
+
+class CharacterRelationship(MutableMixin, Base):
+    __tablename__ = "character_relationships"
+    __table_args__ = (
+        CheckConstraint(
+            "to_ordinal IS NULL OR from_ordinal <= to_ordinal",
+            name="character_relationship_ordinal_order",
+        ),
+        Index("ix_character_relationships_project_ordinal", "project_id", "from_ordinal"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
+    from_character_id: Mapped[str] = mapped_column(UUID, ForeignKey("characters.id"), nullable=False)
+    to_character_id: Mapped[str] = mapped_column(UUID, ForeignKey("characters.id"), nullable=False)
+    from_ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    to_ordinal: Mapped[int | None] = mapped_column(Integer)
+    addressing_json: Mapped[dict | None] = mapped_column(JSON)
+    evidence_source_revision_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("source_revisions.id"))
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
+
+
 class TranslationRun(MutableMixin, Base):
     __tablename__ = "translation_runs"
     __table_args__ = (
