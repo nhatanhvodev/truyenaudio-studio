@@ -209,6 +209,12 @@ class SourceSegment(MutableMixin, Base):
 
 class GlossaryEntry(MutableMixin, Base):
     __tablename__ = "glossary_entries"
+    __table_args__ = (
+        CheckConstraint(
+            "scope_from_ordinal IS NULL OR scope_to_ordinal IS NULL OR scope_from_ordinal <= scope_to_ordinal",
+            name="glossary_scope_order",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(UUID, primary_key=True)
     project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
@@ -221,6 +227,11 @@ class GlossaryEntry(MutableMixin, Base):
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
     supersedes_id: Mapped[str | None] = mapped_column(UUID, ForeignKey("glossary_entries.id"))
+    description: Mapped[str | None] = mapped_column(Text)
+    forbidden_forms: Mapped[list[str] | None] = mapped_column(JSON)
+    evidence: Mapped[str | None] = mapped_column(Text)
+    scope_from_ordinal: Mapped[int | None] = mapped_column(Integer)
+    scope_to_ordinal: Mapped[int | None] = mapped_column(Integer)
 
 
 class StoryMemoryEntry(MutableMixin, Base):

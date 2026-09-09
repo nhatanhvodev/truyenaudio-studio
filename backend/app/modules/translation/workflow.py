@@ -36,7 +36,11 @@ from app.db.models import (
     TranslationSegment,
 )
 from app.modules.projects.state_machine import next_state
-from app.modules.translation.glossary import active_glossary
+from app.modules.translation.glossary import (
+    LockedGlossaryRule,
+    active_glossary,
+    locked_rules_for_chapter,
+)
 from app.modules.translation.qa import QaIssueDraft, run_deterministic_qa
 
 
@@ -159,7 +163,15 @@ class TranslationWorkflow:
         self.session.add(run)
         self.session.flush()
 
-        locked_terms = self._locked_terms(project.id)
+        locked_rules = self._locked_rules(project.id, chapter.ordinal)
+        locked_terms = tuple(
+            (rule.source_term, rule.target_term) for rule in locked_rules
+        )
+        forbidden_forms = tuple(
+            (rule.source_term, rule.forbidden_forms)
+            for rule in locked_rules
+            if rule.forbidden_forms
+        )
         for source_segment in source_segments:
             cache_key = _translation_cache_key(
                 source_segment=source_segment,
@@ -201,7 +213,7 @@ class TranslationWorkflow:
             )
 
         self.session.flush()
-        self._replace_qa_issues(run, locked_terms)
+        self._replace_qa_issues(run, locked_terms, forbidden_forms)
         run.translation_text_sha256 = self._run_hash(run, project, revision, style_hash)
         run.status = RunStatus.REVIEW.value
         chapter.state = ChapterState.TRANSLATION_REVIEW.value
@@ -271,7 +283,16 @@ class TranslationWorkflow:
         self._invalidate_downstream(chapter)
         chapter.state = ChapterState.TRANSLATION_REVIEW.value
         self.session.flush()
-        self._replace_qa_issues(new_run, self._locked_terms(project.id))
+        locked_rules = self._locked_rules(project.id, chapter.ordinal)
+        self._replace_qa_issues(
+            new_run,
+            tuple((rule.source_term, rule.target_term) for rule in locked_rules),
+            tuple(
+                (rule.source_term, rule.forbidden_forms)
+                for rule in locked_rules
+                if rule.forbidden_forms
+            ),
+        )
         new_run.translation_text_sha256 = self._run_hash(
             new_run, project, revision, style_hash
         )
@@ -433,6 +454,7 @@ class TranslationWorkflow:
         self,
         run: TranslationRun,
         locked_terms: tuple[tuple[str, str], ...],
+        forbidden_forms: tuple[tuple[str, tuple[str, ...]], ...] = (),
     ) -> None:
         for segment in self._translation_segments(run.id):
             source_segment = self.session.get(SourceSegment, segment.source_segment_id)
@@ -442,6 +464,7 @@ class TranslationWorkflow:
                 source_segment.source_text,
                 segment.target_text,
                 locked_terms,
+                forbidden_forms,
             ):
                 self._add_qa_issue(run, segment.source_segment_id, draft)
         self.session.flush()
@@ -690,9 +713,23 @@ class TranslationWorkflow:
             )
         )
 
-    def _locked_terms(self, project_id: str) -> tuple[tuple[str, str], ...]:
+    def _locked_terms(
+        self, project_id: str, chapter_ordinal: int | None = None
+    ) -> tuple[tuple[str, str], ...]:
+        rules = self._locked_rules(project_id, chapter_ordinal)
+        return tuple((rule.source_term, rule.target_term) for rule in rules)
+
+    def _locked_rules(
+        self, project_id: str, chapter_ordinal: int | None = None
+    ) -> tuple[LockedGlossaryRule, ...]:
+        if chapter_ordinal is not None:
+            return locked_rules_for_chapter(self.session, project_id, chapter_ordinal)
         return tuple(
-            (entry.source_term, entry.target_term)
+            LockedGlossaryRule(
+                source_term=entry.source_term,
+                target_term=entry.target_term,
+                forbidden_forms=tuple(entry.forbidden_forms or ()),
+            )
             for entry in active_glossary(self.session, project_id).entries
             if entry.is_locked
         )

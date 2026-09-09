@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts import OperationContext, QaStatus, RunStatus, TranslationRequest, Usage, UsageUnit, new_id
 from app.db.models import Chapter, Project, QaIssue, SourceRevision, SourceSegment, TranslationRun, TranslationSegment
-from app.modules.translation.glossary import active_glossary
+from app.modules.translation.glossary import LockedGlossaryRule, active_glossary, locked_rules_for_chapter
 from app.modules.translation.qa import run_deterministic_qa
 from app.modules.translation.story_memory import StoryMemoryService
 from app.modules.translation.workflow import PROMPT_VERSION, ZERO_HASH, TranslationRunView, TranslationWorkflow
@@ -120,7 +120,7 @@ class RepairService:
                         source_text=source.source_text,
                         source_language=project.default_language,
                         target_language=project.target_language,
-                        terms=self._locked_terms(project.id),
+                        terms=self._locked_terms(project.id, chapter.ordinal),
                         tm_list=(),
                         domain_instruction=project.style_guide_text or "",
                         story_memory=memory,
@@ -224,7 +224,16 @@ class RepairService:
         workflow._invalidate_downstream(chapter)
         chapter.state = "TRANSLATION_REVIEW"
         self.session.flush()
-        self._replace_qa_issues(new_run, self._locked_terms(project.id))
+        locked_rules = self._locked_rules(project.id, chapter.ordinal)
+        self._replace_qa_issues(
+            new_run,
+            tuple((rule.source_term, rule.target_term) for rule in locked_rules),
+            tuple(
+                (rule.source_term, rule.forbidden_forms)
+                for rule in locked_rules
+                if rule.forbidden_forms
+            ),
+        )
         new_run.translation_text_sha256 = workflow._run_hash(
             new_run,
             project,
@@ -273,12 +282,19 @@ class RepairService:
             ).all()
         )
 
-    def _replace_qa_issues(self, run: TranslationRun, locked_terms: tuple[tuple[str, str], ...]) -> None:
+    def _replace_qa_issues(
+        self,
+        run: TranslationRun,
+        locked_terms: tuple[tuple[str, str], ...],
+        forbidden_forms: tuple[tuple[str, tuple[str, ...]], ...] = (),
+    ) -> None:
         for segment in self._translation_segments(run.id):
             source = self.session.get(SourceSegment, segment.source_segment_id)
             if source is None:
                 raise ValueError("SOURCE_SEGMENT_NOT_FOUND")
-            for draft in run_deterministic_qa(source.source_text, segment.target_text, locked_terms):
+            for draft in run_deterministic_qa(
+                source.source_text, segment.target_text, locked_terms, forbidden_forms
+            ):
                 self.session.add(
                     QaIssue(
                         id=self.id_factory(),
@@ -295,8 +311,26 @@ class RepairService:
                 )
         self.session.flush()
 
-    def _locked_terms(self, project_id: str) -> tuple[tuple[str, str], ...]:
-        return tuple((entry.source_term, entry.target_term) for entry in active_glossary(self.session, project_id).entries if entry.is_locked)
+    def _locked_terms(
+        self, project_id: str, chapter_ordinal: int | None = None
+    ) -> tuple[tuple[str, str], ...]:
+        rules = self._locked_rules(project_id, chapter_ordinal)
+        return tuple((rule.source_term, rule.target_term) for rule in rules)
+
+    def _locked_rules(
+        self, project_id: str, chapter_ordinal: int | None = None
+    ) -> tuple[LockedGlossaryRule, ...]:
+        if chapter_ordinal is not None:
+            return locked_rules_for_chapter(self.session, project_id, chapter_ordinal)
+        return tuple(
+            LockedGlossaryRule(
+                source_term=entry.source_term,
+                target_term=entry.target_term,
+                forbidden_forms=tuple(entry.forbidden_forms or ()),
+            )
+            for entry in active_glossary(self.session, project_id).entries
+            if entry.is_locked
+        )
 
     def _chapter(self, chapter_id: str) -> Chapter:
         chapter = self.session.get(Chapter, chapter_id)

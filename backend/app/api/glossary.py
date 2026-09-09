@@ -23,6 +23,11 @@ class GlossaryUpsertRequest(BaseModel):
     gender: str | None = None
     addressing_notes: str | None = None
     is_locked: bool = False
+    description: str | None = None
+    forbidden_forms: list[str] = []
+    evidence: str | None = None
+    scope_from_ordinal: int | None = None
+    scope_to_ordinal: int | None = None
 
 
 def create_glossary_router(settings: Settings | None = None) -> APIRouter:
@@ -59,6 +64,11 @@ def create_glossary_router(settings: Settings | None = None) -> APIRouter:
                     request.gender,
                     request.addressing_notes,
                     request.is_locked,
+                    description=request.description,
+                    forbidden_forms=tuple(request.forbidden_forms or ()),
+                    evidence=request.evidence,
+                    scope_from_ordinal=request.scope_from_ordinal,
+                    scope_to_ordinal=request.scope_to_ordinal,
                 ),
             )
         except ValueError as exc:

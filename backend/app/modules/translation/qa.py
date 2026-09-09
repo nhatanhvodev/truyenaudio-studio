@@ -23,6 +23,7 @@ def run_deterministic_qa(
     source: str,
     target: str,
     locked_terms: tuple[tuple[str, str], ...] = (),
+    forbidden_forms: tuple[tuple[str, tuple[str, ...]], ...] = (),
 ) -> tuple[QaIssueDraft, ...]:
     issues: list[QaIssueDraft] = []
     source_text = source or ""
@@ -44,6 +45,7 @@ def run_deterministic_qa(
     issues.extend(_residual_han_issues(target_text))
     issues.extend(_number_unit_issues(source_text, target_text))
     issues.extend(_locked_term_issues(source_text, target_text, locked_terms))
+    issues.extend(_forbidden_form_issues(source_text, target_text, forbidden_forms))
     issues.extend(_repetition_issues(target_text))
     issues.extend(_meta_markdown_issues(target_text))
     issues.extend(_tts_length_issues(target_text))
@@ -124,6 +126,29 @@ def _locked_term_issues(
                     f"{VERSION}:locked-term",
                 )
             )
+    return tuple(issues)
+
+
+def _forbidden_form_issues(
+    source: str,
+    target: str,
+    forbidden_forms: tuple[tuple[str, tuple[str, ...]], ...],
+) -> tuple[QaIssueDraft, ...]:
+    issues: list[QaIssueDraft] = []
+    for source_term, forms in forbidden_forms:
+        if not source_term or source_term not in source or not forms:
+            continue
+        for form in forms:
+            if form and form in target:
+                issues.append(
+                    QaIssueDraft(
+                        QaCategory.NAME,
+                        QaSeverity.MAJOR,
+                        f"{source_term} !~ {form}",
+                        "Do not use the forbidden glossary rendering.",
+                        f"{VERSION}:forbidden-form",
+                    )
+                )
     return tuple(issues)
 
 
