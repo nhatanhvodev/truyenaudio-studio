@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from app.modules.execution.contracts import Availability, CapabilityState
+from app.modules.execution.contracts import Availability, CapabilityState, ModelSnapshot, Stage
 from app.providers.catalog import ProviderCatalog
 
 
@@ -21,6 +21,7 @@ class RegistryAuthorization:
     model_snapshot_id: str
     stage: str = "translate"
     provider_id: str | None = None
+    fallback_profile_ids: tuple[str, ...] = ()
 
 
 class ProviderRegistry:
@@ -42,13 +43,14 @@ class ProviderRegistry:
         if authorization.model_snapshot_id != snapshot_id:
             raise RegistryError("MODEL_SNAPSHOT_MISMATCH")
 
-        model = next((item for item in self.catalog.list_models() if item.id == snapshot_id), None)
-        if model is None:
+        resolved = self.catalog.model_descriptor(snapshot_id)
+        if resolved is None:
             raise RegistryError("MODEL_UNAVAILABLE")
-        descriptor = self.catalog.get(model.provider_id)
+        descriptor, model = resolved
         if authorization.provider_id is not None and authorization.provider_id != descriptor.provider_id:
             raise RegistryError("PROFILE_PROVIDER_MISMATCH")
-        if descriptor.profile_ids and authorization.profile_id not in descriptor.profile_ids:
+        authorized_profile_ids = (authorization.profile_id, *authorization.fallback_profile_ids)
+        if descriptor.profile_ids and not any(profile_id in descriptor.profile_ids for profile_id in authorized_profile_ids):
             raise RegistryError("PROFILE_NOT_REGISTERED")
         if not descriptor.enabled:
             raise RegistryError("PROFILE_DISABLED")
@@ -56,7 +58,10 @@ class ProviderRegistry:
             raise RegistryError("MODEL_UNAVAILABLE")
         if model.expires_at <= datetime.now(UTC):
             raise RegistryError("MODEL_SNAPSHOT_EXPIRED")
-        if model.capabilities.translation != CapabilityState.SUPPORTED:
+        capability = _capability_for_stage(model, authorization.stage)
+        if capability == CapabilityState.UNSUPPORTED:
+            raise RegistryError("CAPABILITY_UNSUPPORTED")
+        if capability != CapabilityState.SUPPORTED:
             raise RegistryError("CAPABILITY_UNKNOWN")
         if descriptor.factory is None:
             raise RegistryError("ADAPTER_FACTORY_MISSING")
@@ -75,3 +80,15 @@ class ProviderRegistry:
             raise RegistryError("PROFILE_REVISION_UNAVAILABLE")
         if current_revision != authorization.profile_revision:
             raise RegistryError("PROFILE_REVISION_STALE")
+
+
+def _capability_for_stage(model: ModelSnapshot, stage: str) -> CapabilityState:
+    try:
+        normalized = Stage(stage)
+    except ValueError:
+        return CapabilityState.UNKNOWN
+    if normalized == Stage.TRANSLATE:
+        return model.capabilities.translation
+    if normalized in {Stage.REVIEW, Stage.POLISH, Stage.REPAIR, Stage.SUMMARIZE}:
+        return model.capabilities.structured
+    return CapabilityState.UNKNOWN
