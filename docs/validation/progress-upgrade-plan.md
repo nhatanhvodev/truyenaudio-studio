@@ -7,7 +7,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 
 ## Cổng nghiệm thu hiện tại
 
-- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **623 passed**, 1 warning
+- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **626 passed**, 1 warning
   (SQLAlchemy FK-cycle sort, có sẵn từ baseline), exit 0.
 - Frontend: `npm test -- --run` → **46 passed / 15 files**; `npm run build` (tsc + Vite) → PASS.
 - Ruff các file thay đổi: PASS. Không chạy cloud trả phí/live/model download trong toàn bộ quá trình.
@@ -35,7 +35,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 | C05 Summary approval + context engine | DONE | 6ca8eca |
 | C06 QA/edit/approve/repair + segment coverage guard | DONE | 7de976e |
 | J01 Worker/handler/checkpoint | PARTIAL | rounds 1–3: 4b7821b, 310a6ff, 07ea083 — plan seam, batch child plan, real TRANSLATE handler; còn REVIEW/REPAIR/SUMMARIZE handler + process-harness crash coverage |
-| J02 Retry/cancel/breaker persist | PARTIAL | 82ef1da, f4f0265 — persisted breaker + half-open + `with_breaker` dispatch gate wired vào cloud TRANSLATE; còn retry policy fault-matrix ở worker |
+| J02 Retry/cancel/breaker persist | DONE | 82ef1da, f4f0265, cfdc065 — persisted breaker + half-open + dispatch gate + HTTP retry classification (429 Retry-After, 401 no loop, billingUnknown no resend); cancel p95 timing thuộc G-PERF (V01) |
 | J03 Projection/feed/diagnostics | NOT_STARTED | (nền event_log/events có sẵn từ base; chưa xác minh acceptance) — deps J02 |
 | J04 Draft streaming resumable | NOT_STARTED | deps J03 |
 | U01 Design system/tokens/primitives | DONE (code) | 84341ae, 5f25a46, 10c0037, 4d4aa90, 53d4377; 24 shared/ui tests; **visual/zoom/screen-reader audit NOT_RUN** (cần browser harness) |
