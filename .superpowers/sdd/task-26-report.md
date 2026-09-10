@@ -1,6 +1,16 @@
-# Task 26 / U08 report — parts 1–2 (PARTIAL)
+# Task 26 / U08 report — parts 1–3 (PARTIAL)
 
-Status: PARTIAL — model catalog + provider profile/credential editor shipped in Settings; quality picker and per-stage quote/ceiling/consent controls remain.
+Status: PARTIAL — model catalog + provider profile/credential editor + quality/quote panel shipped; remaining: mount the quality panel on the chapter screen (U06) and combobox/rotate E2E.
+
+## Delivered (part 3)
+
+- `features/providers/QualityPlanPanel.tsx`:
+  - quality mode select with **Balanced as default**; Quality/Maximum require an explicit opt-in checkbox before the quote button enables;
+  - per-stage quote (`TRANSLATE`/`REVIEW`/`POLISH`) via `POST /api/chapters/{id}/translation/quote` with `{profileId, cloudConsentId, category}`; renders `totalVnd`, expiry (localised) and backend `warnings`;
+  - **quote invalidation**: any change of `modelKey` (selected model/profile) clears the stored quote and shows "Báo giá cũ đã hết hiệu lực…";
+  - fail-closed: without an active cloud consent the quote button is disabled and no request is made; blocked dispatch (403) surfaces as `role="alert"` (e.g. `CLOUD_CONSENT_REVOKED`), never as a silent retry.
+- Tests (6): default Balanced/no-quote, opt-in gate + request body, stage quote rendering (totals/expiry/warnings), model-change invalidation, missing-consent block without API call, blocked-dispatch alert.
+- Note: the panel is per-chapter by design (quotes bind to a chapter/profile), so it is exported for the chapter translation screen (U06/U07 wiring) instead of being mounted inside global Settings; mounting is deferred to that task.
 
 ## Delivered (part 2)
 
@@ -23,10 +33,10 @@ Status: PARTIAL — model catalog + provider profile/credential editor shipped i
 
 ## Remaining for U08 acceptance (later parts)
 
-- Provider quality picker (Free/Paid/Recommended/Fast/High Quality/Long Context/Translation Optimized/Cloud) and per-stage quote/ceiling/consent controls; model change invalidating an existing quote; combobox/filter and credential-rotate E2E.
+- Mount `QualityPlanPanel` on the chapter translation screen and add the provider quality labels (Free/Paid/Recommended/Fast/High Quality/Long Context/Translation Optimized/Cloud); combobox/filter and credential-rotate E2E.
 
-## Validation (parts 1–2)
+## Validation (parts 1–3)
 
-- `npx vitest run src/features/modelCatalog src/features/providers` — 11 passed (6 catalog + 5 profile).
-- Full frontend suite: `npm test -- --run` — 64 passed / 19 files; production build `npm run build` PASS.
+- `npx vitest run src/features/modelCatalog src/features/providers` — 17 passed (6 catalog + 5 profile + 6 quality).
+- Full frontend suite: `npm test -- --run` — 70 passed / 20 files; production build `npm run build` PASS.
 - No backend/API change in these parts.
