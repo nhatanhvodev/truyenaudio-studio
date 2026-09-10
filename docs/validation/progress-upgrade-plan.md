@@ -106,22 +106,28 @@ thật (cloud có quyền, model VieNeu + license, corpus có quyền, reviewer/
 
 ## Kết luận phiên làm việc này
 
-Tiến trình đạt: **M0–M3 hoàn chỉnh** (F01–F03, S01–S03, P01–P06, C01–C06 DONE), **M4**: J02/J03 DONE, J01
-PARTIAL (plan seam + handler TRANSLATE thật + crash-before-send/after-commit trên handler sản xuất), J04
-PARTIAL (engine/snapshot/SSE + worker ghi delta vào `workspace_drafts` + overlay feed); **M5**: U01
-(browser audit PASS sau khi sửa overflow thật), U02 (shell + route tests DONE), U04 DONE (code), U05
-round 1–4 (reducer + API/hook + tab/dock UI + responsive đã chạy thật), U03/U06/U07/U10 PARTIAL,
-U08/U09 PARTIAL; **M6**: A01 code-verified (live probe NOT_RUN). **Browser E2E đã chạy thật** trên Chrome hệ
-thống (`npx --no-install playwright test` → **7 passed / 4 spec**), backend **700 passed** (1 warning FK-cycle
-có sẵn), frontend **192 passed / 40 files**, `npm run build` PASS, ruff sạch trên mọi file thay đổi; mỗi lát
-cắt có report riêng trong `.superpowers/sdd/` và commit riêng (phiên này: 8ea773b, 278c484, 149c729,
-1a05f21, eaf61ff).
+Cập nhật phiên 10/09/2026 (tiếp phiên trước): **M0–M3 hoàn chỉnh**; **M4**: J01 PARTIAL (còn handler
+REVIEW/REPAIR/SUMMARIZE — cần cloud), J02/J03 DONE, **J04 + SSE replay đã tối ưu: p95 346,5 → 100,2 ms
+(5 câu SQL/lượt, PASS ngưỡng 300 ms — commit `e471327`)**; **M5**: U01/U02/U04/U05 DONE (U05 có browser
+E2E + 2 lỗi thật đã sửa), **U03 DONE (browser E2E + lỗi hook thật ở Shell đã sửa — commit `171d2d6`)**,
+U06/U07/U08/U09/U10 PARTIAL/DONE-theo-code như ghi ở bảng trên; **M6**: A01 DONE (code), **A02 DONE (code,
+live NOT_RUN — commit `2a77367`)**, **A03 DONE (code, 500-segment crash/resume thật — commit `7ac92d0`)**,
+**A05 DONE (code + browser E2E — commit `bf92ea8`)**, A04 chưa làm; **M7**: **V01 DONE (đo thật, 7 fixture —
+commit `4e94fdd`)**, **E01 DONE (code + browser E2E — commit `74dc4b7`)**, **V03 NOT_RUN/BLOCKED có báo cáo
+(`docs/validation/quality.md`, commit `18ccc80`)**; **M8**: chưa thực hiện.
 
-Còn lại (giữ nguyên trạng thái, **không** đánh dấu hoàn thành): U03, U06, U07, U08, U09, A02–A05, E01,
-V01, V03, R01–R03, X01–X07, spec E2E keyboard dock/reopen ngoài browser, cùng các acceptance cần môi trường
-live — cloud trả phí có consent/budget (REVIEW/REPAIR/summarize handler, delta sống giữa job, live smoke),
-model VieNeu + license (A02/A03 live), corpus có quyền và reviewer (V03). Các mục này ghi NOT_RUN/BLOCKED
-đúng quy tắc plan §2 và không được claim là đã kiểm định. Browser visual/responsive/E2E thuộc nhánh
-fixture–fake **không còn** nằm trong nhóm NOT_RUN (xem "Thay đổi môi trường browser").
+Số liệu xác minh toàn cây (sau commit `6070955`): backend **813 passed** (1 warning FK-cycle có sẵn),
+frontend **237 passed / 43 file**, `npm run build` PASS, ruff sạch trên mọi file đã chạm,
+browser E2E **12 passed / 8 spec** trên Chrome hệ thống. Mỗi lát cắt có report riêng trong `.superpowers/sdd/`
+và commit riêng: `bf92ea8`, `8444c1b`, `2a77367`, `4e94fdd`, `18ccc80`, `74dc4b7`, `e471327`, `7ac92d0`,
+`171d2d6`, `6070955`.
+
+Còn lại (giữ nguyên trạng thái, **không** đánh dấu hoàn thành): U06 (virtualize + repair diff đầy đủ),
+U07 (UI batch partial-failure + E2E SSE thật), U08 (combobox/filters + credential rotate E2E), U09 (preview
+stale-scope + nested project routes), A04 (part-master/SRT), V02, R01–R03, X01–X07, cùng **mọi acceptance cần
+môi trường live** — cloud trả phí có consent/budget (REVIEW/REPAIR/summarize handler, delta sống giữa job, live
+smoke), model VieNeu + license (A01 probe, A02/A03 live), corpus có quyền và reviewer (V03 — xem
+`docs/validation/quality.md`). Các mục này ghi NOT_RUN/BLOCKED đúng quy tắc plan §2 và không được claim là đã
+kiểm định. Browser visual/responsive/E2E thuộc nhánh fixture–fake **không** nằm trong nhóm NOT_RUN.
 
 
