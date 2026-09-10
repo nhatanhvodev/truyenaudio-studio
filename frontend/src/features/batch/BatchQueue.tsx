@@ -71,6 +71,20 @@ const STATE_LABEL: Record<string, string> = {
   connected: 'Trực tuyến',
 };
 
+/** Chapter states the server accepts for the `status` filter (uppercase enum values). */
+const CHAPTER_STATES = [
+  'IMPORTED',
+  'NORMALIZED',
+  'TRANSLATING',
+  'TRANSLATED',
+  'QA_REVIEW',
+  'READY_FOR_AUDIO',
+  'AUDIO_RENDERING',
+  'READY_TO_EXPORT',
+  'PUBLISHED',
+  'ARCHIVED',
+] as const;
+
 /** Statuses that can still change: while one is present the batch is not finished. */
 const ACTIVE_STATUSES = new Set(['QUEUED', 'RUNNING', 'CANCEL_REQUESTED']);
 
@@ -92,6 +106,22 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
   const [quoteId, setQuoteId] = useState('');
   const [budgetAuthorizationId, setBudgetAuthorizationId] = useState('');
   const [estimatedUnits, setEstimatedUnits] = useState('');
+  // U03/V02: the chapter list filters on the SERVER. Filtering only the rows
+  // already mounted would silently miss chapters outside the current page.
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  const filterQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    const needle = query.trim();
+    if (needle) {
+      params.set('q', needle);
+    }
+    if (statusFilter) {
+      params.set('status', statusFilter);
+    }
+    return params.toString();
+  }, [query, statusFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +131,8 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
     setBatch(null);
     setError('');
     setLoading(true);
-    apiJson<ChapterPage>(`/api/projects/${projectId}/chapters?limit=${pageLimit}`)
+    const suffix = filterQuery ? `&${filterQuery}` : '';
+    apiJson<ChapterPage>(`/api/projects/${projectId}/chapters?limit=${pageLimit}${suffix}`)
       .then((page) => {
         if (!cancelled) {
           setItems(page.items);
@@ -121,7 +152,7 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, filterQuery]);
 
   // U07: while a batch is being tracked, subscribe to the ONE shared job-event
   // store (ref-counted, never a second connection); before that, subscribe to
@@ -184,7 +215,7 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
     setError('');
     try {
       const page = await apiJson<ChapterPage>(
-        `/api/projects/${projectId}/chapters?limit=${pageLimit}&cursor=${encodeURIComponent(nextCursor)}`,
+        `/api/projects/${projectId}/chapters?limit=${pageLimit}&cursor=${encodeURIComponent(nextCursor)}${filterQuery ? `&${filterQuery}` : ''}`,
       );
       setItems((current) => [...current, ...page.items]);
       setNextCursor(page.nextCursor);
@@ -326,6 +357,37 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
           <input value={estimatedUnits} onChange={(event) => setEstimatedUnits(event.target.value)} inputMode="numeric" style={styles.input} />
         </label>
       </section>
+
+      <section style={styles.filterBox} aria-label="Bộ lọc chương">
+        <label style={styles.label}>
+          Tìm chương (lọc ở server)
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Tên hoặc tiêu đề chương"
+            style={styles.input}
+          />
+        </label>
+        <label style={styles.label}>
+          Trạng thái
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            style={styles.input}
+          >
+            <option value="">Tất cả</option>
+            {CHAPTER_STATES.map((state) => (
+              <option key={state} value={state}>
+                {state}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      <p style={styles.meta} role="status">
+        {filterQuery ? 'Đang lọc ở server' : 'Không lọc'} · {items.length} chương đã tải
+      </p>
 
       <div style={styles.list}>
         {items.map((chapter) => (
@@ -474,6 +536,15 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'auto',
     border: '1px solid #d7dde8',
     borderRadius: 8,
+  },
+  filterBox: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: 12,
+    padding: 12,
+    border: '1px solid #d7dde8',
+    borderRadius: 8,
+    background: '#ffffff',
   },
   guardBox: {
     display: 'grid',

@@ -78,7 +78,12 @@ function chapter(id: string, ordinal: number) {
 
 type Call = { url: string; init?: RequestInit };
 
-function mockFetch(options: { chaptersNextCursor?: string | null; batchJobIds?: string[] } = {}) {
+function mockFetch(options: {
+  chaptersNextCursor?: string | null;
+  batchJobIds?: string[];
+  /** Keep returning a cursor on later pages so filtered paging can be exercised. */
+  cursorOnEveryCall?: boolean;
+} = {}) {
   const calls: Call[] = [];
   let chapterCall = 0;
   vi.stubGlobal(
@@ -90,10 +95,15 @@ function mockFetch(options: { chaptersNextCursor?: string | null; batchJobIds?: 
       }
       if (url.includes('/chapters?')) {
         chapterCall += 1;
+        const cursor = options.chaptersNextCursor ?? null;
         if (chapterCall >= 2) {
-          return jsonResponse({ items: [chapter('ch-2', 2)], nextCursor: null, total: 2 });
+          return jsonResponse({
+            items: [chapter('ch-2', 2)],
+            nextCursor: options.cursorOnEveryCall ? cursor : null,
+            total: 2,
+          });
         }
-        return jsonResponse({ items: [chapter('ch-1', 1)], nextCursor: options.chaptersNextCursor ?? null, total: 1 });
+        return jsonResponse({ items: [chapter('ch-1', 1)], nextCursor: cursor, total: 1 });
       }
       if (url === '/api/batches') {
         const jobIds = options.batchJobIds ?? ['job-1', 'job-2'];
@@ -364,5 +374,83 @@ describe('BatchQueue (giữ hành vi cũ)', () => {
     expect(screen.queryByRole('button', { name: 'Thử lại' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Thử lại tất cả lỗi retryable' })).not.toBeInTheDocument();
     expect(calls.some((call) => call.url.endsWith('/retry'))).toBe(false);
+  });
+});
+
+describe('BatchQueue server-side chapter filter (U03/V02)', () => {
+  it('sends q to the server instead of filtering mounted rows', async () => {
+    const calls = mockFetch();
+    render(<BatchQueue projectId="project-1" store={makeStore()} />);
+    await screen.findByText('Chapter 1');
+
+    fireEvent.change(screen.getByLabelText('Tìm chương (lọc ở server)'), { target: { value: '  Chương  ' } });
+
+    await waitFor(() => {
+      const last = calls.filter((call) => call.url.includes('/chapters?')).at(-1);
+      expect(last?.url).toContain('q=Ch%C6%B0%C6%A1ng');
+    });
+    // The filter is a REQUEST parameter, never a client-side row filter.
+    expect(screen.getByText(/Đang lọc ở server/)).toBeVisible();
+  });
+
+  it('sends status as an uppercase enum value', async () => {
+    const calls = mockFetch();
+    render(<BatchQueue projectId="project-1" store={makeStore()} />);
+    await screen.findByText('Chapter 1');
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), { target: { value: 'READY_TO_EXPORT' } });
+
+    await waitFor(() => {
+      const last = calls.filter((call) => call.url.includes('/chapters?')).at(-1);
+      expect(last?.url).toContain('status=READY_TO_EXPORT');
+    });
+  });
+
+  it('combines q and status and drops the cursor when the filter changes', async () => {
+    const calls = mockFetch({ chaptersNextCursor: 'cursor-1' });
+    render(<BatchQueue projectId="project-1" store={makeStore()} />);
+    await screen.findByText('Chapter 1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    await waitFor(() => {
+      const paged = calls.filter((call) => call.url.includes('cursor=')).at(-1);
+      expect(paged?.url).toContain('cursor=cursor-1');
+      expect(paged?.url).not.toContain('q=');
+    });
+
+    fireEvent.change(screen.getByLabelText('Trạng thái'), { target: { value: 'NORMALIZED' } });
+    await waitFor(() => {
+      const filtered = calls.filter((call) => call.url.includes('/chapters?')).at(-1);
+      expect(filtered?.url).toContain('status=NORMALIZED');
+      // A new filter restarts paging: the old cursor must not leak in.
+      expect(filtered?.url).not.toContain('cursor=');
+    });
+  });
+
+  it('carries the active filter into paginated requests', async () => {
+    const calls = mockFetch({ chaptersNextCursor: 'cursor-2', cursorOnEveryCall: true });
+    render(<BatchQueue projectId="project-1" store={makeStore()} />);
+    await screen.findByText('Chapter 1');
+
+    fireEvent.change(screen.getByLabelText('Tìm chương (lọc ở server)'), { target: { value: 'kiem' } });
+    await waitFor(() => {
+      const filtered = calls.filter((call) => call.url.includes('/chapters?')).at(-1);
+      expect(filtered?.url).toContain('q=kiem');
+    });
+
+    // Paging continues INSIDE the filtered set: the next page keeps the filter.
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await waitFor(() => {
+      const paged = calls.filter((call) => call.url.includes('cursor=')).at(-1);
+      expect(paged?.url).toContain('q=kiem');
+    });
+  });
+
+  it('shows the unfiltered state before any filter is set', async () => {
+    mockFetch();
+    render(<BatchQueue projectId="project-1" store={makeStore()} />);
+    await screen.findByText('Chapter 1');
+
+    expect(screen.getByText(/Không lọc/)).toBeVisible();
   });
 });
