@@ -23,7 +23,7 @@ from scripts.benchmarks.fixtures import (
 
 __all__ = ["HARNESS_VERSION", "build_report", "fixture_hash", "plan_gperf_rows", "status_summary", "print_fixture_table"]
 
-HARNESS_VERSION = "v01.1"
+HARNESS_VERSION = "v01.2"
 
 QUERY_NOTE_DEFAULT = "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute)."
 RESPONSE_BYTES_NOTE_DEFAULT = "Bytes của response/ payload mỗi thao tác."
@@ -49,6 +49,26 @@ PLAN_GPERF_ROWS: dict[str, tuple[str, ...]] = {
         "0 duplicate READY",
         "checkpoint/part-master resume",
         "seek Range thành công",
+    ),
+    "CHLIST": (
+        "Chapter list/filter: ≤100 mounted rows",
+        "Chapter list/filter: server filter/paging",
+    ),
+    "CHSWITCH": ("Đổi chương cached: p95 <200 ms qua 30 lượt; fetch time báo riêng",),
+    "CANCELCKPT": ("Cancel sau checkpoint: p95 ≤5 s; thời gian provider kết thúc báo riêng",),
+    "EDITOR8TAB": (
+        "C2K editor và 8 tab: không long task >50 ms lặp trong thao tác gõ",
+        "C2K editor và 8 tab: không mất draft khi evict/reopen",
+    ),
+    "SSE30MIN": (
+        "SSE 30 phút: store ≤1.000 metadata",
+        "SSE 30 phút: delta ≤4 frame/s/job",
+        "SSE 30 phút: heap sau GC phút 30 tăng ≤20 MiB so với phút 5",
+    ),
+    "BACKUP": (
+        "Backup: incremental/progress",
+        "Backup: integrity/checksum/reference pass",
+        "Backup: không copy live WAL riêng",
     ),
 }
 
@@ -158,7 +178,7 @@ def plan_gperf_rows(name: str) -> tuple[str, ...]:
 
 
 def print_fixture_table() -> None:
-    print("Fixture benchmark offline (V01) — mặc định fake/no-network, data root tạm:")
+    print("Fixture benchmark offline (V01 + V02) — mặc định fake/no-network, data root tạm:")
     for name, spec in FIXTURES.items():
         print(f"  {name:<9} {spec.title}")
         for row in plan_gperf_rows(name):

@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "fixture": "CANCELCKPT",
+  "fixtureTitle": "Cancel sau checkpoint — p95 ≤5 s, thời gian provider báo riêng",
+  "seed": 20260908,
+  "fixtureHash": "f368162b3841459dd002ec08db72523a6f7c598142696e23321ad51026f0b760",
+  "fixtureConfig": {
+    "projects": 1,
+    "segmentsPerChapter": 12,
+    "cancelAfterSegments": 5,
+    "dataProfile": "render-fake"
+  },
+  "generatedAt": "2026-09-10T10:32:38.091333Z",
+  "startedAt": "2026-09-10T10:32:16.508365Z",
+  "finishedAt": "2026-09-10T10:32:38.091333Z",
+  "durationSeconds": 21.583,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.2",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1511.3,
+    "ramUsedMb": 5900.2,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T10:32:38.149865Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "Worker thật + handler SYNTHESIZE thật + FakeTts (offline) render 12 segment; cancel được kích hoạt khi segment thứ 5 đang tổng hợp, rồi job được resume để chạy hết."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "cancel.latency": {
+      "p50": 51.576,
+      "p95": 75.54,
+      "p99": 87.547,
+      "unit": "ms",
+      "samples": 20,
+      "min": 48.432,
+      "max": 90.549,
+      "mean": 55.423,
+      "note": "Từ lúc CANCEL_REQUESTED (request_cancel trả về) tới khi worker đã ack và job ở trạng thái CANCELED (đo sau khi run_once kết thúc: cận trên, gồm cả ack + dọn heartbeat)."
+    },
+    "cancel.providerTail": {
+      "p50": 28.502,
+      "p95": 33.365,
+      "p99": 45.836,
+      "unit": "ms",
+      "samples": 20,
+      "min": 26.161,
+      "max": 48.954,
+      "mean": 29.665,
+      "note": "Thời gian provider (FakeTts) kết thúc cho segment đang bay khi cancel tới — BÁO RIÊNG, đây là phần nằm trong ngân sách cancel ở trên nên phải nhìn cùng nhau."
+    },
+    "cancel.resume.total": {
+      "p50": 407.742,
+      "p95": 470.529,
+      "p99": 481.783,
+      "unit": "ms",
+      "samples": 20,
+      "min": 386.005,
+      "max": 484.597,
+      "mean": 418.588,
+      "note": "Lượt resume sau cancel: chạy lại job SYNTHESIZE tới khi SUCCEEDED (phải trúng cache phần đã xong)."
+    }
+  },
+  "phases": {
+    "provider": {
+      "status": "MEASURED",
+      "metric": "cancel.providerTail",
+      "note": "FakeTts offline: thời gian tổng hợp báo riêng, không gộp vào ngân sách DB/API."
+    },
+    "db": {
+      "status": "MEASURED",
+      "metric": "cancel.latency"
+    },
+    "queue": {
+      "status": "MEASURED",
+      "metric": "cancel.latency",
+      "note": "Job đi qua JobRunner/Worker thật: claim → lease → ack cancel."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: handler SYNTHESIZE chỉ render segment audio bằng fake adapter."
+    }
+  },
+  "queries": {
+    "perOperation": {},
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 5543,
+      "seconds": 0.554,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {},
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 88.6,
+    "peak": 99.32,
+    "delta": 10.73,
+    "marks": {
+      "baseline": 88.6,
+      "final": 99.32
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 1347584,
+    "files": {
+      "studio.sqlite3": 1347584,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "Cancel sau checkpoint",
+      "target": 5000,
+      "targetLabel": "p95 ≤ 5 s",
+      "measured": 75.54,
+      "unit": "ms",
+      "status": "PASS",
+      "note": "p95 = 75.540 ms trên 20 lượt; thời gian provider kết thúc (FakeTts) lớn nhất 48.954 ms được báo riêng ở cancel.providerTail (--fake-latency-ms đặt được để mô phỏng provider chậm)."
+    },
+    {
+      "case": "Cancel sau checkpoint — checkpoint giữ nguyên",
+      "target": 5,
+      "targetLabel": "5 segment đã READY được giữ, không còn file dở, resume chỉ gọi lại phần thiếu",
+      "measured": {
+        "readyAfterCancel": [
+          5
+        ],
+        "expected": 5,
+        "stagingLeftovers": 0,
+        "resumeProviderCalls": [
+          7.0
+        ],
+        "resumeExpected": 7
+      },
+      "unit": "segment",
+      "status": "PASS",
+      "note": "Cancel dừng ở ranh giới segment: phần đã checkpoint vẫn READY và lượt resume trúng cache phần đó."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 2,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {
+    "cancel": {
+      "segmentsPerChapter": 12,
+      "cancelAfterSegments": 5,
+      "iterations": 20,
+      "fakeProviderLatencyMs": 0,
+      "cancelRequestedObserved": 20,
+      "readyAfterCancel": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5,
+        5
+      ],
+      "readyAfterCancelExpected": 5,
+      "providerTailMaxMs": 48.954,
+      "resumeProviderCalls": [
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0,
+        7.0
+      ],
+      "resumeProviderCallsExpected": 7,
+      "stagingLeftovers": []
+    }
+  },
+  "notes": [
+    "Đây là cancel với provider GIẢ (FakeTts): chứng minh plumbing cancel/ack/checkpoint, KHÔNG phải cancel một provider cloud thật và không suy ra hành vi mạng của nhà cung cấp."
+  ]
+}

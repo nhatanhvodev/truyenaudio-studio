@@ -1,0 +1,430 @@
+{
+  "schemaVersion": 1,
+  "fixture": "CHLIST",
+  "fixtureTitle": "Chapter list/filter — ≤100 mounted rows, filter/paging qua route thật",
+  "seed": 20260908,
+  "fixtureHash": "857f0936ba5690de847b65aec47adc879fe93c2796064e6e39fe8b0bf6b9a2d5",
+  "fixtureConfig": {
+    "projects": 1,
+    "chapters": 1000,
+    "pageSize": 100,
+    "clampProbeLimit": 500,
+    "pages": 10,
+    "marker": "ZZQ-MARKER",
+    "markerChapters": 12,
+    "dataProfile": "metadata-only"
+  },
+  "generatedAt": "2026-09-10T10:32:08.817530Z",
+  "startedAt": "2026-09-10T10:32:02.295830Z",
+  "finishedAt": "2026-09-10T10:32:08.817530Z",
+  "durationSeconds": 6.522,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.2",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1544.4,
+    "ramUsedMb": 5867.2,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T10:32:08.883493Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "GET /api/projects/{id}/chapters thật trên project 1000 chương: trang limit=100, probe trần limit=500, đi 10 trang bằng cursor và probe filter q='ZZQ-MARKER' (khớp 12 chương)."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "chapterList100.total": {
+      "p50": 73.89,
+      "p95": 109.95,
+      "p99": 136.252,
+      "unit": "ms",
+      "samples": 20,
+      "min": 68.445,
+      "max": 142.827,
+      "mean": 80.003,
+      "note": "GET /api/projects/{id}/chapters?limit=100 (trang mount của editor) trên DB tạm; đo cả request + phần DB + bytes."
+    },
+    "chapterList100.db": {
+      "p50": 5.425,
+      "p95": 7.621,
+      "p99": 7.725,
+      "unit": "ms",
+      "samples": 20,
+      "min": 5.062,
+      "max": 7.751,
+      "mean": 5.712,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "chapterList100.other": {
+      "p50": 68.651,
+      "p95": 102.311,
+      "p99": 130.329,
+      "unit": "ms",
+      "samples": 20,
+      "min": 63.384,
+      "max": 137.333,
+      "mean": 74.291,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "chapterList100.statements": {
+      "p50": 302.0,
+      "p95": 302.0,
+      "p99": 302.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 302.0,
+      "max": 302.0,
+      "mean": 302.0
+    },
+    "chapterList100.responseBytes": {
+      "p50": 34053.0,
+      "p95": 34053.0,
+      "p99": 34053.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 34053.0,
+      "max": 34053.0,
+      "mean": 34053.0
+    },
+    "chapterListClampProbe.total": {
+      "p50": 75.896,
+      "p95": 85.518,
+      "p99": 86.203,
+      "unit": "ms",
+      "samples": 20,
+      "min": 68.514,
+      "max": 86.374,
+      "mean": 76.512,
+      "note": "Probe trần: yêu cầu limit=500 (lớn hơn MAX_CHAPTER_LIMIT) — server phải tự kẹp, không được trả quá 100 dòng."
+    },
+    "chapterListClampProbe.db": {
+      "p50": 5.691,
+      "p95": 6.4,
+      "p99": 6.68,
+      "unit": "ms",
+      "samples": 20,
+      "min": 5.049,
+      "max": 6.75,
+      "mean": 5.722,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "chapterListClampProbe.other": {
+      "p50": 70.281,
+      "p95": 79.119,
+      "p99": 79.523,
+      "unit": "ms",
+      "samples": 20,
+      "min": 63.465,
+      "max": 79.624,
+      "mean": 70.791,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "chapterListClampProbe.statements": {
+      "p50": 302.0,
+      "p95": 302.0,
+      "p99": 302.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 302.0,
+      "max": 302.0,
+      "mean": 302.0
+    },
+    "chapterListClampProbe.responseBytes": {
+      "p50": 34053.0,
+      "p95": 34053.0,
+      "p99": 34053.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 34053.0,
+      "max": 34053.0,
+      "mean": 34053.0
+    },
+    "chapterListCursorPage.total": {
+      "p50": 76.199,
+      "p95": 113.632,
+      "p99": 136.224,
+      "unit": "ms",
+      "samples": 10,
+      "min": 70.351,
+      "max": 141.872,
+      "mean": 82.031,
+      "note": "Một trang 100 chương đi bằng nextCursor do route sinh (paging server-side)."
+    },
+    "chapterListCursorPage.db": {
+      "p50": 5.626,
+      "p95": 6.113,
+      "p99": 6.135,
+      "unit": "ms",
+      "samples": 10,
+      "min": 5.138,
+      "max": 6.14,
+      "mean": 5.666,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "chapterListCursorPage.other": {
+      "p50": 70.344,
+      "p95": 107.91,
+      "p99": 130.582,
+      "unit": "ms",
+      "samples": 10,
+      "min": 65.213,
+      "max": 136.251,
+      "mean": 76.365,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "chapterListCursorPage.statements": {
+      "p50": 302.0,
+      "p95": 302.0,
+      "p99": 302.0,
+      "unit": "statements",
+      "samples": 10,
+      "min": 302.0,
+      "max": 302.0,
+      "mean": 302.0
+    },
+    "chapterListCursorPage.responseBytes": {
+      "p50": 34116.0,
+      "p95": 34116.0,
+      "p99": 34116.0,
+      "unit": "bytes",
+      "samples": 10,
+      "min": 33944.0,
+      "max": 34116.0,
+      "mean": 34092.5
+    },
+    "chapterListFilterProbe.total": {
+      "p50": 79.976,
+      "p95": 79.976,
+      "p99": 79.976,
+      "unit": "ms",
+      "samples": 1,
+      "min": 79.976,
+      "max": 79.976,
+      "mean": 79.976,
+      "note": "Một request có q (tham số lọc theo quy ước của app) — đo để biết chi phí, không phải ngưỡng G-PERF."
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "chapterList100.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "CHLIST chỉ đọc metadata chương, không đi qua worker queue."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "chapterList100": {
+        "p50": 302.0,
+        "p95": 302.0,
+        "p99": 302.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 302.0,
+        "max": 302.0,
+        "mean": 302.0
+      },
+      "chapterListClampProbe": {
+        "p50": 302.0,
+        "p95": 302.0,
+        "p99": 302.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 302.0,
+        "max": 302.0,
+        "mean": 302.0
+      },
+      "chapterListCursorPage": {
+        "p50": 302.0,
+        "p95": 302.0,
+        "p99": 302.0,
+        "unit": "statements",
+        "samples": 10,
+        "min": 302.0,
+        "max": 302.0,
+        "mean": 302.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 20755,
+      "seconds": 1.117,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "chapterList100": {
+        "p50": 34053.0,
+        "p95": 34053.0,
+        "p99": 34053.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 34053.0,
+        "max": 34053.0,
+        "mean": 34053.0
+      },
+      "chapterListClampProbe": {
+        "p50": 34053.0,
+        "p95": 34053.0,
+        "p99": 34053.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 34053.0,
+        "max": 34053.0,
+        "mean": 34053.0
+      },
+      "chapterListCursorPage": {
+        "p50": 34116.0,
+        "p95": 34116.0,
+        "p99": 34116.0,
+        "unit": "bytes",
+        "samples": 10,
+        "min": 33944.0,
+        "max": 34116.0,
+        "mean": 34092.5
+      }
+    },
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 88.69,
+    "peak": 101.89,
+    "delta": 13.2,
+    "marks": {
+      "baseline": 88.69,
+      "final": 101.89
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 839680,
+    "files": {
+      "studio.sqlite3": 839680,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "Chapter list/filter — dòng mount mỗi trang",
+      "target": 100,
+      "targetLabel": "≤100 mounted rows",
+      "measured": 100.0,
+      "unit": "rows",
+      "status": "PASS",
+      "note": "Trang limit=100 trả 100 dòng; probe trần limit=500 trả 100 dòng (server tự kẹp). Số dòng lớn nhất quan sát được: 100."
+    },
+    {
+      "case": "Chapter list/filter — filter chạy server-side",
+      "target": "server-side filter",
+      "targetLabel": "filter/paging chạy ở server (q lọc trước khi trả trang)",
+      "measured": {
+        "query": "ZZQ-MARKER",
+        "expectedMatches": 12,
+        "rowsReturned": 100,
+        "serverTotal": 1000,
+        "unfilteredTotal": 1000,
+        "rowsMatchingQuery": 12,
+        "filterParamRows": 100,
+        "statusParamTotal": 1000
+      },
+      "unit": "http",
+      "status": "FAIL",
+      "note": "GET /api/projects/{id}/chapters KHÔNG có tham số lọc: q bị bỏ qua và total vẫn là toàn bộ 1000 chương, nên client phải tự lọc trong trang đã mount (100 dòng) — không đáp ứng 'server filter'. Xem extras.chapterList.filterProbe để có bằng chứng nguyên văn."
+    },
+    {
+      "case": "Chapter list/filter — paging phủ hết project",
+      "target": 1000,
+      "targetLabel": "đi hết 1000 chương bằng cursor, mỗi trang ≤100 dòng, không trùng/thiếu",
+      "measured": {
+        "pagesWalked": 10,
+        "rowsPerPageMax": 100,
+        "chaptersCovered": 1000,
+        "coverageComplete": true,
+        "noDuplicates": true
+      },
+      "unit": "cursor",
+      "status": "PASS",
+      "note": "Cursor do chính route sinh (nextCursor) và ký HMAC; walk kiểm tra ordinal tăng dần, không trùng và không thiếu khi tới trang cuối."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 2,
+    "FAIL": 1,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "FAIL",
+  "extras": {
+    "chapterList": {
+      "seededChapters": 1000,
+      "pageSize": 100,
+      "clampProbeLimit": 500,
+      "clampProbeRows": 100,
+      "rowsPerPageMax": 100,
+      "pagesWalked": 10,
+      "chaptersCovered": 1000,
+      "coverageComplete": true,
+      "noDuplicates": true,
+      "filterProbe": {
+        "url": "/api/projects/018f0000-0000-7000-8000-a00000000000/chapters?limit=100&q=ZZQ-MARKER",
+        "query": "ZZQ-MARKER",
+        "expectedMatches": 12,
+        "rowsReturned": 100,
+        "rowsMatching": 12,
+        "serverTotal": 1000,
+        "serverFiltered": false,
+        "filterParamEchoed": 100,
+        "statusParamTotal": 1000,
+        "probeLatencyMs": 79.976
+      },
+      "mountedRowsMax": 100
+    }
+  },
+  "notes": [
+    "'Mounted rows' đo bằng số dòng server trả về mỗi trang (proxy của số dòng UI mount): editor chỉ mount những gì trang trả về, và trần của app là MAX_CHAPTER_LIMIT = 100."
+  ]
+}

@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 1,
+  "fixture": "SSE30MIN",
+  "fixtureTitle": "Phiên SSE rút ngắn — store ≤1.000 metadata, ≤4 frame/s/job",
+  "seed": 20260908,
+  "fixtureHash": "a03c64f1e81dacd6c8f491b3069d3f6b2313b177c1387cdcc3046dbb1196f920",
+  "fixtureConfig": {
+    "projects": 1,
+    "chapters": 40,
+    "jobs": 40,
+    "segmentsPerChapter": 6,
+    "sessionSeconds": 90,
+    "snapshotIntervalMs": 250,
+    "dataProfile": "events"
+  },
+  "generatedAt": "2026-09-10T10:34:15.437833Z",
+  "startedAt": "2026-09-10T10:32:43.183695Z",
+  "finishedAt": "2026-09-10T10:34:15.437833Z",
+  "durationSeconds": 92.254,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.2",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1316.8,
+    "ramUsedMb": 6094.8,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T10:34:15.503343Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "Phiên SSE thật 90.1 s: worker thật render 40 job trên 40 chương trong lúc client lặp snapshot (GET /api/jobs/snapshot) + replay (GET /api/jobs/events) như store frontend."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "sseSnapshot.total": {
+      "p50": 13.565,
+      "p95": 44.374,
+      "p99": 81.777,
+      "unit": "ms",
+      "samples": 318,
+      "min": 8.827,
+      "max": 138.425,
+      "mean": 19.043,
+      "note": "Mỗi chu kỳ store refetch snapshot (GET /api/jobs/snapshot) trước khi replay tiếp — đúng hành vi reconnect của store."
+    },
+    "sseSnapshot.db": {
+      "p50": 0.813,
+      "p95": 4.678,
+      "p99": 31.899,
+      "unit": "ms",
+      "samples": 318,
+      "min": 0.288,
+      "max": 77.032,
+      "mean": 2.236,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "sseSnapshot.other": {
+      "p50": 12.484,
+      "p95": 35.681,
+      "p99": 63.983,
+      "unit": "ms",
+      "samples": 318,
+      "min": -4.036,
+      "max": 113.965,
+      "mean": 16.807,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "sseSnapshot.statements": {
+      "p50": 8.0,
+      "p95": 12.0,
+      "p99": 20.7,
+      "unit": "statements",
+      "samples": 318,
+      "min": 5.0,
+      "max": 30.0,
+      "mean": 7.7
+    },
+    "sseSnapshot.responseBytes": {
+      "p50": 2763.0,
+      "p95": 5247.0,
+      "p99": 5523.0,
+      "unit": "bytes",
+      "samples": 318,
+      "min": 147.0,
+      "max": 5523.0,
+      "mean": 2813.9
+    },
+    "sseReplayCycle.total": {
+      "p50": 9.981,
+      "p95": 31.155,
+      "p99": 61.35,
+      "unit": "ms",
+      "samples": 318,
+      "min": 7.127,
+      "max": 91.906,
+      "mean": 13.733,
+      "note": "Một chu kỳ replay qua route SSE thật (GET /api/jobs/events?after=cursor)."
+    },
+    "sseReplayCycle.db": {
+      "p50": 0.525,
+      "p95": 4.272,
+      "p99": 19.581,
+      "unit": "ms",
+      "samples": 318,
+      "min": 0.203,
+      "max": 41.556,
+      "mean": 1.449
+    },
+    "sseReplayCycle.statements": {
+      "p50": 4.0,
+      "p95": 9.1,
+      "p99": 25.6,
+      "unit": "statements",
+      "samples": 318,
+      "min": 4.0,
+      "max": 30.0,
+      "mean": 6.1
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "sseSession.framesPerSecond"
+    },
+    "queue": {
+      "status": "MEASURED",
+      "metric": "sseSession.frames",
+      "note": "Job thật chạy qua JobRunner/Worker trong phiên."
+    },
+    "provider": {
+      "status": "MEASURED",
+      "metric": "sseSession.frames",
+      "note": "FakeTts offline trong phiên (không gọi provider thật); job/provider báo riêng khỏi ngân sách API/DB."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg trong phiên SSE."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "sseSnapshot": {
+        "p50": 8.0,
+        "p95": 12.0,
+        "p99": 20.7,
+        "unit": "statements",
+        "samples": 318,
+        "min": 5.0,
+        "max": 30.0,
+        "mean": 7.7
+      },
+      "sseReplayCycle": {
+        "p50": 4.0,
+        "p95": 9.1,
+        "p99": 25.6,
+        "unit": "statements",
+        "samples": 318,
+        "min": 4.0,
+        "max": 30.0,
+        "mean": 6.1
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 20128,
+      "seconds": 2.151,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "sseSnapshot": {
+        "p50": 2763.0,
+        "p95": 5247.0,
+        "p99": 5523.0,
+        "unit": "bytes",
+        "samples": 318,
+        "min": 147.0,
+        "max": 5523.0,
+        "mean": 2813.9
+      }
+    },
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 88.5,
+    "peak": 103.79,
+    "delta": 15.29,
+    "marks": {
+      "baseline": 88.5,
+      "sseBeforeSession": 97.99,
+      "sseAfterSession": 103.72,
+      "final": 103.79
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 1208320,
+    "files": {
+      "studio.sqlite3": 1208320,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "SSE 30 phút — store metadata",
+      "target": 1000,
+      "targetLabel": "store ≤ 1.000 metadata",
+      "measured": 760.0,
+      "unit": "metadata",
+      "status": "PASS",
+      "note": "Đo bằng CHÍNH store frontend (U07) chạy trên Node với trace frame thật của phiên này, lặp 19× để mô phỏng khối lượng frame của phiên 30 phút (phiên thật bị rút ngắn): tổng 760 frame replay → lớn nhất 760 metadata trong buffer (MAX_EVENTS=1000), truncated=False."
+    },
+    {
+      "case": "SSE 30 phút — delta frame mỗi job",
+      "target": 4,
+      "targetLabel": "delta ≤ 4 frame/s/job",
+      "measured": 1.0,
+      "unit": "frame/s/job",
+      "status": "PASS",
+      "note": "Số frame lớn nhất mà MỘT job nhận trong một cửa sổ 1 giây trên feed thật (40 frame, 40 job, 90.1 s). Lưu ý: feed hiện phát một frame cho mỗi entity mới trong event_log (payload mang trạng thái hiện tại), nên tỉ lệ này bị chi phối bởi số entity mới mỗi giây chứ chưa phải coalescing tiến độ."
+    },
+    {
+      "case": "SSE 30 phút — phiên đủ 30 phút và heap phút 30 so với phút 5",
+      "target": null,
+      "targetLabel": "heap sau GC phút 30 tăng ≤20 MiB so với phút 5",
+      "measured": null,
+      "unit": "MiB",
+      "status": "NOT_RUN",
+      "note": "RÚT NGẮN, KHÔNG ĐỦ 30 PHÚT: phiên đo chỉ 90.1 s (plan §7 yêu cầu 1.800 s). Số đo rút ngắn: RSS tiến trình 15.22 MiB, 40 frame/90.1 s, store tối đa 760 metadata, heap Node sau GC thay đổi 0.17 MiB (heap Node KHÔNG phải heap browser). Không suy ra PASS cho mốc 30 phút từ phiên ngắn."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 2,
+    "FAIL": 0,
+    "NOT_RUN": 1,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {
+    "sseSession": {
+      "configuredSessionSeconds": 90.0,
+      "sessionSeconds": 90.141,
+      "shortened": true,
+      "thresholdSecondsFromPlan": 1800,
+      "snapshotCycles": 318,
+      "streamCycles": 318,
+      "frames": 40,
+      "framesPerSecond": 0.4437,
+      "distinctJobs": 40,
+      "maxFramesPerJobPerSecond": 1,
+      "maxFrameBytes": 121,
+      "meanFrameBytes": 120.42,
+      "totalFrameBytes": 4817,
+      "snapshotEventsMax": 40,
+      "workerErrors": [],
+      "jobsEnqueued": 40,
+      "framesPath": "sse-frames.json",
+      "replayRepeatForThirtyMinutes": 19
+    },
+    "sseStoreSession": {
+      "ran": true,
+      "nodeVersion": "v24.11.1",
+      "maxEvents": 1000,
+      "framesReplayed": 760,
+      "capturedFrames": 40,
+      "repeat": 19,
+      "storedEventsAfterReplay": 760,
+      "maxStoredDuringReplay": 760,
+      "truncated": false,
+      "cursor": "18000040",
+      "distinctJobs": 40,
+      "maxFramesPerJobPerSecond": 1,
+      "capturedWindowSeconds": 64888.176,
+      "capturedFramesPerSecond": 0.001,
+      "heapBeforeMb": 8.57,
+      "heapAfterMb": 8.74,
+      "heapDeltaMb": 0.17,
+      "gcAvailable": true
+    }
+  },
+  "notes": [
+    "Phiên SSE30MIN bị RÚT NGẮN: plan yêu cầu phiên 30 phút và so heap phút 30 với phút 5; harness chỉ chạy 90.1 s nên dòng ngưỡng 30 phút được ghi NOT_RUN kèm số đo rút ngắn."
+  ]
+}

@@ -1,0 +1,412 @@
+{
+  "schemaVersion": 1,
+  "fixture": "CHSWITCH",
+  "fixtureTitle": "Đổi chương cached — p95 <200 ms qua 30 lượt, tách cold/warm",
+  "seed": 20260908,
+  "fixtureHash": "b06978a15d87f9f24fb13a154c07853d4ff99a878df49b218d608dd4ec65096c",
+  "fixtureConfig": {
+    "projects": 1,
+    "chapters": 1000,
+    "contentChapters": 60,
+    "segmentsPerChapter": 20,
+    "switches": 30,
+    "dataProfile": "translation-metadata"
+  },
+  "generatedAt": "2026-09-10T10:32:14.778558Z",
+  "startedAt": "2026-09-10T10:32:10.847791Z",
+  "finishedAt": "2026-09-10T10:32:14.778558Z",
+  "durationSeconds": 3.931,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.2",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1652.1,
+    "ramUsedMb": 5759.4,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T10:32:14.840415Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "Một lượt đổi chương = GET /api/chapters/{id}/translation (payload chương, phần fetch) + GET /api/chapters/{id}/draft (khôi phục nháp của editor), cả hai qua router thật trên data root tạm."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "switchCold.total": {
+      "p50": 22.332,
+      "p95": 26.766,
+      "p99": 31.037,
+      "unit": "ms",
+      "samples": 30,
+      "min": 20.484,
+      "max": 32.776,
+      "mean": 23.09,
+      "note": "Lượt ĐẦU tới từng chương (cache nguội: DB/page cache chưa có gì cho chương đó) — báo riêng, không dùng cho ngưỡng p95 cached."
+    },
+    "switchCold.fetch.total": {
+      "p50": 15.741,
+      "p95": 19.565,
+      "p99": 23.011,
+      "unit": "ms",
+      "samples": 30,
+      "min": 14.626,
+      "max": 24.298,
+      "mean": 16.438,
+      "note": "Phần FETCH của lượt đổi chương: GET /api/chapters/{id}/translation (payload chương)."
+    },
+    "switchCold.fetch.db": {
+      "p50": 0.84,
+      "p95": 1.128,
+      "p99": 1.29,
+      "unit": "ms",
+      "samples": 30,
+      "min": 0.767,
+      "max": 1.33,
+      "mean": 0.884,
+      "note": "Thời gian trong SQLite của riêng phần fetch (thread-local: TestClient chạy ASGI ở thread khác nên quy kết bằng process-global-delta, fixture chạy tuần tự)."
+    },
+    "switchCold.draft.total": {
+      "p50": 6.441,
+      "p95": 8.73,
+      "p99": 9.719,
+      "unit": "ms",
+      "samples": 30,
+      "min": 5.428,
+      "max": 10.039,
+      "mean": 6.652,
+      "note": "Phần khôi phục nháp của editor: GET /api/chapters/{id}/draft."
+    },
+    "switchCold.draft.db": {
+      "p50": 0.101,
+      "p95": 0.225,
+      "p99": 0.347,
+      "unit": "ms",
+      "samples": 30,
+      "min": 0.062,
+      "max": 0.383,
+      "mean": 0.12
+    },
+    "switchCold.statements": {
+      "p50": 25.0,
+      "p95": 25.0,
+      "p99": 25.0,
+      "unit": "statements",
+      "samples": 30,
+      "min": 25.0,
+      "max": 25.0,
+      "mean": 25.0
+    },
+    "switchCold.responseBytes": {
+      "p50": 8893.0,
+      "p95": 8893.0,
+      "p99": 8893.0,
+      "unit": "bytes",
+      "samples": 30,
+      "min": 8833.0,
+      "max": 8893.0,
+      "mean": 8875.0
+    },
+    "switchWarm.total": {
+      "p50": 21.69,
+      "p95": 24.742,
+      "p99": 75.47,
+      "unit": "ms",
+      "samples": 25,
+      "min": 19.765,
+      "max": 91.439,
+      "mean": 24.631,
+      "note": "Đổi chương ĐÃ CACHED: 30 lượt quay vòng qua các chương vừa mở (page cache ấm, draft đã nằm trong store), đo cả request liên hợp + phần fetch (GET translation) riêng."
+    },
+    "switchWarm.fetch.total": {
+      "p50": 15.385,
+      "p95": 18.455,
+      "p99": 69.025,
+      "unit": "ms",
+      "samples": 25,
+      "min": 14.038,
+      "max": 84.962,
+      "mean": 18.482,
+      "note": "Phần FETCH của lượt đổi chương: GET /api/chapters/{id}/translation (payload chương)."
+    },
+    "switchWarm.fetch.db": {
+      "p50": 0.83,
+      "p95": 0.987,
+      "p99": 1.006,
+      "unit": "ms",
+      "samples": 25,
+      "min": 0.746,
+      "max": 1.008,
+      "mean": 0.844,
+      "note": "Thời gian trong SQLite của riêng phần fetch (thread-local: TestClient chạy ASGI ở thread khác nên quy kết bằng process-global-delta, fixture chạy tuần tự)."
+    },
+    "switchWarm.draft.total": {
+      "p50": 6.27,
+      "p95": 6.767,
+      "p99": 6.84,
+      "unit": "ms",
+      "samples": 25,
+      "min": 5.106,
+      "max": 6.859,
+      "mean": 6.149,
+      "note": "Phần khôi phục nháp của editor: GET /api/chapters/{id}/draft."
+    },
+    "switchWarm.draft.db": {
+      "p50": 0.095,
+      "p95": 0.132,
+      "p99": 0.135,
+      "unit": "ms",
+      "samples": 25,
+      "min": 0.068,
+      "max": 0.135,
+      "mean": 0.1
+    },
+    "switchWarm.statements": {
+      "p50": 25.0,
+      "p95": 25.0,
+      "p99": 25.0,
+      "unit": "statements",
+      "samples": 25,
+      "min": 25.0,
+      "max": 25.0,
+      "mean": 25.0
+    },
+    "switchWarm.responseBytes": {
+      "p50": 8893.0,
+      "p95": 8893.0,
+      "p99": 8893.0,
+      "unit": "bytes",
+      "samples": 25,
+      "min": 8833.0,
+      "max": 8893.0,
+      "mean": 8883.4
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "switchWarm.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "CHSWITCH chỉ đọc chương/nháp, không đi qua worker queue."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "switchCold": {
+        "p50": 25.0,
+        "p95": 25.0,
+        "p99": 25.0,
+        "unit": "statements",
+        "samples": 30,
+        "min": 25.0,
+        "max": 25.0,
+        "mean": 25.0
+      },
+      "switchWarm": {
+        "p50": 25.0,
+        "p95": 25.0,
+        "p99": 25.0,
+        "unit": "statements",
+        "samples": 25,
+        "min": 25.0,
+        "max": 25.0,
+        "mean": 25.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 6156,
+      "seconds": 0.401,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "switchCold": {
+        "p50": 8893.0,
+        "p95": 8893.0,
+        "p99": 8893.0,
+        "unit": "bytes",
+        "samples": 30,
+        "min": 8833.0,
+        "max": 8893.0,
+        "mean": 8875.0
+      },
+      "switchWarm": {
+        "p50": 8893.0,
+        "p95": 8893.0,
+        "p99": 8893.0,
+        "unit": "bytes",
+        "samples": 25,
+        "min": 8833.0,
+        "max": 8893.0,
+        "mean": 8883.4
+      }
+    },
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 88.7,
+    "peak": 102.8,
+    "delta": 14.11,
+    "marks": {
+      "baseline": 88.7,
+      "final": 102.8
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 1986560,
+    "files": {
+      "studio.sqlite3": 1986560,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "Đổi chương cached",
+      "target": 200,
+      "targetLabel": "p95 < 200 ms qua 30 lượt",
+      "measured": 24.742,
+      "unit": "ms",
+      "status": "PASS",
+      "note": "p95 lượt đổi chương warm = 24.742 ms; riêng phần fetch (GET translation) p95 = 18.455 ms. Lượt cold p95 = 26.766 ms (báo riêng, không dùng cho ngưỡng này)."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 1,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {
+    "chapterSwitch": {
+      "projectId": "018f0000-0000-7000-8000-a00000000000",
+      "switches": 30,
+      "chaptersInProject": 1000,
+      "chaptersWithContent": 60,
+      "segmentsPerChapter": 20,
+      "draftRevisions": {
+        "018f0000-0000-7000-8000-b00000000001": 1,
+        "018f0000-0000-7000-8000-b00000000002": 1,
+        "018f0000-0000-7000-8000-b00000000003": 1,
+        "018f0000-0000-7000-8000-b00000000004": 1,
+        "018f0000-0000-7000-8000-b00000000005": 1,
+        "018f0000-0000-7000-8000-b00000000006": 1,
+        "018f0000-0000-7000-8000-b00000000007": 1,
+        "018f0000-0000-7000-8000-b00000000008": 1,
+        "018f0000-0000-7000-8000-b00000000009": 1,
+        "018f0000-0000-7000-8000-b00000000010": 1,
+        "018f0000-0000-7000-8000-b00000000011": 1,
+        "018f0000-0000-7000-8000-b00000000012": 1,
+        "018f0000-0000-7000-8000-b00000000013": 1,
+        "018f0000-0000-7000-8000-b00000000014": 1,
+        "018f0000-0000-7000-8000-b00000000015": 1,
+        "018f0000-0000-7000-8000-b00000000016": 1,
+        "018f0000-0000-7000-8000-b00000000017": 1,
+        "018f0000-0000-7000-8000-b00000000018": 1,
+        "018f0000-0000-7000-8000-b00000000019": 1,
+        "018f0000-0000-7000-8000-b00000000020": 1,
+        "018f0000-0000-7000-8000-b00000000021": 1,
+        "018f0000-0000-7000-8000-b00000000022": 1,
+        "018f0000-0000-7000-8000-b00000000023": 1,
+        "018f0000-0000-7000-8000-b00000000024": 1,
+        "018f0000-0000-7000-8000-b00000000025": 1,
+        "018f0000-0000-7000-8000-b00000000026": 1,
+        "018f0000-0000-7000-8000-b00000000027": 1,
+        "018f0000-0000-7000-8000-b00000000028": 1,
+        "018f0000-0000-7000-8000-b00000000029": 1,
+        "018f0000-0000-7000-8000-b00000000030": 1,
+        "018f0000-0000-7000-8000-b00000000031": 1,
+        "018f0000-0000-7000-8000-b00000000032": 1,
+        "018f0000-0000-7000-8000-b00000000033": 1,
+        "018f0000-0000-7000-8000-b00000000034": 1,
+        "018f0000-0000-7000-8000-b00000000035": 1,
+        "018f0000-0000-7000-8000-b00000000036": 1,
+        "018f0000-0000-7000-8000-b00000000037": 1,
+        "018f0000-0000-7000-8000-b00000000038": 1,
+        "018f0000-0000-7000-8000-b00000000039": 1,
+        "018f0000-0000-7000-8000-b00000000040": 1,
+        "018f0000-0000-7000-8000-b00000000041": 1,
+        "018f0000-0000-7000-8000-b00000000042": 1,
+        "018f0000-0000-7000-8000-b00000000043": 1,
+        "018f0000-0000-7000-8000-b00000000044": 1,
+        "018f0000-0000-7000-8000-b00000000045": 1,
+        "018f0000-0000-7000-8000-b00000000046": 1,
+        "018f0000-0000-7000-8000-b00000000047": 1,
+        "018f0000-0000-7000-8000-b00000000048": 1,
+        "018f0000-0000-7000-8000-b00000000049": 1,
+        "018f0000-0000-7000-8000-b00000000050": 1,
+        "018f0000-0000-7000-8000-b00000000051": 1,
+        "018f0000-0000-7000-8000-b00000000052": 1,
+        "018f0000-0000-7000-8000-b00000000053": 1,
+        "018f0000-0000-7000-8000-b00000000054": 1,
+        "018f0000-0000-7000-8000-b00000000055": 1,
+        "018f0000-0000-7000-8000-b00000000056": 1,
+        "018f0000-0000-7000-8000-b00000000057": 1,
+        "018f0000-0000-7000-8000-b00000000058": 1,
+        "018f0000-0000-7000-8000-b00000000059": 1,
+        "018f0000-0000-7000-8000-b00000000060": 1
+      },
+      "warm": {
+        "switches": 25,
+        "p95Ms": 24.742,
+        "fetchP95Ms": 18.455,
+        "draftP95Ms": 6.767
+      },
+      "cold": {
+        "switches": 30,
+        "p95Ms": 26.766,
+        "fetchP95Ms": 19.565,
+        "draftP95Ms": 8.73
+      },
+      "warmP95Ms": 24.742,
+      "fetchP95Ms": 18.455
+    }
+  },
+  "notes": [
+    "Ngưỡng G-PERF đặt trên lượt ĐỔI CHƯƠNG ĐÃ CACHED (warm). Thời gian fetch được báo riêng ở metric switchWarm.fetch.total (p95) và switchWarm.db — không cộng lẫn provider (không có provider nào)."
+  ]
+}

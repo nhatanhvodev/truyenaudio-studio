@@ -1,0 +1,356 @@
+{
+  "schemaVersion": 1,
+  "fixture": "BACKUP",
+  "fixtureTitle": "Backup thật trên DB tạm lớn — integrity/checksum/reference, không copy live WAL",
+  "seed": 20260908,
+  "fixtureHash": "080b253a40a16b3091caf9e4fb8820aa553d1b6668a7f95a2c460d0bb2b4b42b",
+  "fixtureConfig": {
+    "projects": 1,
+    "chapters": 2000,
+    "artifacts": 240,
+    "payloadBytes": 32768,
+    "retention": 7,
+    "writerOps": 40,
+    "dataProfile": "backup"
+  },
+  "generatedAt": "2026-09-10T10:36:21.762834Z",
+  "startedAt": "2026-09-10T10:34:17.649549Z",
+  "finishedAt": "2026-09-10T10:36:21.762834Z",
+  "durationSeconds": 124.113,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.2",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 2350.0,
+    "ramUsedMb": 5061.5,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T10:36:22.139374Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "BackupService thật trên DB tạm 2000 chương + 240 artifact (32768 B/artifact): mỗi lượt create() + verify(), và một writer commit liên tục trong lúc một bản backup khác đang chạy."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "backup.create": {
+      "p50": 3743.12,
+      "p95": 5517.16,
+      "p99": 10802.357,
+      "unit": "ms",
+      "samples": 25,
+      "min": 3655.958,
+      "max": 12387.331,
+      "mean": 4210.695,
+      "note": "BackupService.create() thật: sqlite3 online backup + integrity_check + copy artifact + sha256 + manifest."
+    },
+    "backup.verify": {
+      "p50": 349.462,
+      "p95": 389.496,
+      "p99": 413.378,
+      "unit": "ms",
+      "samples": 25,
+      "min": 341.773,
+      "max": 420.347,
+      "mean": 357.579,
+      "note": "BackupService.verify(): integrity_check + sha256 + kiểm tra con trỏ artifact."
+    },
+    "backup.writerLatency": {
+      "p50": 3.959,
+      "p95": 10.3,
+      "p99": 16.7,
+      "unit": "ms",
+      "samples": 40,
+      "min": 2.743,
+      "max": 18.751,
+      "mean": 4.968,
+      "note": "Độ trễ commit của writer trên DB nguồn TRONG LÚC backup đang chạy (đo 'user downtime' thay vì chỉ đo thời gian backup)."
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "backup.create"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "BACKUP không đi qua worker queue: route/service gọi trực tiếp."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {},
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 2956,
+      "seconds": 0.25,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {},
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 88.57,
+    "peak": 88.57,
+    "delta": 0.0,
+    "marks": {
+      "baseline": 88.57,
+      "final": 77.14
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 1413120,
+    "files": {
+      "studio.sqlite3": 1413120,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "Backup — integrity/checksum/reference",
+      "target": true,
+      "targetLabel": "integrity_check=ok, sha256/byte_size khớp manifest, con trỏ artifact khớp",
+      "measured": {
+        "integrityAllOk": true,
+        "checksumAllOk": true,
+        "referenceAllOk": true,
+        "backupsListed": 7,
+        "backupsAllVerified": true,
+        "verificationErrors": []
+      },
+      "unit": "verify",
+      "status": "PASS",
+      "note": "25 bản backup đã verify qua BackupService.verify() và list_backups(); mỗi bản so sha256 + byte_size với manifest và đối chiếu toàn bộ con trỏ artifact trong snapshot."
+    },
+    {
+      "case": "Backup — không copy live WAL riêng",
+      "target": true,
+      "targetLabel": "không có *-wal/*-shm trong backup; hàng WAL-only vẫn nằm trong snapshot",
+      "measured": {
+        "walFilesInBackups": [],
+        "walMarkerRows": 3,
+        "walMarkerRowsOnlyInMainFile": 0,
+        "walMarkerRowsInBackups": [
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3,
+          3
+        ],
+        "walBytesBefore": 992952
+      },
+      "unit": "wal",
+      "status": "PASS",
+      "note": "Trước khi backup, hàng đánh dấu được commit vào WAL nhưng KHÔNG checkpoint (file .sqlite3 chính không chứa chúng: 0 hàng khi đọc riêng file DB chính, WAL 992952 byte). Sau backup, các hàng đó có trong bản backup ⇒ dữ liệu WAL được đọc qua Online Backup API, không bị bỏ rơi và cũng không copy file WAL."
+    },
+    {
+      "case": "Backup — writer không bị chặn (downtime)",
+      "target": 40,
+      "targetLabel": "mọi commit trên DB nguồn trong lúc backup đều thành công (downtime 0)",
+      "measured": {
+        "operations": 40,
+        "succeeded": 40,
+        "failed": 0,
+        "p95Ms": 10.3,
+        "maxMs": 18.751,
+        "backupDurationMs": 3709.736
+      },
+      "unit": "ms",
+      "status": "PASS",
+      "note": "Writer thật commit liên tục trên cùng DB nguồn trong lúc một bản backup chạy song song; đo độ trễ từng commit. Đây là phần 'progress observable' đo được của dòng G-PERF Backup (người dùng vẫn dùng được app trong lúc backup)."
+    },
+    {
+      "case": "Backup — incremental/progress API",
+      "target": true,
+      "targetLabel": "có API incremental/progress quan sát được",
+      "measured": {
+        "createParameters": [
+          "self"
+        ],
+        "constructorParameters": [
+          "api_lock_path",
+          "artifact_root",
+          "backup_root",
+          "clock",
+          "db_path",
+          "retention_count",
+          "worker_lock_path"
+        ],
+        "incrementalOrProgressParameters": [],
+        "publicMethods": [
+          "acquire_restore_locks",
+          "create",
+          "list_backups",
+          "restore_copy",
+          "restore_to",
+          "restore_to_data_root",
+          "retention_plan",
+          "verify"
+        ],
+        "incrementalOrProgressApi": false,
+        "note": "create() nhận tham số nào thì đây là toàn bộ bề mặt điều khiển của nó."
+      },
+      "unit": "api",
+      "status": "FAIL",
+      "note": "BackupService.create() chỉ có một chế độ: sqlite3 source.backup(target) một lần cho toàn bộ DB, không tham số incremental, không callback tiến độ; API công khai của service là create/verify/list_backups/retention_plan/restore_*. Vì vậy tiêu chí 'incremental/progress' của plan §7 KHÔNG đạt ở mức API (không hạ ngưỡng): phần đo được là writer không bị chặn trong lúc backup."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 3,
+    "FAIL": 1,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "FAIL",
+  "extras": {
+    "backup": {
+      "chapters": 2000,
+      "artifacts": 240,
+      "artifactBytes": 32768,
+      "retention": 7,
+      "creates": 25,
+      "createP95Ms": 5517.16,
+      "verifyP95Ms": 389.496,
+      "integrityAllOk": true,
+      "checksumAllOk": true,
+      "referenceAllOk": true,
+      "verificationErrors": [],
+      "walMarkerRows": 3,
+      "walMarkerRowsInMainFileOnly": 0,
+      "walMarkerRowsInBackups": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "walFilesCopiedIntoBackups": [],
+      "walBytesBefore": 992952,
+      "walBytesAfter": 1924072,
+      "backupsListed": 7,
+      "backupsAllVerified": true,
+      "writerDuringBackup": {
+        "operations": 40,
+        "succeeded": 40,
+        "failed": 0,
+        "allSucceeded": true,
+        "failures": [],
+        "p95Ms": 10.3,
+        "maxMs": 18.751,
+        "backupDurationMs": 3709.736
+      },
+      "incrementalApi": {
+        "createParameters": [
+          "self"
+        ],
+        "constructorParameters": [
+          "api_lock_path",
+          "artifact_root",
+          "backup_root",
+          "clock",
+          "db_path",
+          "retention_count",
+          "worker_lock_path"
+        ],
+        "incrementalOrProgressParameters": [],
+        "publicMethods": [
+          "acquire_restore_locks",
+          "create",
+          "list_backups",
+          "restore_copy",
+          "restore_to",
+          "restore_to_data_root",
+          "retention_plan",
+          "verify"
+        ],
+        "incrementalOrProgressApi": false,
+        "note": "create() nhận tham số nào thì đây là toàn bộ bề mặt điều khiển của nó."
+      }
+    }
+  },
+  "notes": [
+    "Không copy live WAL riêng: create() dùng SQLite Online Backup API (đọc qua WAL) chứ không copy file -wal; bằng chứng là (a) backup root không có file *-wal/*-shm và (b) hàng chỉ nằm trong WAL vẫn có trong bản backup."
+  ]
+}

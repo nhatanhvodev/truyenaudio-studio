@@ -236,6 +236,213 @@ def test_network_guard_blocks_non_loopback_connections() -> None:
         listener.close()
 
 
+# --------------------------------------------------------------------------- #
+# V02 — fixture cho các dòng G-PERF chưa có fixture
+# --------------------------------------------------------------------------- #
+
+V02_FIXTURES = ("CHLIST", "CHSWITCH", "CANCELCKPT", "EDITOR8TAB", "SSE30MIN", "BACKUP")
+
+
+def _thresholds_by_case(report: dict[str, object]) -> dict[str, dict[str, object]]:
+    entries = report["thresholds"]
+    assert isinstance(entries, list) and entries, "report phải có bảng ngưỡng"
+    return {str(entry["case"]): entry for entry in entries}
+
+
+def _run_v02(fixture: str, output: Path, *extra: str) -> dict[str, object]:
+    args = ["--fixture", fixture, "--seed", "20260908", "--output", str(output), *extra]
+    result = _run_cli(*args)
+    assert result.returncode == 0, f"{fixture} thoát {result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["fixture"] == fixture
+    assert report["network"]["blockedAttempts"] == 0, "fixture V02 không được gọi mạng"
+    assert report["dataRoot"]["temporary"] is True
+    for entry in report["thresholds"]:
+        assert entry["status"] in {"PASS", "FAIL", "NOT_RUN", "BLOCKED"}
+        if entry["status"] == "NOT_RUN":
+            assert entry["note"], f"ngưỡng NOT_RUN {entry['case']!r} phải kèm lý do"
+    return report
+
+
+def test_cli_list_includes_v02_fixtures() -> None:
+    result = _run_cli("--list")
+
+    assert result.returncode == 0, result.stderr
+    for fixture in V02_FIXTURES:
+        assert fixture in result.stdout, f"--list thiếu fixture {fixture}"
+
+
+def test_plan_gperf_rows_cover_every_fixture() -> None:
+    from scripts.benchmarks.report import PLAN_GPERF_ROWS
+
+    from scripts.benchmarks.fixtures import fixture_names
+
+    assert set(PLAN_GPERF_ROWS) == set(fixture_names())
+    for fixture in V02_FIXTURES:
+        assert PLAN_GPERF_ROWS[fixture], f"{fixture} phải khai báo dòng G-PERF tương ứng"
+
+
+def test_cli_chlist_bounds_mounted_rows_and_probes_server_filter(tmp_path: Path) -> None:
+    report = _run_v02("CHLIST", tmp_path / "chlist.json", "--warmup", "0", "--iterations", "1", "--scale", "0.1")
+
+    thresholds = _thresholds_by_case(report)
+    mount = thresholds["Chapter list/filter — dòng mount mỗi trang"]
+    assert mount["status"] == "PASS", mount
+    assert float(mount["measured"]) <= 100
+
+    filter_entry = thresholds["Chapter list/filter — filter chạy server-side"]
+    assert filter_entry["status"] in {"PASS", "FAIL"}, filter_entry
+    measured = filter_entry["measured"]
+    assert isinstance(measured, dict)
+    assert measured["serverTotal"] is not None and measured["rowsReturned"] is not None
+
+    paging = thresholds["Chapter list/filter — paging phủ hết project"]
+    assert paging["status"] == "PASS", paging
+
+    extras = report["extras"]["chapterList"]
+    assert extras["clampProbeRows"] <= 100, "server phải kẹp limit quá lớn xuống ≤100 dòng"
+    assert extras["pagesWalked"] >= 1
+
+
+def test_cli_chswitch_reports_cold_warm_and_fetch_separately(tmp_path: Path) -> None:
+    report = _run_v02(
+        "CHSWITCH", tmp_path / "chswitch.json", "--warmup", "1", "--iterations", "3", "--scale", "0.05"
+    )
+
+    thresholds = _thresholds_by_case(report)
+    warm = thresholds["Đổi chương cached"]
+    assert warm["status"] == "PASS", warm
+    assert float(warm["measured"]) < 200
+
+    metrics = report["metrics"]
+    assert "switchWarm.fetch.total" in metrics, "phải báo thời gian fetch riêng"
+    assert "switchCold.total" in metrics, "phải tách lượt cold"
+    assert metrics["switchWarm.total"]["samples"] >= 3
+
+
+def test_cli_cancelckpt_measures_cancel_after_checkpoint(tmp_path: Path) -> None:
+    report = _run_v02(
+        "CANCELCKPT", tmp_path / "cancelckpt.json", "--warmup", "0", "--iterations", "2", "--scale", "0.3"
+    )
+
+    thresholds = _thresholds_by_case(report)
+    cancel = thresholds["Cancel sau checkpoint"]
+    assert cancel["status"] == "PASS", cancel
+    assert float(cancel["measured"]) <= 5000
+
+    checkpoint = thresholds["Cancel sau checkpoint — checkpoint giữ nguyên"]
+    assert checkpoint["status"] == "PASS", checkpoint
+
+    extras = report["extras"]["cancel"]
+    assert extras["cancelRequestedObserved"] == extras["iterations"]
+    assert extras["readyAfterCancel"] == [extras["readyAfterCancelExpected"]] * extras["iterations"]
+    assert extras["stagingLeftovers"] == []
+    assert extras["resumeProviderCalls"] == [float(extras["resumeProviderCallsExpected"])] * extras["iterations"]
+    assert "cancel.providerTail" in report["metrics"], "thời gian provider kết thúc phải báo riêng"
+
+
+def test_cli_editor8tab_keeps_draft_and_marks_long_task_not_run(tmp_path: Path) -> None:
+    report = _run_v02(
+        "EDITOR8TAB", tmp_path / "editor8tab.json", "--warmup", "0", "--iterations", "1", "--scale", "0.05"
+    )
+
+    thresholds = _thresholds_by_case(report)
+    draft = thresholds["C2K editor 8 tab — không mất draft khi evict/reopen"]
+    assert draft["status"] == "PASS", draft
+
+    cap = thresholds["C2K editor 8 tab — server kẹp ≤8 tab/pane"]
+    assert cap["status"] == "PASS", cap
+    assert cap["measured"]["tabsKept"] == 8
+
+    long_task = thresholds["C2K editor 8 tab — long task khi gõ"]
+    assert long_task["status"] == "NOT_RUN", long_task
+    assert "browser" in str(long_task["note"]).lower()
+
+    measured = draft["measured"]
+    assert measured["draftsRestoredIdentical"] == measured["draftChapters"]
+    assert measured["tabsAfterReopen"] == 8
+
+
+def test_cli_editor8tab_reducer_runs_real_frontend_module(tmp_path: Path) -> None:
+    report = _run_v02(
+        "EDITOR8TAB", tmp_path / "editor8tab-reducer.json", "--warmup", "0", "--iterations", "1", "--scale", "0.05"
+    )
+
+    reducer = report["extras"]["editor8tabReducer"]
+    if not reducer.get("ran"):
+        # Không có Node: harness phải ghi NOT_RUN kèm lý do thay vì claim PASS.
+        reasons = [
+            entry["note"]
+            for entry in report["thresholds"]
+            if entry["case"].startswith("C2K editor 8 tab — reducer") and entry["status"] == "NOT_RUN"
+        ]
+        assert reasons and "Node" in reasons[0]
+        return
+    assert reducer["maxTabsPerPane"] == 8
+    assert reducer["tabsAfterNinthOpen"] == 8
+    assert reducer["dirtyOpenError"] == "TAB_LIMIT_DIRTY"
+    assert reducer["reopenCountForVictim"] == 1
+    assert reducer["roundTripTabCount"] == 8
+
+
+def test_cli_sse30min_short_session_records_not_run_for_thirty_minutes(tmp_path: Path) -> None:
+    report = _run_v02(
+        "SSE30MIN",
+        tmp_path / "sse30min.json",
+        "--warmup",
+        "0",
+        "--iterations",
+        "1",
+        "--scale",
+        "0.2",
+        "--session-seconds",
+        "3",
+    )
+
+    thresholds = _thresholds_by_case(report)
+    thirty_minutes = thresholds["SSE 30 phút — phiên đủ 30 phút và heap phút 30 so với phút 5"]
+    assert thirty_minutes["status"] == "NOT_RUN", thirty_minutes
+    assert "RÚT NGẮN" in str(thirty_minutes["note"])
+
+    store = thresholds["SSE 30 phút — store metadata"]
+    if store["status"] == "PASS":
+        assert float(store["measured"]) <= 1000
+    else:
+        assert store["status"] == "NOT_RUN" and "Node" in str(store["note"])
+
+    delta = thresholds["SSE 30 phút — delta frame mỗi job"]
+    assert delta["status"] in {"PASS", "FAIL"}
+    assert float(delta["measured"]) >= 0
+
+    session = report["extras"]["sseSession"]
+    assert session["sessionSeconds"] < 1800
+    assert session["shortened"] is True
+    assert session["thresholdSecondsFromPlan"] == 1800
+
+
+def test_cli_backup_verifies_and_never_copies_live_wal(tmp_path: Path) -> None:
+    report = _run_v02(
+        "BACKUP", tmp_path / "backup.json", "--warmup", "0", "--iterations", "1", "--scale", "0.05"
+    )
+
+    thresholds = _thresholds_by_case(report)
+    integrity = thresholds["Backup — integrity/checksum/reference"]
+    assert integrity["status"] == "PASS", integrity
+
+    wal = thresholds["Backup — không copy live WAL riêng"]
+    assert wal["status"] == "PASS", wal
+    assert wal["measured"]["walFilesInBackups"] == []
+    assert wal["measured"]["walMarkerRowsOnlyInMainFile"] == 0
+    assert min(wal["measured"]["walMarkerRowsInBackups"]) >= wal["measured"]["walMarkerRows"]
+
+    writer = thresholds["Backup — writer không bị chặn (downtime)"]
+    assert writer["status"] == "PASS", writer
+
+    incremental = thresholds["Backup — incremental/progress API"]
+    assert incremental["status"] in {"PASS", "FAIL"}, incremental
+    assert incremental["measured"]["incrementalOrProgressApi"] is False or incremental["status"] == "PASS"
+
+
 def test_benchmark_cli_source_never_calls_cloud_providers() -> None:
     """Bất biến tĩnh: harness không import adapter cloud và không có endpoint ngoài."""
 

@@ -5,6 +5,17 @@ Giao diện bắt buộc (plan §7):
     python scripts/benchmarks/run.py --fixture S1|S2|C500|C2K|J10K|SSE30|AUDIO500 \
         --seed 20260908 --warmup 5 --iterations 20 --output <report.json>
 
+V02 bổ sung 6 fixture cho các dòng G-PERF còn thiếu fixture (plan §7):
+
+    --fixture CHLIST      chapter list/filter: ≤100 mounted rows, server filter/paging
+    --fixture CHSWITCH    đổi chương cached: p95 <200 ms qua 30 lượt, fetch báo riêng
+    --fixture CANCELCKPT  cancel sau checkpoint: p95 ≤5 s, provider báo riêng
+    --fixture EDITOR8TAB  C2K editor 8 tab: cap 8 tab + draft khi evict/reopen (long task NOT_RUN)
+    --fixture SSE30MIN    phiên SSE rút ngắn: store ≤1.000 metadata, ≤4 frame/s/job (30 phút NOT_RUN)
+    --fixture BACKUP      backup thật: integrity/checksum/reference, không copy live WAL riêng
+
+Hai cờ chỉ dùng cho fixture V02 (mặc định giữ nguyên hành vi V01): --scale và --session-seconds.
+
 Mặc định: fake/no-network và data root TẠM. CLI cài network guard trước khi dựng
 fixture; nếu có ý định kết nối ra ngoài loopback thì thoát khác 0 và ghi rõ.
 
@@ -89,6 +100,24 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Độ trễ GIẢ LẬP mỗi segment ở pha provider (chỉ để chứng minh tách pha).",
     )
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        help=(
+            "Hệ số kích thước dữ liệu cho fixture V02 (mặc định 1.0 = đúng cấu hình fixture). "
+            "Fixture V01 bỏ qua cờ này."
+        ),
+    )
+    parser.add_argument(
+        "--session-seconds",
+        type=float,
+        default=0.0,
+        help=(
+            "Độ dài phiên SSE của SSE30MIN (mặc định 0 = dùng cấu hình fixture). Plan §7 yêu cầu 1.800 s; "
+            "giá trị nhỏ hơn được ghi NOT_RUN kèm số đo rút ngắn."
+        ),
+    )
     return parser
 
 
@@ -153,6 +182,10 @@ def main(argv: list[str] | None = None) -> int:
         return _fail("--iterations phải >= 1.")
     if args.fake_latency_ms < 0:
         return _fail("--fake-latency-ms phải >= 0.")
+    if args.scale <= 0:
+        return _fail("--scale phải > 0.")
+    if args.session_seconds < 0:
+        return _fail("--session-seconds phải >= 0.")
 
     spec = FIXTURES[args.fixture]
     guard = install_network_guard()
@@ -173,6 +206,8 @@ def main(argv: list[str] | None = None) -> int:
                 counter=counter,
                 fault_mode=args.fault_mode,
                 fake_latency_ms=args.fake_latency_ms,
+                scale=args.scale,
+                session_seconds=args.session_seconds,
             )
             recorder = Recorder()
             recorder.mark_rss("baseline")

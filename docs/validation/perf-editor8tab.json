@@ -1,0 +1,383 @@
+{
+  "schemaVersion": 1,
+  "fixture": "EDITOR8TAB",
+  "fixtureTitle": "C2K editor và 8 tab — cap 8 tab/pane, không mất draft khi evict/reopen",
+  "seed": 20260908,
+  "fixtureHash": "27a3cb32858e9877eebff951169ce9c30c2bf65e8b5a85d42a3dd4d610b0382b",
+  "fixtureConfig": {
+    "projects": 1,
+    "chapters": 1000,
+    "tabs": 8,
+    "segmentsPerChapter": 20,
+    "editorSegments": 20,
+    "dataProfile": "workspace-layout"
+  },
+  "generatedAt": "2026-09-10T10:32:41.462630Z",
+  "startedAt": "2026-09-10T10:32:39.810999Z",
+  "finishedAt": "2026-09-10T10:32:41.462630Z",
+  "durationSeconds": 1.652,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.2",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1500.2,
+    "ramUsedMb": 5911.3,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T10:32:41.513210Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {},
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "editorLayoutRead.total": {
+      "p50": 7.287,
+      "p95": 8.628,
+      "p99": 9.391,
+      "unit": "ms",
+      "samples": 20,
+      "min": 6.353,
+      "max": 9.582,
+      "mean": 7.427,
+      "note": "GET /api/projects/{id}/workspace-layout — khôi phục layout khi mở lại workspace."
+    },
+    "editorLayoutRead.db": {
+      "p50": 0.133,
+      "p95": 0.191,
+      "p99": 0.195,
+      "unit": "ms",
+      "samples": 20,
+      "min": 0.111,
+      "max": 0.196,
+      "mean": 0.141,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "editorLayoutRead.other": {
+      "p50": 7.113,
+      "p95": 8.48,
+      "p99": 9.241,
+      "unit": "ms",
+      "samples": 20,
+      "min": 6.241,
+      "max": 9.431,
+      "mean": 7.286,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "editorLayoutRead.statements": {
+      "p50": 2.0,
+      "p95": 2.0,
+      "p99": 2.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 2.0,
+      "max": 2.0,
+      "mean": 2.0
+    },
+    "editorLayoutRead.responseBytes": {
+      "p50": 1647.0,
+      "p95": 1647.0,
+      "p99": 1647.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 1647.0,
+      "max": 1647.0,
+      "mean": 1647.0
+    },
+    "editorDraftSave.total": {
+      "p50": 19.89,
+      "p95": 22.818,
+      "p99": 22.843,
+      "unit": "ms",
+      "samples": 8,
+      "min": 18.15,
+      "max": 22.849,
+      "mean": 20.316,
+      "note": "PUT /api/chapters/{id}/draft — lưu nháp phân đoạn của editor (compare-and-swap revision)."
+    },
+    "editorDraftSave.db": {
+      "p50": 0.428,
+      "p95": 0.62,
+      "p99": 0.689,
+      "unit": "ms",
+      "samples": 8,
+      "min": 0.329,
+      "max": 0.706,
+      "mean": 0.45
+    },
+    "editorDraftSave.statements": {
+      "p50": 5.0,
+      "p95": 5.0,
+      "p99": 5.0,
+      "unit": "statements",
+      "samples": 8,
+      "min": 5.0,
+      "max": 5.0,
+      "mean": 5.0
+    },
+    "editorDraftRestore.total": {
+      "p50": 6.637,
+      "p95": 54.737,
+      "p99": 72.875,
+      "unit": "ms",
+      "samples": 8,
+      "min": 5.058,
+      "max": 77.409,
+      "mean": 16.117,
+      "note": "GET /api/chapters/{id}/draft — nháp khôi phục khi tab được mở lại sau evict."
+    },
+    "editorDraftRestore.db": {
+      "p50": 0.069,
+      "p95": 0.13,
+      "p99": 0.143,
+      "unit": "ms",
+      "samples": 8,
+      "min": 0.059,
+      "max": 0.146,
+      "mean": 0.08
+    },
+    "editorDraftRestore.statements": {
+      "p50": 1.0,
+      "p95": 1.0,
+      "p99": 1.0,
+      "unit": "statements",
+      "samples": 8,
+      "min": 1.0,
+      "max": 1.0,
+      "mean": 1.0
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "editorLayoutSave.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "EDITOR8TAB chỉ đọc/ghi layout + nháp, không đi qua worker queue."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "editorLayoutRead": {
+        "p50": 2.0,
+        "p95": 2.0,
+        "p99": 2.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 2.0,
+        "max": 2.0,
+        "mean": 2.0
+      },
+      "editorDraftSave": {
+        "p50": 5.0,
+        "p95": 5.0,
+        "p99": 5.0,
+        "unit": "statements",
+        "samples": 1,
+        "min": 5.0,
+        "max": 5.0,
+        "mean": 5.0
+      },
+      "editorDraftRestore": {
+        "p50": 1.0,
+        "p95": 1.0,
+        "p99": 1.0,
+        "unit": "statements",
+        "samples": 1,
+        "min": 1.0,
+        "max": 1.0,
+        "mean": 1.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 2178,
+      "seconds": 0.24,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "editorLayoutRead": {
+        "p50": 1647.0,
+        "p95": 1647.0,
+        "p99": 1647.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 1647.0,
+        "max": 1647.0,
+        "mean": 1647.0
+      },
+      "editorDraftSave": {
+        "p50": 1572.0,
+        "p95": 1572.0,
+        "p99": 1572.0,
+        "unit": "bytes",
+        "samples": 1,
+        "min": 1572.0,
+        "max": 1572.0,
+        "mean": 1572.0
+      },
+      "editorDraftRestore": {
+        "p50": 1572.0,
+        "p95": 1572.0,
+        "p99": 1572.0,
+        "unit": "bytes",
+        "samples": 1,
+        "min": 1572.0,
+        "max": 1572.0,
+        "mean": 1572.0
+      }
+    },
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 88.5,
+    "peak": 101.03,
+    "delta": 12.53,
+    "marks": {
+      "baseline": 88.5,
+      "final": 101.03
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 991232,
+    "files": {
+      "studio.sqlite3": 991232,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "C2K editor 8 tab — reducer 8 tab (module thật của frontend)",
+      "target": 8,
+      "targetLabel": "≤8 tab/pane, tab bẩn không bị đóng ngầm, reopen không nhân bản",
+      "measured": {
+        "tabsAfterNinthOpen": 8,
+        "maxTabsPerPane": 8,
+        "evictedTabId": "tab-7",
+        "dirtyOpenError": "TAB_LIMIT_DIRTY",
+        "reopenCountForVictim": 1,
+        "roundTripTabCount": 8,
+        "roundTripIdsMatch": true
+      },
+      "unit": "tabs",
+      "status": "PASS",
+      "note": "Chạy CHÍNH reducer workspace (frontend/src/features/workspace/workspaceLayout.ts) bằng Node type-stripping: mở tab thứ 9 phải evict tab sạch, tab bẩn trả TAB_LIMIT_DIRTY, evict rồi reopen phải trả tab cũ đúng một lần. KHÔNG phải phép đo long task của browser."
+    },
+    {
+      "case": "C2K editor 8 tab — long task khi gõ",
+      "target": null,
+      "targetLabel": "không long task >50 ms lặp trong thao tác gõ",
+      "measured": null,
+      "unit": "ms",
+      "status": "NOT_RUN",
+      "note": "Cần browser thật (PerformanceObserver/long-task trace + IME) trên fixture 2.000 segment; harness offline này chỉ chạy tiến trình Python + Node headless, không có engine render/DOM nên không thể đo long task. Không suy ra PASS từ số đo reducer (xem extras.editor8tabReducer.reducerOpP95Ms)."
+    },
+    {
+      "case": "C2K editor 8 tab — không mất draft khi evict/reopen",
+      "target": 8,
+      "targetLabel": "nội dung nháp còn nguyên sau evict + reopen",
+      "measured": {
+        "tabsSaved": 8,
+        "tabsAfterCap": 8,
+        "tabsAfterEvict": 7,
+        "tabsAfterReopen": 8,
+        "draftChapters": 8,
+        "draftsRestoredIdentical": 8,
+        "revisionStableOnReopen": 8
+      },
+      "unit": "draft",
+      "status": "PASS",
+      "note": "Đo trên route thật: PUT /api/projects/{id}/workspace-layout (8 tab, rồi 9 tab để xem server kẹp, rồi evict + reopen) và PUT/GET /api/chapters/{id}/draft. Nháp khôi phục sau reopen phải trùng từng byte với nháp đã lưu và revision không đổi."
+    },
+    {
+      "case": "C2K editor 8 tab — server kẹp ≤8 tab/pane",
+      "target": 8,
+      "targetLabel": "server chỉ giữ 8 tab/pane",
+      "measured": {
+        "tabsRequested": 9,
+        "tabsKept": 8,
+        "maxTabsPerPane": 8
+      },
+      "unit": "tabs",
+      "status": "PASS",
+      "note": "Route workspace-layout sanitize payload (modules/workspace/layout.py: MAX_TABS_PER_PANE)."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 3,
+    "FAIL": 0,
+    "NOT_RUN": 1,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {
+    "editor8tabReducer": {
+      "ran": true,
+      "maxTabsPerPane": 8,
+      "nodeVersion": "v24.11.1",
+      "tabsAfterNinthOpen": 8,
+      "primaryTabsAfterNinthOpen": 8,
+      "evictedTabId": "tab-7",
+      "openAfterLimitStayedBounded": true,
+      "openP95Ms": 0.14798,
+      "dirtyOpenError": "TAB_LIMIT_DIRTY",
+      "dirtyOpenKeptLayout": true,
+      "dirtyOpenEvictedNothing": true,
+      "reopenCountForVictim": 1,
+      "reopenRestoredCount": 8,
+      "reopenActiveTabId": "tab-1",
+      "reopenFindsTab": true,
+      "roundTripTabCount": 8,
+      "roundTripMigrated": false,
+      "roundTripIdsMatch": true,
+      "reducerOps": 5000,
+      "reducerOpP50Ms": 0.0005,
+      "reducerOpP95Ms": 0.0013,
+      "reducerOpMaxMs": 0.6345
+    }
+  },
+  "notes": []
+}
