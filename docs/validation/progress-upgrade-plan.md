@@ -54,8 +54,8 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 ## Ghi chú theo milestone
 
 - M0 ✓ (F01–F03), M1 ✓ (S01–S03, P01–P02), M2 ✓ (P03–P06), M3 ✓ (C01–C06).
-- M4: J03 DONE; J01/J02/J04 PARTIAL (nhiều lát cắt commit + test).
-- M5: U01 code-complete (kiểm trực quan NOT_RUN); U04 DONE (code); U05 round 1 (reducer); U02/U08/U09 đang PARTIAL; U03/U06/U07/U10 chưa thực hiện.
+- M4: J03 DONE; J02 DONE; J01 PARTIAL (handler thật + crash coverage; REVIEW/REPAIR/SUMMARIZE cần provider/model); J04 PARTIAL (engine + SSE + delta→draft; delta sống giữa job NOT_RUN).
+- M5: U01 code-complete (kiểm trực quan NOT_RUN); U04 DONE (code); U05 round 1–2 (reducer + API/hook lưu layout; UI dock còn lại); U02/U08/U09 PARTIAL; U03/U06/U07/U10 chưa thực hiện.
 - M6: A01 code-verified (live NOT_RUN); A02–A05 chưa thực hiện.
 - M7/M8: chưa thực hiện (R02 là cổng phát hành; X-task không chặn Phase 1).
 
@@ -68,9 +68,18 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 
 ## Kết luận phiên làm việc này
 
-Tiến trình đạt: M0–M3 hoàn chỉnh, M4 mở đầu (J01 3 lát cắt, J02 2 lát cắt), U01 code-complete, A01
-code-verified; backend 623 passed, frontend 46 passed, build PASS, tree sạch sau mỗi commit. Phần còn lại
-(J01/J02 nốt acceptance, J03–J04, U02–U10, A02–A05, E01, V01–V03, R01–R03, X01–X07) là khối lượng lớn
-gồm nhiều task yêu cầu môi trường live (cloud có quyền, model VieNeu/giọng, corpus, reviewer, browser
-visual) chưa thể hiện thực và kiểm định trong giới hạn phiên; trạng thái từng task được giữ chính xác ở
-ma trận trên và không bị đánh dấu hoàn thành vượt bằng chứng.
+Tiến trình đạt: **M0–M3 hoàn chỉnh** (F01–F03, S01–S03, P01–P06, C01–C06 DONE), **M4**: J02/J03 DONE, J01
+PARTIAL (plan seam + handler TRANSLATE thật + crash-before-send/after-commit trên handler sản xuất), J04
+PARTIAL (engine/snapshot/SSE + worker ghi delta vào `workspace_drafts` + overlay feed); **M5**: U01
+code-complete (visual/a11y audit NOT_RUN), U04 DONE (code), U05 round 1–2 (reducer + API/hook layout),
+U02/U08/U09 PARTIAL; **M6**: A01 code-verified (live probe NOT_RUN). Backend **676 passed** (1 warning
+FK-cycle có sẵn), frontend **121 passed / 28 files**, `npm run build` PASS, ruff sạch trên mọi file thay đổi;
+mỗi lát cắt có report riêng trong `.superpowers/sdd/` và commit riêng.
+
+Còn lại (giữ nguyên trạng thái, **không** đánh dấu hoàn thành): U03, UI dock/tab của U05, U06, U07, U10,
+A02–A05, E01, V01–V03, R01–R03, X01–X07, cùng các acceptance cần môi trường live — cloud trả phí có
+consent/budget (REVIEW/REPAIR/summarize handler, delta sống giữa job, live smoke), model VieNeu + license
+(A02/A03 live), corpus có quyền và reviewer (V03), browser/visual harness (U01 audit, U05 responsive, E2E
+keyboard dock). Các mục này ghi NOT_RUN/BLOCKED đúng quy tắc plan §2 và không được claim là đã kiểm định.
+
+
