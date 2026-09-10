@@ -1166,6 +1166,9 @@ const styles: Record<string, React.CSSProperties> = {
   },
   nav: {
     display: 'flex',
+    // Wrap so the workflow links reflow at 320/390px and at 200% text size
+    // instead of forcing a horizontal scrollbar (G-UX responsive).
+    flexWrap: 'wrap',
     gap: 12,
     maxWidth: 920,
     margin: '0 auto 16px',

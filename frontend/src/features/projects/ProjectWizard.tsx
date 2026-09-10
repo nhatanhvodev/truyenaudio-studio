@@ -162,7 +162,7 @@ export function ProjectWizard() {
   return (
     <section style={styles.panel} aria-label="Quản lý dự án">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <h1 style={styles.title}>Truyện Audio Studio</h1>
           <p style={styles.subtitle}>Quản lý dự án âm thanh, cào truyện Wenku, dịch Hán-Việt & lồng tiếng AI.</p>
         </div>
@@ -489,10 +489,15 @@ export function ProjectWizard() {
 const styles: Record<string, React.CSSProperties> = {
   panel: {
     display: 'grid',
+    // `minmax(0, 1fr)` keeps the single column from being floored by its
+    // widest child's intrinsic width, so the wizard reflows on 320/390px
+    // viewports instead of forcing a horizontal scrollbar (G-UX responsive).
+    gridTemplateColumns: 'minmax(0, 1fr)',
     gap: 24,
     maxWidth: 960,
     margin: '0 auto',
     padding: 24,
+    boxSizing: 'border-box',
   },
   title: {
     margin: 0,
@@ -505,16 +510,24 @@ const styles: Record<string, React.CSSProperties> = {
   },
   form: {
     display: 'grid',
+    // Same reason as `panel`: an implicit `auto` column is floored by the
+    // widest control's max-content width (the source/rights `<select>`s), so
+    // pin the column to the available width instead.
+    gridTemplateColumns: 'minmax(0, 1fr)',
     gap: 14,
+    minWidth: 0,
   },
   label: {
     display: 'grid',
     gap: 6,
     fontWeight: 800,
+    minWidth: 0,
   },
   input: {
     minHeight: 40,
     boxSizing: 'border-box',
+    width: '100%',
+    minWidth: 0,
     padding: '8px 10px',
     border: '1px solid #c9d3df',
     borderRadius: 6,
