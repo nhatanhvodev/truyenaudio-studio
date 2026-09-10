@@ -34,6 +34,7 @@ from app.api.translation import create_translation_router
 from app.api.voice_plans import create_voice_plans_router
 from app.api.voices import create_voices_router
 from app.api.wenku import create_wenku_router
+from app.api.workspace import create_workspace_router
 from app.settings.config import Settings
 from app.settings.csrf import CsrfService
 from app.settings.startup_lock import StartupLock
@@ -77,6 +78,7 @@ def create_app(
     app.include_router(create_characters_router(active_settings))
     app.include_router(create_memory_router(active_settings))
     app.include_router(create_drafts_router(active_settings))
+    app.include_router(create_workspace_router(active_settings))
     app.include_router(create_translation_router(active_settings))
     app.include_router(create_review_router(active_settings))
     app.include_router(create_rights_router(active_settings))

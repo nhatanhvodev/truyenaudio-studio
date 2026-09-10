@@ -360,6 +360,21 @@ class WorkspaceDraft(MutableMixin, Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class WorkspaceLayout(MutableMixin, Base):
+    """Per-project workspace (tabs/dock) layout snapshot (U05)."""
+
+    __tablename__ = "workspace_layouts"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_workspace_layouts_project"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
+    layout_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    layout_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class TranslationRun(MutableMixin, Base):
     __tablename__ = "translation_runs"
     __table_args__ = (
