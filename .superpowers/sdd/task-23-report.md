@@ -26,12 +26,13 @@ Status: PARTIAL — stream engine + snapshot + SSE draft feed done; live provide
   - `apply_segment(...)` covers the non-stream provider path (segmentReady = one frame); `is_approvable` is always False (a draft is never approved output).
 - Tests (7): split deltas/order, duplicate + stale attempt, gap + resync + recovery, reconnect snapshot, cancel/finish race, bounded frames/chars, segmentReady + never-approvable.
 
-## Remaining for J04 acceptance (next rounds)
+## Remaining for J04 acceptance (round 4 — dependency noted)
 
-- Wire live provider deltas to job-scoped SSE (offset/attempt events, gap snapshot delivery, terminal flush and cancel propagation). Phase 1 adapters are request/response (qwen-mt-flash incremental streaming is not implemented in the adapter), so end-to-end delta evidence is pending that work; non-stream drafts already work through `segmentReady` + the snapshot endpoint.
+- Wiring **live** provider deltas into the job-scoped SSE feed needs a persisted draft between the worker process (which would run `QwenMtAdapter.stream_translate`, now available) and the API process that serves `/draft/stream`. That persistence is the `workspace_drafts` table owned by **U04** (draft API + optimistic concurrency, M5). Until U04 lands, the feed serves the stored-segment draft (segmentReady path) and the snapshot endpoint, and reconnects still never re-run the provider.
+- Remaining acceptance items therefore: adapter-delta -> draft checkpoint -> SSE offsets (U04 dependency), plus offset/attempt dedup and terminal flush/cancel propagation over that persisted store. The engine (`draft_stream`), the SSE event builder, and the adapter delta source are already implemented and tested.
 
 ## Validation (rounds 1–3)
 
 - `backend/tests/jobs/test_draft_stream.py backend/tests/jobs/test_draft_service.py -q` — 13 passed.
-- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 647 passed, 1 warning (pre-existing SQLAlchemy FK-cycle sort warning), exit 0.
+- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 654 passed after the streaming slice, 1 warning (pre-existing SQLAlchemy FK-cycle sort warning), exit 0.
 - Changed-file Ruff passed (main.py carries only the repo-wide pre-existing E402 pattern); no provider/cloud call added.
