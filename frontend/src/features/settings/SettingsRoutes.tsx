@@ -1,6 +1,7 @@
 import { Navigate, type RouteObject } from 'react-router-dom';
 
 import { Diagnostics } from '../diagnostics/Diagnostics';
+import { GlossaryManager } from '../glossary/GlossaryManager';
 import { ModelCatalog } from '../modelCatalog/ModelCatalog';
 import { ProfileEditor } from '../providers/ProfileEditor';
 import { ProjectScopedPanel } from './ProjectScopedPanel';
@@ -31,8 +32,13 @@ function TranslationSettings() {
   return (
     <ProjectScopedPanel
       title="Translation"
-      note="Style/ngôn ngữ/thể loại là cấu hình theo project; quality và quote nằm ở màn dịch của chương."
-      render={(projectId) => <StyleManager projectId={projectId} />}
+      note="Style/glossary là cấu hình theo project; quality và quote nằm ở màn dịch của chương."
+      render={(projectId) => (
+        <>
+          <StyleManager projectId={projectId} />
+          <GlossaryManager projectId={projectId} />
+        </>
+      )}
     />
   );
 }
