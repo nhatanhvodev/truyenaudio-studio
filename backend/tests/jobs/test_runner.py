@@ -847,3 +847,28 @@ def test_enqueue_plan_is_immutable_across_idempotent_repeat(runner: JobRunner, m
     assert second.id == first.id
     assert second.plan == first.plan
     assert second.plan["profileId"] == "profile-first"
+
+
+def test_http_429_retries_and_obeys_retry_after_cap() -> None:
+    decision = classify_retry("HTTP_429", attempt_no=1)
+    assert decision.disposition is RetryDisposition.RETRY
+    assert decision.delay_seconds == 2
+
+    with_header = classify_retry("HTTP_429", attempt_no=1, retry_after_seconds=120)
+    assert with_header.delay_seconds == 120
+
+    capped = classify_retry("HTTP_429", attempt_no=1, retry_after_seconds=900)
+    assert capped.delay_seconds == 600
+
+
+def test_http_401_and_404_never_retry() -> None:
+    for code in ("HTTP_400", "HTTP_401", "HTTP_403", "HTTP_404"):
+        decision = classify_retry(code, attempt_no=1)
+        assert decision.disposition is RetryDisposition.FAIL, code
+
+
+def test_http_5xx_and_timeout_retry_with_backoff() -> None:
+    for code in ("HTTP_408", "HTTP_500", "HTTP_503", "PROVIDER_TIMEOUT"):
+        decision = classify_retry(code, attempt_no=1)
+        assert decision.disposition is RetryDisposition.RETRY, code
+        assert decision.delay_seconds == 2
