@@ -6,6 +6,16 @@ Mọi lệnh ở đây chạy trên **Windows**, từ thư mục gốc repo.
 > **Phạm vi:** tài liệu này mô tả Phase 1 ở mức **fixture-verified**. Các đường cloud/model thật
 > **chưa được kiểm định** và đang bị tắt — xem `release-manifest.md`.
 
+## 0. Ba chế độ chạy: local / fake / cloud
+
+| Chế độ | Bật bằng | Dùng khi | Cần gì |
+|---|---|---|---|
+| **fake** (offline, mặc định cho test/demo) | `$env:STUDIO_FAKE_AUDIO = "1"` và `$env:VITE_STUDIO_FAKE_AUDIO = "1"` trước khi build/run | Chạy trọn luồng import→export mà không tốn phí | Không cần model/cloud |
+| **local** (TTS cục bộ thật) | Không bật fake | Render audio thật | Model VieNeu + license **+ FFmpeg** |
+| **cloud** | Cấu hình profile + consent + budget | Dịch/review chất lượng cao | Credential + consent + budget (mục 1–2) |
+
+> Fake **chỉ** chứng minh plumbing. Nó **không** chứng minh chất lượng giọng hay chất lượng dịch.
+
 ## 1. Credential & keyring
 
 Secret **chỉ** nằm trong keyring của hệ điều hành do backend quản lý (C04/C06). Không có secret trong
@@ -68,6 +78,9 @@ segment đã commit **không** bị nhân đôi (đã kiểm bằng crash test t
 
 ## 4. Backup / restore / retention / rollback
 
+> ⚠️ **Luôn backup TRƯỚC khi migrate.** `run-studio.bat` tự chạy `migrate.ps1` và sẽ nâng
+> data root lên head; trên máy tham chiếu của Phase 1 data root đang ở revision **0004** trong khi head là **0018**.
+
 **Tạo backup** (Settings → Storage, hoặc API). Backup gồm: file DB qua SQLite Online Backup API + snapshot
 artifact + manifest có checksum.
 
@@ -116,7 +129,7 @@ Export tạo bundle **tự chứa** gồm: audio master, `transcript.srt`, `ban-
 
 | Triệu chứng | Nguyên nhân | Xử lý |
 |---|---|---|
-| `PREFLIGHT FAIL: ffmpeg … could not be executed` | FFmpeg có trên PATH nhưng không chạy được (ví dụ symlink gãy) | Cài FFmpeg hoạt động, **hoặc** chạy `preflight.ps1 -SkipFfmpeg`. Launcher `run-studio.bat` đã tự dùng `-SkipFfmpeg` vì FFmpeg bị tắt trong release manifest. Render audio thật vẫn cần FFmpeg |
+| `PREFLIGHT FAIL: ffmpeg … could not be executed` | FFmpeg có trên PATH nhưng không chạy được (ví dụ symlink WinGet gãy) | Cài FFmpeg hoạt động. Launcher `run-studio.bat` **luôn** truyền `-SkipFfmpeg` (hard-code, không đọc manifest) vì FFmpeg chỉ cần cho render audio thật; **hệ quả:** sau này cài được FFmpeg thì khởi động vẫn không kiểm tra nó — chạy `preflight.ps1` (không có cờ) để kiểm tra nghiêm ngặt. Render audio thật vẫn cần FFmpeg |
 | `PREFLIGHT FAIL: the database is at 0004 but head is 0018` | Data root cũ hơn schema | `scripts/migrate.ps1` — **backup trước** |
 | `state MIGRATION_INCOMPLETE` | Migration lỗi giữa đường (SQLite để lại DDL) | **Không** chạy lại. Restore từ backup đã verify |
 | Job ở `BILLING_UNKNOWN` | Mất response sau khi đã gửi | Đối chiếu provider thủ công; **không** tự resend |

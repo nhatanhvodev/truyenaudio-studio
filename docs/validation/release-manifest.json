@@ -9,48 +9,48 @@
       "id": "clean_install_migration",
       "evidence": "PASS",
       "summary": "Upgrade head from an empty data root reaches revision 0018 with every ORM table present and integrity_check=ok.",
-      "evidenceRef": "docs/validation/release-gate.md#2-r01-drills",
+      "evidenceRef": "docs/validation/release-gate.md#2-diễn-tập-r01-tiêu-chí-nghiệm-thu-db-cũ-đọc-được--rollback-restore-đúng-checksum",
       "flag": null
     },
     {
       "id": "legacy_upgrade_preserves_data",
       "evidence": "PASS",
       "summary": "A 0016 data root with project/chapter/source/translation/artifact rows upgrades to head with identical row counts; 0017/0018 tables arrive empty and the jobs kind whitelist is rebuilt correctly.",
-      "evidenceRef": "docs/validation/release-gate.md#2-r01-drills",
+      "evidenceRef": "docs/validation/release-gate.md#2-diễn-tập-r01-tiêu-chí-nghiệm-thu-db-cũ-đọc-được--rollback-restore-đúng-checksum",
       "flag": null
     },
     {
       "id": "failed_migration_detection",
       "evidence": "PASS",
       "summary": "A migration that raises mid-way leaves the revision at 0018, keeps the rows intact and is reported as MIGRATION_INCOMPLETE by the preflight/status check; the honest SQLite non-transactional-DDL limitation is recorded.",
-      "evidenceRef": "docs/validation/release-gate.md#3-failed-migration-finding",
+      "evidenceRef": "docs/validation/release-gate.md#3-phát-hiện-của-diễn-tập-fail-migration-bắt-buộc-đọc",
       "flag": null
     },
     {
       "id": "backup_rollback_checksum",
       "evidence": "PASS",
       "summary": "Backup at 0016, upgrade to head, restore into a new data root: manifest sha256/byte_size re-verify, integrity ok, logical content digest and row counts identical to pre-upgrade, artifacts restored with matching sha256, post-upgrade rows absent.",
-      "evidenceRef": "docs/validation/release-gate.md#2-r01-drills",
+      "evidenceRef": "docs/validation/release-gate.md#2-diễn-tập-r01-tiêu-chí-nghiệm-thu-db-cũ-đọc-được--rollback-restore-đúng-checksum",
       "flag": null
     },
     {
       "id": "legacy_read_routes",
       "evidence": "PASS",
       "summary": "After the upgrade the real read routes (/api/projects, /api/projects/{id}, chapters page, chapter translation) serve pre-upgrade data; no legacy compatibility route needed to be preserved (grep evidence in the release gate).",
-      "evidenceRef": "docs/validation/release-gate.md#4-legacy-read-route",
+      "evidenceRef": "docs/validation/release-gate.md#4-legacy-read-route--có-cần-giữ-route-cũ-không",
       "flag": null
     },
     {
       "id": "feature_flag_evidence_gate",
       "evidence": "PASS",
       "summary": "Feature flags read docs/validation/release-manifest.json and refuse to switch on any feature whose evidence is not PASS (FEATURE_FLAG_EVIDENCE_NOT_PASS), including when the manifest is missing or malformed.",
-      "evidenceRef": "docs/validation/release-gate.md#5-feature-flag-rollout",
+      "evidenceRef": "docs/validation/release-gate.md#5-rollout-theo-release-manifest--feature-flag-fail-closed",
       "flag": null
     },
     {
       "id": "g_perf_offline_fixtures",
       "evidence": "PASS",
-      "summary": "13 of 14 G-PERF offline fixtures report overallStatus PASS in docs/validation/perf-*.json (fake providers, temporary data root, zero cloud calls).",
+      "summary": "All 14 G-PERF offline fixtures report overallStatus PASS in docs/validation/perf-*.json (fake providers, temporary data root, zero cloud calls). Across those 14 reports there are 34 threshold rows: 32 PASS, 0 FAIL, 2 NOT_RUN - the 2 NOT_RUN rows are tracked by g_perf_long_task_typing and g_perf_sse_heap_30min below, so overallStatus=PASS here must NOT be read as a fully green G-PERF.",
       "evidenceRef": "docs/validation/perf-backup.json",
       "flag": null
     },

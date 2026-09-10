@@ -1,13 +1,27 @@
 # Phase 1 — Tổng hợp trạng thái bàn giao
 
-Ngày: 2026-09-10 · Nhánh `codex/implement-upgrade-plan` · Commit tham chiếu `ec3d3e7`
+Ngày: 2026-09-10 · Nhánh `codex/implement-upgrade-plan` · Commit tham chiếu `9a48050`
+
+### Phiên bản đã dùng cho mọi số liệu trong tài liệu này
+
+| Thành phần | Phiên bản |
+|---|---|
+| Hệ điều hành | Windows 11 (10.0.26200), AMD64 |
+| Python | 3.12.13 (CPython) |
+| Node.js | v24.11.1 |
+| RAM máy | 7,4 GB (khả dụng ~2,2 GB lúc đo) |
+| App | `truyenaudio-studio-backend` 0.1.0 (`backend/pyproject.toml`) |
+| Trình duyệt E2E | Chrome hệ thống (Playwright 1.54.2, `channel: 'chrome'`) |
+| FFmpeg | **không chạy được** — symlink WinGet gãy |
+
+Yêu cầu tối thiểu: Python 3.12, Node 24.x (xem `README.md`).
 
 ## Cách đọc bảng này — ba mức trạng thái KHÁC NHAU
 
 | Mức | Nghĩa | Điều kiện tối thiểu |
 |---|---|---|
 | **code complete** | Đã viết mã và có test tự động xanh | Test đơn vị/hợp đồng chạy được trên máy |
-| **fixture verified** | Đã kiểm bằng fixture/route/browser THẬT trên máy này | Có lệnh + exit code + số liệu đo được |
+| **fixture verified** | Đã kiểm bằng fixture/route/browser THẬT trên máy này | Có lệnh + exit code + số liệu đo được. Ô bằng chứng dưới đây của nhiều dòng chỉ nêu **tên bằng chứng**; dòng nào không có lệnh riêng thì được phủ bởi lệnh suite ở mục 2 chứ không phải bằng chứng độc lập |
 | **live verified** | Đã chạy với provider/model/corpus THẬT | Có credential/consent/budget hoặc model + license, và output thật |
 
 > **Live verified: KHÔNG có mục nào trong Phase 1.**
@@ -38,7 +52,7 @@ Ngày: 2026-09-10 · Nhánh `codex/implement-upgrade-plan` · Commit tham chiế
 | C04 Characters/addressing | ✅ | ✅ | — | alias ambiguity, directed relations |
 | C05 Summary + context engine | ✅ | ✅ | — | budget boundaries, chapter consistency |
 | C06 QA/edit/approve/repair | ✅ | ✅ | ❌ | QA fixture; repair cloud **NOT_RUN** |
-| J01 Worker/handler/checkpoint | ✅ | ✅ | ❌ | 500-segment crash/resume thật; REVIEW/SUMMARIZE nhánh **fake** |
+| J01 Worker/handler/checkpoint | ✅ *(acceptance còn nợ)* | ✅ | ❌ | 500-segment crash/resume thật; REVIEW/SUMMARIZE chỉ nhánh **fake**. **REPAIR_TRANSLATION handler còn thiếu** — xem `progress-upgrade-plan.md` (PARTIAL) |
 | J02 Retry/cancel/breaker | ✅ | ✅ | ❌ | fault matrix; cancel p95 **75,5 ms** |
 | J03 Projection/feed/diagnostics | ✅ | ✅ | — | replay parity, redaction |
 | J04 Draft streaming | ✅ | ✅ | ❌ | delta→draft; **delta sống giữa job NOT_RUN** |
@@ -47,10 +61,10 @@ Ngày: 2026-09-10 · Nhánh `codex/implement-upgrade-plan` · Commit tham chiế
 | U03 Library paging + import review | ✅ | ✅ | — | browser E2E `import-preview.spec.ts` |
 | U04 Draft API + optimistic | ✅ | ✅ | — | CAS 409, editor conflict |
 | U05 Tabs/dock/layout | ✅ | ✅ | — | browser E2E `workspace-tabs.spec.ts` |
-| U06 Editor song ngữ/QA/inspector | ✅ | ✅ | ❌ | repair proposal preview/apply **fake**; cloud NOT_RUN |
-| U07 Job UI + draft stream | ✅ | ✅ | ❌ | batch partial-failure; **route retry/cancel job chưa tồn tại** |
+| U06 Editor song ngữ/QA/inspector | ✅ *(acceptance còn nợ)* | ✅ | ❌ | repair proposal preview/apply **fake**; **virtualize chưa làm** — xem `progress-upgrade-plan.md` (PARTIAL) |
+| U07 Job UI + draft stream | ✅ *(acceptance còn nợ)* | ✅ | ❌ | batch partial-failure đã có; **BLOCKED: backend chưa có `POST /api/jobs/{id}/retry|cancel`** — xem `progress-upgrade-plan.md` (PARTIAL) |
 | U08 Provider/model settings | ✅ | ✅ | ❌ | E2E credential rotate/mask; quote ceiling cần budget live |
-| U09 Style/glossary/character/memory | ✅ | ✅ | — | 4 manager + scope preview |
+| U09 Style/glossary/character/memory | ✅ *(acceptance còn nợ)* | ✅ | — | 4 manager + scope preview; **nested project routes chưa làm** — xem `progress-upgrade-plan.md` (PARTIAL) |
 | U10 Storage/Appearance/Advanced | ✅ | ✅ | — | retention/restore-copy, flag fail-closed |
 | A01 VieNeu manifest/bridge | ✅ | ✅ | ❌ | catalog/probe; **model chưa cài** |
 | A02 Preview job/chọn giọng | ✅ | ✅ | ❌ | 22 backend + 14 UI test; nghe thật **NOT_RUN** |
@@ -59,7 +73,7 @@ Ngày: 2026-09-10 · Nhánh `codex/implement-upgrade-plan` · Commit tham chiế
 | A05 Artifact Range/review | ✅ | ✅ | ❌ | browser E2E Range 206/416/304; nghe thật **NOT_RUN** |
 | E01 Export bundle/metadata | ✅ | ✅ | ❌ | browser E2E 2 spec; upload thật là thủ công (C08) |
 | V01 Fixture/benchmark | ✅ | ✅ | — | 13 fixture + 14 report JSON |
-| V02 Integration/a11y/perf | ✅ | ✅ | ❌ | G-PERF 14/14 fixture PASS; 2 dòng NOT_RUN nội bộ |
+| V02 Integration/a11y/perf | ✅ | ✅ | ❌ | 14 report G-PERF, 32/34 dòng ngưỡng PASS · 0 FAIL · **2 dòng NOT_RUN** (không tính là đạt) |
 | V03 Đánh giá dịch/TTS thật | — | ❌ | ❌ | `docs/validation/quality.md` — **NOT_RUN/BLOCKED toàn bộ** |
 | R01 Migration/rollout theo flag | ✅ | ✅ | — | `release-gate.md`: 6 diễn tập thật |
 | R02 Tài liệu vận hành/bàn giao | ✅ | ✅ | — | tài liệu này + `docs/operations/` |
@@ -70,12 +84,14 @@ Ngày: 2026-09-10 · Nhánh `codex/implement-upgrade-plan` · Commit tham chiế
 
 | Lệnh | Kết quả |
 |---|---|
-| `.venv\Scripts\python.exe -m pytest backend/tests -q` | **900 passed**, 1 warning (FK-cycle có sẵn) |
+| `.venv\Scripts\python.exe -m pytest backend/tests -q` | **917 passed**, 1 warning (FK-cycle có sẵn), 647 s |
 | `cd frontend; npm test -- --run` | **267 passed / 45 file** |
 | `cd frontend; npm run build` | PASS (tsc -b + vite build) |
 | `cd frontend; npx --no-install playwright test` | **13 passed / 9 spec** trên Chrome hệ thống |
 | `pytest backend/tests/scripts -q` | 21 passed (harness benchmark) |
-| `scripts/benchmarks/run.py --fixture S1|S2|C500|C2K|J10K|SSE30|AUDIO500|CHLIST|CHSWITCH|CANCELCKPT|EDITOR8TAB|SSE30MIN|BACKUP` | **14/14 report JSON: overallStatus PASS** |
+| `pytest backend/tests/security -q` | 70 passed |
+| `pytest backend/tests/db backend/tests/storage backend/tests/settings -q` | 83 passed (cổng R01) |
+| `scripts/benchmarks/run.py --fixture <13 tên>` | **14/14 report có `overallStatus=PASS`**, nhưng 34 dòng ngưỡng = **32 PASS · 0 FAIL · 2 NOT_RUN** |
 
 Chi tiết từng fixture (p50/p95/p99, SQL, RSS, WAL) nằm trong `docs/validation/perf-*.json`.
 
@@ -97,8 +113,8 @@ Chi tiết từng fixture (p50/p95/p99, SQL, RSS, WAL) nằm trong `docs/validat
 
 | Dòng | Trạng thái | Lý do |
 |---|---|---|
-| C2K — long task khi gõ | **NOT_RUN** | Cần browser thật với PerformanceObserver; harness chỉ có Python + Node headless |
-| SSE 30 phút — heap phút 30 | **NOT_RUN** | Phiên đo **rút ngắn còn 90,1 s**, không đủ 1.800 s. Số đo rút ngắn: RSS +15,22 MiB, heap Node sau GC +0,17 MiB |
+| long task khi gõ (fixture **EDITOR8TAB**, không phải C2K) | **NOT_RUN** | Cần browser thật với PerformanceObserver; harness chỉ có Python + Node headless. `perf-c2k.json` không có dòng NOT_RUN nào |
+| SSE 30 phút — heap phút 30 (fixture **SSE30MIN**) | **NOT_RUN** | Phiên đo **rút ngắn còn 90,1 s**, không đủ 1.800 s. Số đo rút ngắn: RSS +15,22 MiB, heap Node sau GC +0,17 MiB |
 
 ### 3.3 Giới hạn thiết kế đã biết
 

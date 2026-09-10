@@ -13,7 +13,9 @@ Tool này chạy cá nhân trên máy local, mặc định chỉ bind `127.0.0.1
 
 ## Bắt đầu nhanh — import → export không cần cloud
 
-Đây là đường đã được kiểm chứng end-to-end (walkthrough thật trên data root tạm).
+Đây là đường đã được kiểm chứng end-to-end trên data root TẠM (không đụng dữ liệu thật):
+các spec `frontend/e2e/single-voice.spec.ts` và `frontend/e2e/export-review.spec.ts` chạy trọn
+import → dịch → duyệt → render → duyệt audio → export trên server thật + Chrome thật.
 
 ```powershell
 cd D:\truyenaudio-studio
@@ -26,6 +28,10 @@ cd frontend; npm run build; cd ..
 # 2. Khởi động (preflight → migrate → API + worker → mở browser)
 .\run-studio.bat
 ```
+
+> ⚠️ `run-studio.bat` chạy `scripts/migrate.ps1`, tức là **nâng schema data root lên head**.
+> Nếu bạn đã có data root cũ, **backup trước** — xem [hướng dẫn vận hành](docs/operations/operations-guide.md) mục 4.
+> (Máy tham chiếu của Phase 1 có data root ở revision 0004 trong khi head là 0018.)
 
 Sau đó trong UI:
 
@@ -325,12 +331,17 @@ npm exec playwright test e2e/batch-recovery.spec.ts e2e/multivoice-cloud.spec.ts
 https://github.com/nhatanhvodev/truyenaudio-studio
 ```
 
-Verification gần nhất trên `main`:
+Verification gần nhất trên `main` (nhánh `main` cũ hơn nhánh này nhiều commit;
+**số dưới đây KHÔNG phải số của nhánh hiện tại**):
 
 - Backend: `377 passed, 1 warning`.
 - Frontend Vitest: `19 passed`.
 - Build: pass.
 - Playwright E2E: `3 passed`.
+
+Số liệu của nhánh `codex/implement-upgrade-plan` (nhánh đang phát hành Phase 1) nằm ở
+[trạng thái Phase 1](docs/validation/phase1.md): backend **917 passed**, frontend **267 passed / 45 file**,
+browser E2E **13 passed / 9 spec**.
 
 ## Giới hạn cần nhớ
 

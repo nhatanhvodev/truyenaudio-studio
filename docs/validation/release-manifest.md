@@ -15,6 +15,9 @@ Tài liệu này giải thích **từng feature**, **nghĩa của trạng thái 
 
 ## Bảng feature
 
+Cột **Đang bật?**: `—` = feature **không có flag runtime** (luôn chạy theo evidence);
+`❌` = có flag và **đang tắt**.
+
 | Feature | Evidence | Đang bật? | Nghĩa & cách kiểm chứng |
 |---|---|---|---|
 | `clean_install_migration` | **PASS** | — | Data root trống → `alembic upgrade head` đạt revision 0018, 18 migration, 37 bảng, integrity ok. Kiểm: `pytest backend/tests/db/test_migration_rehearsal.py -q` |
@@ -23,7 +26,7 @@ Tài liệu này giải thích **từng feature**, **nghĩa của trạng thái 
 | `backup_rollback_checksum` | **PASS** | — | Backup trước upgrade → restore vào data root mới: sha256/byte_size/integrity khớp + digest nội dung logic y hệt. Kiểm: `pytest backend/tests/storage/test_backup_rollback_drill.py -q` |
 | `legacy_read_routes` | **PASS** | — | 4 route đọc thật trả 200 trên dữ liệu tạo từ schema 0016 |
 | `feature_flag_evidence_gate` | **PASS** | — | Flag chỉ bật khi manifest ghi PASS; unsafe luôn bị chặn. Kiểm: `pytest backend/tests/settings -q` |
-| `g_perf_offline_fixtures` | **PASS** | — | 14/14 fixture benchmark `overallStatus=PASS`. Kiểm: `scripts/benchmarks/run.py --fixture S1` |
+| `g_perf_offline_fixtures` | **PASS** | — | 14/14 report có `overallStatus=PASS` — **không** có nghĩa G-PERF xanh hoàn toàn: tổng 34 dòng ngưỡng = 32 PASS · 0 FAIL · **2 NOT_RUN** (2 dòng ngay dưới). Kiểm: `scripts/benchmarks/run.py --fixture S1` |
 | `g_perf_long_task_typing` | **NOT_RUN** | ❌ | Cần browser thật (PerformanceObserver + IME); harness chỉ có Python/Node headless | 
 | `g_perf_sse_heap_30min` | **NOT_RUN** | ❌ | Phiên đo rút ngắn còn 90,1 s, không đủ 1.800 s |
 | `cloud_quality_live` | **NOT_RUN** | ❌ flag `cloud_quality_mode` | Chưa có credential/consent/budget cloud ⇒ chưa gọi provider thật lần nào |
