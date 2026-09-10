@@ -2,7 +2,10 @@
 setlocal
 set "REPO_ROOT=%~dp0"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%scripts\preflight.ps1"
+REM R01 ruling: FFmpeg is only needed for real audio rendering, and the release manifest pins
+REM ffmpeg_real_master to NOT_RUN/disabled. A disabled feature must not be a startup dependency,
+REM so the launcher skips that one check; the audio path still fails loudly without FFmpeg.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%scripts\preflight.ps1" -SkipFfmpeg
 if errorlevel 1 exit /b %errorlevel%
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%scripts\migrate.ps1"
