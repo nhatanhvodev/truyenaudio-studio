@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from inspect import isawaitable
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -12,6 +12,7 @@ from app.modules.execution.contracts import BillingState
 from app.modules.security.credentials import CredentialStore, CredentialUnavailable
 from app.modules.security.model_identifier import validate_model_identifier
 from app.providers.transport import (
+    IncrementalSseParser,
     ProviderTransportError,
     bearer_json_headers,
     normalize_http_error,
@@ -112,6 +113,7 @@ class QwenMtAdapter:
         self.dispatch_registry = dispatch_registry
         self.dispatch_authorization = dispatch_authorization
         self.endpoint = canonical_qwen_endpoint(endpoint)
+        self.last_stream_usage: tuple[Usage, ...] = ()
 
     def capabilities(self) -> dict[str, object]:
         return {
@@ -235,6 +237,87 @@ class QwenMtAdapter:
         if not decision.allowed:
             raise CloudCallBlocked(decision.reasons)
 
+    async def stream_translate(self, request: TranslationRequest) -> AsyncIterator[str]:
+        """Incremental draft stream (qwen-mt-flash/lite per provider docs).
+
+        Uses the documented DashScope SSE mode: ``parameters.incremental_output``
+        plus the ``X-DashScope-SSE: enable`` header, parsed with the shared
+        incremental SSE parser. Yields only newly produced text; the final
+        usage is stored on ``self.last_stream_usage``. Non-incremental models
+        (plus/turbo) return the full text so far, which is de-duplicated into
+        deltas. Guard/validation happen before any bytes are sent.
+        """
+        if self.dispatch_registry is not None or self.dispatch_authorization is not None:
+            if self.dispatch_registry is None or self.dispatch_authorization is None:
+                raise ValueError("PROFILE_REVISION_UNAVAILABLE")
+            self.dispatch_registry.validate_authorization(self.dispatch_authorization)
+        self._validate_request(request)
+        self._evaluate_cloud_guard(request)
+        payload = self._payload(request)
+        parameters = payload.get("parameters")
+        if isinstance(parameters, dict):
+            parameters["incremental_output"] = True
+        headers = bearer_json_headers(self.secret.value)
+        headers["X-DashScope-SSE"] = "enable"
+        headers["Accept"] = "text/event-stream"
+
+        parser = IncrementalSseParser()
+        accumulated = ""
+        mode: str | None = None  # None until a second frame reveals the model mode
+        self.last_stream_usage = ()
+
+        stream_cm = self.http_client.stream(
+            "POST",
+            self.endpoint,
+            json=payload,
+            headers=headers,
+            timeout=request.context.timeout_seconds,
+        )
+        async with stream_cm as response:
+            status_code = getattr(response, "status_code", 200)
+            if status_code != 200:
+                raise normalize_http_error(status_code, "provider error", request_sent=True)
+            try:
+                async for chunk in response.aiter_bytes():
+                    for event in parser.feed(chunk):
+                        data = event.get("data")
+                        if not isinstance(data, dict):
+                            continue
+                        if data.get("done"):
+                            continue
+                        usage = data.get("usage")
+                        if isinstance(usage, dict):
+                            self.last_stream_usage = (
+                                Usage(
+                                    UsageUnit.INPUT_TOKEN.value,
+                                    _non_negative_usage(usage.get("input_tokens")),
+                                    data.get("request_id"),
+                                ),
+                                Usage(
+                                    UsageUnit.OUTPUT_TOKEN.value,
+                                    _non_negative_usage(usage.get("output_tokens")),
+                                    data.get("request_id"),
+                                ),
+                            )
+                        output = data.get("output")
+                        choices = output.get("choices") if isinstance(output, dict) else None
+                        if not choices or not isinstance(choices[0], dict):
+                            continue
+                        message = choices[0].get("message")
+                        content = message.get("content") if isinstance(message, dict) else None
+                        if not isinstance(content, str) or content == "":
+                            continue
+                        delta, mode = _stream_delta(accumulated, content, mode)
+                        if delta:
+                            accumulated += delta
+                            yield delta
+            except (TimeoutError, httpx.TimeoutException, httpx.TransportError) as exc:
+                error = normalize_transport_exception(exc, request_started=True)
+                if error.billing_state is BillingState.UNKNOWN:
+                    raise ProviderBillingUnknown("QWEN_BILLING_UNKNOWN") from exc
+                raise error from exc
+        parser.finish()
+
     def _payload(self, request: TranslationRequest) -> dict[str, object]:
         translation_options: dict[str, object] = {
             "source_lang": qwen_language_code(request.source_language),
@@ -262,6 +345,38 @@ def _non_negative_usage(value: Any) -> int:
     if type(value) is not int or value < 0:
         raise ValueError("QWEN_USAGE_INVALID")
     return value
+
+
+def _stream_delta(accumulated: str, content: str, mode: str | None) -> tuple[str, str]:
+    """Delta extraction for both DashScope streaming modes.
+
+    ``incremental_output`` models (flash/lite) send only new text; plus/turbo
+    send the full translation so far. The mode is decided from the second
+    frame (a cumulative frame starts with the previous total) and a regression
+    inside cumulative mode is reported as a malformed stream.
+    """
+    if mode is None or mode == "unknown":
+        if not accumulated:
+            return content, "unknown"
+        if content == accumulated:
+            return "", "unknown"
+        if content.startswith(accumulated):
+            return content[len(accumulated) :], "cumulative"
+        return content, "incremental"
+    if mode == "cumulative":
+        if content == accumulated:
+            return "", "cumulative"
+        if not content.startswith(accumulated):
+            raise ProviderTransportError(
+                "MALFORMED_STREAM",
+                "stream text regressed",
+                False,
+                BillingState.UNKNOWN,
+            )
+        return content[len(accumulated) :], "cumulative"
+    if content == accumulated:
+        return "", mode
+    return content, mode
 
 
 def qwen_language_code(language: str) -> str:
