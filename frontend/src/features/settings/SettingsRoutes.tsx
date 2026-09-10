@@ -3,6 +3,7 @@ import { Navigate, type RouteObject } from 'react-router-dom';
 import { Diagnostics } from '../diagnostics/Diagnostics';
 import { CharacterManager } from '../characters/CharacterManager';
 import { GlossaryManager } from '../glossary/GlossaryManager';
+import { MemoryManager } from '../memory/MemoryManager';
 import { ModelCatalog } from '../modelCatalog/ModelCatalog';
 import { ProfileEditor } from '../providers/ProfileEditor';
 import { ProjectScopedPanel } from './ProjectScopedPanel';
@@ -39,6 +40,7 @@ function TranslationSettings() {
           <StyleManager projectId={projectId} />
           <GlossaryManager projectId={projectId} />
           <CharacterManager projectId={projectId} />
+          <MemoryManager projectId={projectId} />
         </>
       )}
     />
