@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { BatchQueue } from '../features/batch/BatchQueue';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
+import { GlobalNav } from '../features/workspace/GlobalNav';
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
@@ -112,6 +113,7 @@ function Shell() {
   return (
     <WenkuCrawlProvider>
       <main style={styles.shell}>
+        <GlobalNav />
         <nav style={styles.nav} aria-label="Workflow">
           <Link to="/" style={styles.navLink}>Dự án</Link>
           <Link to="/jobs" style={styles.navLink}>Jobs</Link>

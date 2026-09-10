@@ -39,7 +39,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 | J03 Projection/feed/diagnostics | DONE | EventLog append-only + cursor SSE + sync dedupe (d577b18, deb91f3); retention purge theo cutoff + rebuild parity (22b136c); emit cùng transaction tại job terminal & approve (round 3); structured log model/latency/cost redacted |
 | J04 Draft streaming resumable | PARTIAL | Engine + snapshot + SSE feed (segmentReady) + adapter delta source (`stream_translate`) đã xong & test; phần còn lại (delta sống → feed job-scoped) phụ thuộc **persisted draft của U04** (workspace_drafts) vì worker và API là hai tiến trình |
 | U01 Design system/tokens/primitives | DONE (code) | 84341ae, 5f25a46, 10c0037, 4d4aa90, 53d4377; 24 shared/ui tests; **visual/zoom/screen-reader audit NOT_RUN** (cần browser harness) |
-| U02 App shell & Settings bảy nhóm | PARTIAL | Part 1: cây route `/settings` đủ 7 nhóm theo C07 + nav `aria-current` + breadcrumb + outlet, test 4; các nhóm hiển thị panel nêu task sẽ nối (U08/U09/A02/U10) cho tới part sau; global IA (Thư viện/Công việc/Cài đặt) + nested project routes còn lại |
+| U02 App shell & Settings bảy nhóm | PARTIAL | Part 1: cây `/settings` đủ 7 nhóm C07 + nav aria-current + breadcrumb (4 test). Part 2: `GlobalNav` ba khu vực Thư viện/Công việc/Cài đặt gắn vào Shell (3 test). Còn: nested project routes, loading/empty/error từng nhóm, nội dung thật từ U08–U10/A02 |
 | A01 VieNeu manifest/bridge/catalog | DONE (code) | 89cc0d1 (26 local-tts/speech tests); **live probe/playback NOT_RUN** (chưa cài model/license) |
 | A02–A05 Preview/voice-plan/audio | NOT_STARTED | A02 live phụ thuộc model VieNeu (BLOCKED env nếu chưa cài) |
 | E01 Export bundle | NOT_STARTED | deps A05/U07/U09/U10 |
