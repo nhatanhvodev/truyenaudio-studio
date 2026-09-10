@@ -7,10 +7,29 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 
 ## Cổng nghiệm thu hiện tại
 
-- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **654 passed**, 1 warning
+- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **700 passed**, 1 warning
   (SQLAlchemy FK-cycle sort, có sẵn từ baseline), exit 0.
-- Frontend: `npm test -- --run` → **46 passed / 15 files**; `npm run build` (tsc + Vite) → PASS.
+- Frontend: `npm test -- --run` → **192 passed / 40 files**; `npm run build` (tsc + Vite) → PASS.
+- **Browser E2E** (mới): `npx --no-install playwright test` → **7 passed** (4 spec) trên **Chrome hệ thống
+  qua `channel: 'chrome'`** — xem "Thay đổi môi trường browser" bên dưới.
 - Ruff các file thay đổi: PASS. Không chạy cloud trả phí/live/model download trong toàn bộ quá trình.
+
+### Thay đổi môi trường browser (quan trọng — mở khoá nhiều mục NOT_RUN)
+
+Ghi nhận trước đây ("không có Chromium/Chrome/Edge binary ⇒ mọi kiểm visual/E2E/responsive NOT_RUN") **không
+còn đúng**. Probe trong phiên (script tạm, đã xoá):
+
+```
+PROBE_OK channel:chrome    text=xin chào version=152.0.7977.83
+PROBE_OK executablePath    text=xin chào version=152.0.7977.83
+PROBE_OK channel:msedge    text=xin chào version=152.0.4191.66
+```
+
+Playwright 1.54.2 (đã có trong devDependencies) chạy được Chrome/Edge hệ thống dù cache `ms-playwright`
+không tồn tại. Vì vậy `frontend/playwright.config.ts` nay mặc định `use.channel = 'chrome'`; các mục
+visual/E2E/responsive **đã chạy thật** thay vì NOT_RUN. Phần còn NOT_RUN chỉ là các mục cần môi trường live
+thật (cloud có quyền, model VieNeu + license, corpus có quyền, reviewer/người nghe).
+
 
 ## Ma trận task → trạng thái → bằng chứng
 
@@ -40,19 +59,18 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 | J04 Draft streaming resumable | PARTIAL | Engine + snapshot + SSE feed + adapter delta source (`stream_translate`) đã xong & test. Round 4: worker ghi delta provider vào `workspace_drafts` (U04) qua `DraftDeltaSinkFactory` bind session → feed `GET /api/jobs/{id}/draft[/stream]` phục vụ draft overlay (offset theo segment, dedupe/gap, `draftRevision`, không bao giờ approvable) — 5 test. Còn: hiển thị delta **trong lúc** job chạy (SQLite một-writer: draft commit cùng transaction của run) |
 | U03 Phân trang thư viện và import review | PARTIAL | Round 1: backend `ProjectQueries` + `GET /api/projects` — cursor ký HMAC (`LIBRARY_CURSOR_INVALID` khi giả), `limit` cap **100** (mặc định 20), filter `q` server-side, page metadata (`total/count/hasMore/nextCursor/mountedChaptersPerProject`); mỗi project chỉ mount **30 chapter summary** (window function) + `chapterCount` chính xác qua GROUP BY ⇒ dự án 120 chương không kéo chapter/không lộ source text vào payload, và số statement mỗi trang **hằng số** (test đếm `SELECT` ≤ 6) — 5 test. Import review: thêm 4 test cho `build_import_candidates` (DUPLICATE_ORDINAL gắn cho **mọi** section trùng kèm `sourcePath`, ORDINAL_MISSING/EMPTY_CHAPTER nêu đúng file, chương 1200 vẫn nhận, text giữ nguyên khi confirm). Frontend: thư viện dùng `page` (hiện `n/total`), nút **Tải thêm** theo `nextCursor`, ô tìm kiếm gửi `q`, và vẫn chạy khi backend cũ không có `page` — 3 test. Còn: route E2E browser cho import/duplicate, preview encoding trong UI |
 | U04 Draft API và optimistic concurrency | DONE (code) | R1 backend: bảng `workspace_drafts` (migration 0015, UNIQUE project/chapter/base revision) + compare-and-swap (`DRAFT_REVISION_CONFLICT`), validate segment/size cap, không đụng approved, API `GET/PUT /api/chapters/{id}/draft` (200/409/400) — 6 test. R2 seam: `append_draft_delta` (duplicate/gap/`commit=False`) dùng bởi worker (J04 R4) — 5 test. R3 editor: `useChapterDraft` + `DraftControls` khôi phục nháp theo base revision, gửi `expectedRevision`, 409 giữ nguyên bản đang sửa + diff theo segment + chọn ghi đè/dùng bản server, retry idempotent khi nội dung trùng — 9 test |
-| U01 Design system/tokens/primitives | DONE (code) | 84341ae, 5f25a46, 10c0037, 4d4aa90, 53d4377; 24 shared/ui tests; **visual/zoom/screen-reader audit NOT_RUN** (cần browser harness) |
-| U05 Tabs, dock và lưu layout | PARTIAL | Round 1: `workspaceLayout.ts` — reducer thuần (8 tab/pane; mở/đóng/reorder/split/dock/undock/reset), tab thứ 9 chỉ evict tab **sạch** (dirty → `TAB_LIMIT_DIRTY`), đóng tab dirty bị chặn (`TAB_DIRTY`) trừ `force`, `undock` từ chối khi tràn (`UNDOCK_OVERFLOW`), guard cross-project (`PROJECT_MISMATCH`), serialize/parse có version + sanitize — 12 test. Round 2: bảng `workspace_layouts` (migration 0016, UNIQUE project), service `load_layout`/`save_layout` (CAS `LAYOUT_REVISION_CONFLICT`, sanitize bỏ tab project khác + cap 8 tab/pane, version lạ → `migrated`), API `GET/PUT /api/projects/{id}/workspace-layout` (200/409/400/422/404) — 9 test; client `useWorkspaceLayout` (khôi phục theo project, `migrated` → layout mặc định, dispatch cục bộ + lưu CAS, 409 giữ layout local + reload) — 6 test. Round 3: UI thật trong shell — `WorkspaceTabs` (role=tablist/tab đúng ARIA, điều hướng bàn phím ←/→/Home/End/Enter/Delete, roving tabindex, đóng tab dirty bị chặn + `TAB_DIRTY` + nút "Đóng và bỏ thay đổi", tab đã đóng không tự mở lại khi đổi route, dock/undock khung phụ, lưu layout + báo 409) — 7 test; `workspaceRoutes.ts` (map route → tab: editor/QA/inspector/job/preview + chỉ route có project UUID mới persist) — 4 test; action `sync` idempotent trong reducer — 2 test; Shell gắn `WorkspaceTabs` theo route. Còn: E2E keyboard/reopen ngoài browser thật, kiểm responsive 320/390/1024/1366 |
+| U01 Design system/tokens/primitives | DONE (code) · browser audit PASS | 84341ae, 5f25a46, 10c0037, 4d4aa90, 53d4377; 24 shared/ui tests. **Browser audit nay đã chạy thật** (task 45 / commit 149c729): `frontend/e2e/visual-a11y.spec.ts` trên Chrome hệ thống — reflow 320/390/1024/1366 (không overflow ngang), WCAG 1.4.4 (text 200% ở 1280/1024: không overflow, không cắt chữ), focus bàn phím thật, chữ Việt/CJK không mojibake. Audit này **phát hiện lỗi thật**: cột grid `auto` bị chốt bởi max-content của `<select>`/header ⇒ cả app cuộn ngang ở 320/390px; đã sửa bằng `minmax(0,1fr)` + `minWidth: 0` + `flexWrap` cho nav. Contrast ≥4.5:1 / focus ≥3:1 vẫn là assert cấp unit (`tokens-contrast.test.ts`); screen-reader script vẫn NOT_RUN |
+| U05 Tabs, dock và lưu layout | PARTIAL | Round 1: `workspaceLayout.ts` — reducer thuần (8 tab/pane; mở/đóng/reorder/split/dock/undock/reset), tab thứ 9 chỉ evict tab **sạch** (dirty → `TAB_LIMIT_DIRTY`), đóng tab dirty bị chặn (`TAB_DIRTY`) trừ `force`, `undock` từ chối khi tràn (`UNDOCK_OVERFLOW`), guard cross-project (`PROJECT_MISMATCH`), serialize/parse có version + sanitize — 12 test. Round 2: bảng `workspace_layouts` (migration 0016, UNIQUE project), service `load_layout`/`save_layout` (CAS `LAYOUT_REVISION_CONFLICT`, sanitize bỏ tab project khác + cap 8 tab/pane, version lạ → `migrated`), API `GET/PUT /api/projects/{id}/workspace-layout` (200/409/400/422/404) — 9 test; client `useWorkspaceLayout` (khôi phục theo project, `migrated` → layout mặc định, dispatch cục bộ + lưu CAS, 409 giữ layout local + reload) — 6 test. Round 3: UI thật trong shell — `WorkspaceTabs` (role=tablist/tab đúng ARIA, điều hướng bàn phím ←/→/Home/End/Enter/Delete, roving tabindex, đóng tab dirty bị chặn + `TAB_DIRTY` + nút "Đóng và bỏ thay đổi", tab đã đóng không tự mở lại khi đổi route, dock/undock khung phụ, lưu layout + báo 409) — 7 test; `workspaceRoutes.ts` (map route → tab: editor/QA/inspector/job/preview + chỉ route có project UUID mới persist) — 4 test; action `sync` idempotent trong reducer — 2 test; Shell gắn `WorkspaceTabs` theo route. **Round 4 (149c729)**: kiểm responsive 320/390/1024/1366 **đã chạy thật** trên browser (`visual-a11y.spec.ts`) và phát hiện + sửa overflow ngang của panel/form (grid `minmax(0,1fr)`, `minWidth:0`, nav `flexWrap`). Còn: E2E keyboard dock/reopen tab ngoài browser thật (spec riêng) |
 | U07 Job UI và draft streaming | PARTIAL | Round 1: `useJobDraftStream` (snapshot `GET /api/jobs/{id}/draft` trước, SSE `/draft/stream?afterOffset=` với `draft`/`gap`/`terminal`, frame trùng theo offset bị bỏ, gap → thay bằng snapshot, terminal đóng stream nhưng giữ text, resync thủ công, hoạt động cả khi không có `EventSource`) + `JobDraftPanel` (read-only, badge trạng thái, offset, cảnh báo truncated, khẳng định nháp **không** dùng để duyệt) — 6 test; route `jobs/:jobId/draft` + map tab JOB. **Round 2**: `jobStore.ts` — **một** store/SSE subscription dùng chung, ref-count (consumer thứ hai không mở thêm connection; unmount hết → đóng; remount không nhân listener), buffer **cap 1.000** + cờ `truncated`, reconnect có backoff + **đọc lại snapshot trước khi resume** (bịt gap), bỏ qua event replay theo `sequenceId`, `retryableFailures()` chỉ trả job FAILED có mã retryable; `JobsList` (một dòng/job theo event mới nhất, nhãn `CANCEL_REQUESTED`, hủy chỉ hiện khi còn dừng được, thử lại chỉ cho lỗi retryable, link sang nháp) — 14 test; `JobProgress` dùng store chung + link nháp + nhãn hủy. Còn: UI batch partial-failure đầy đủ, E2E SSE thật |
 | U06 Editor song ngữ, QA, inspector | PARTIAL | Round 1: `BilingualEditor` — hàng song ngữ key theo **stable source segment id**; pane nguồn là text `aria-readonly` (không có textbox cho source, chỉ target sửa được); **chặn lưu khi IME đang composition** (`IME_COMPOSITION_ACTIVE`) rồi lưu sau `compositionend`; `Ctrl/Cmd+S` lưu đúng đoạn đang sửa kèm `expectedRunHash`; **QA inspector** lọc theo severity + bấm issue → reveal/scroll đúng đoạn (`data-revealed`, `scrollIntoView`); áp dụng đề xuất QA vào draft; **CRITICAL đang OPEN chặn Phê duyệt** (kèm đường bỏ qua có chủ đích `force: true`); 409 giữ nguyên text đang sửa + hiện mã lỗi — 7 test; route `/chapters/:id/editor` + map tab EDITOR. Còn: inspector glossary/character/context trace, diff/repair proposal đầy đủ (`RepairDiff` cần proposal từ job REPAIR), virtualize + route conflict tests mở rộng. **Round 2**: backend `context_trace.py` + `GET /api/chapters/{id}/translation/context-trace` — run gần nhất (hash glossary/memory đã ghi), glossary revision + **chỉ rule khoá trong phạm vi ordinal**, story memory **chỉ APPROVED** + hash, nhân vật active (aliases/status), cờ `stale` so hash run ↔ hash hiện tại (5 test); frontend `ContextInspector` (glossary/memory/nhân vật, cảnh báo stale, trạng thái rỗng, lỗi trace, và **ID thô chỉ nằm trong Drawer chi tiết**) — 5 test, gắn vào `BilingualEditor`. |
 | U10 Storage, Appearance, Advanced | PARTIAL | Round 1: **Storage** — `BackupService.list_backups()` (checksum/integrity từng bản, bản hỏng hiện là `verified: false` chứ không crash), `retention_plan(count)` **chỉ là kế hoạch** (`applied: false`, `requiresConfirmation`, `pruneOnCreate` — đổi retention không xóa file nào), `restore_copy()` bắt buộc `confirmTarget` khớp đúng đường dẫn + chỉ restore vào data root mới (từ chối target trùng/overlap, verify backup trước khi ghi), API `GET /backups`, `GET/PUT /retention`, `POST /backups/{id}/restore-copy` (400 thiếu xác nhận, 409 target tồn tại/backup hỏng/lock) — 5 test. **Feature flags** — `feature_flags.py` fail-closed (unsafe/unknown → `FEATURE_FLAG_UNSAFE:<name>`/`FEATURE_FLAG_UNKNOWN:<name>`, flag unsafe không bật được qua API, `applied: false` vì rollout thuộc R01) + API `GET/PUT /api/settings/feature-flags` — 5 test. **Appearance** — `uiPreferences.ts` (chỉ theme/font/density/reduceMotion; khóa lạ và khóa kiểu content/secret bị loại và **không** hiển thị lại; version + migrate) + `AppearanceSettings` panel (lưu/khôi phục/về mặc định, preview chỉ hiện document đã lọc) — 11 test. Còn: panel Storage UI đầy đủ (dùng `CleanupPreview` + plan), Advanced/diagnostics export trong UI, feature-flag persistence (R01) |
-| U02 App shell & Settings bảy nhóm | PARTIAL | P1 cây `/settings` 7 nhóm (4 test); P2 `GlobalNav` ba khu vực (3 test); P3 nested `projects/:projectId/settings` lấy project từ URL, nhóm translation render 4 manager theo project (3 test); P4 **Storage** (`StorageSettings`: dung lượng, danh sách backup kèm trạng thái checksum, retention chỉ tạo **kế hoạch** `applied:false` không xoá gì, cleanup preview → execute đúng `planId`+`snapshotHash`, phục hồi bản sao chỉ bật khi gõ lại đúng thư mục và chỉ với backup verified, lỗi backend hiện nguyên mã) — 5 test; P5 **TTS** dùng catalog giọng cục bộ (`VoiceBrowser`) với ghi chú giọng chỉ khả dụng khi đã cài model/license. Còn: tách IA Thư viện với nested project routes, keyboard route tests |
-| U09 Quản lý style/glossary/nhân vật/memory | PARTIAL |
+| U02 App shell & Settings bảy nhóm | PARTIAL → DONE (shell + route tests) | P1 cây `/settings` 7 nhóm (4 test); P2 `GlobalNav` ba khu vực (3 test); P3 nested `projects/:projectId/settings` lấy project từ URL, nhóm translation render 4 manager theo project (3 test); P4 **Storage** (`StorageSettings`: dung lượng, danh sách backup kèm trạng thái checksum, retention chỉ tạo **kế hoạch** `applied:false` không xoá gì, cleanup preview → execute đúng `planId`+`snapshotHash`, phục hồi bản sao chỉ bật khi gõ lại đúng thư mục và chỉ với backup verified, lỗi backend hiện nguyên mã) — 5 test; P5 **TTS** dùng catalog giọng cục bộ (`VoiceBrowser`) với ghi chú giọng chỉ khả dụng khi đã cài model/license. **Round 5 (commit 8ea773b, 5 test)**: `ProjectNav` — context project lấy từ URL (deep link + Back giữ project), breadcrumb, 3 area là link thật có `aria-current`; Shell render `ProjectNav` chỉ trên route project; các nhóm nested thay placeholder bằng nội dung thật (tts → `VoiceBrowser`, storage → `StorageSettings`, appearance → `AppearanceSettings`, advanced → `Diagnostics`), đoạn copy placeholder đã xoá. P6 test router chuyển sang `MemoryRouter` (data-router nav no-op trong jsdom: `RequestInit: Expected signal … to be an instance of AbortSignal` — lỗi thật do AbortSignal foreign-realm vs undici). Còn: screen-reader script full / responsive trên từng màn chi tiết |
 | U09 Quản lý style/glossary/nhân vật/memory | PARTIAL | P1 `StyleManager` 4 test; P2 `GlossaryManager` 6 test; P3 `CharacterManager` (evidence gate, addressing có hướng) 6 test; P4 `MemoryManager` (candidate approve cần run+segment, reject, context chỉ APPROVED + hash) 5 test — cả 4 gắn Settings→Translation. Còn: preview stale-scope, nested project routes |
 | U08 Provider/model và quality settings | PARTIAL | P1 `modelCatalog` 6 test; P2 `ProfileEditor` credential masked 5 test (Settings→Providers); P3 `QualityPlanPanel` (Balanced mặc định, Quality/Maximum cần opt-in, quote theo stage + tổng/expiry/warnings, **đổi model ⇒ quote hết hiệu lực**, thiếu consent thì chặn không gọi API, 403 → alert) 6 test — chờ gắn vào màn chapter (U06). Còn: nhãn quality picker, combobox/rotate E2E |
 | A01 VieNeu manifest/bridge/catalog | DONE (code) | 89cc0d1 (26 local-tts/speech tests); **live probe/playback NOT_RUN** (chưa cài model/license) |
 | A02–A05 Preview/voice-plan/audio | NOT_STARTED | A02 live phụ thuộc model VieNeu (BLOCKED env nếu chưa cài) |
 | E01 Export bundle | NOT_STARTED | deps A05/U07/U09/U10 |
-| V01–V03 Fixture/benchmark/validation | NOT_STARTED | — |
+| V01–V03 Fixture/benchmark/validation | PARTIAL (browser E2E đã chạy) | **Browser E2E revival (task 44 / 278c484)**: harness chạy trên Chrome hệ thống (`channel: 'chrome'`, `playwright.config.ts`), 2 spec cũ đã lỗi thời được viết lại theo UI hiện tại (provision project/rights/import qua API thật rồi drive UI translate→approve→voice→render→audio approve→export) → `npx --no-install playwright test` **7 passed / 4 spec**. Đây là bằng chứng browser/fixture thật cho nhánh **fake/offline**; chưa phải V01 (benchmark CLI `scripts/benchmarks/run.py`, fixture S1/S2/C500/C2K/J10K, G-PERF) và chưa phải V03 (corpus có quyền + reviewer + chất lượng TTS thật) — hai mục đó vẫn NOT_RUN |
 | R01–R03 Migration/rollout/docs/cleanup | NOT_STARTED | — |
 | X01–X07 Phase 2 extensions | NOT_STARTED | R02 chưa đạt; không bật |
 
@@ -60,18 +78,23 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 
 - M0 ✓ (F01–F03), M1 ✓ (S01–S03, P01–P02), M2 ✓ (P03–P06), M3 ✓ (C01–C06).
 - M4: J03 DONE; J02 DONE; J01 PARTIAL (handler thật + crash coverage; REVIEW/REPAIR/SUMMARIZE cần provider/model); J04 PARTIAL (engine + SSE + delta→draft; delta sống giữa job NOT_RUN).
-- M5: U01 code-complete (kiểm trực quan NOT_RUN); U03 round 1 (phân trang thư viện + import review warnings); U04 DONE (code); U05 round 1–3 (reducer + API/hook + UI tab/dock trong shell; E2E/responsive NOT_RUN); U06 round 1–2 (editor song ngữ + QA inspector + context trace inspector); U07 round 1–2 (panel nháp job + job store/SSE dùng chung + danh sách job); U10 round 1 (storage retention/restore-copy + feature-flag guard + appearance prefs); U02/U08/U09 PARTIAL.
+- M5: U01 **browser audit PASS** (responsive/1.4.4/focus/Viet-CJK, sửa overflow ngang thật); U02 shell + route tests DONE; U03 round 1 (phân trang thư viện + import review warnings); U04 DONE (code); U05 round 1–4 (reducer + API/hook + UI tab/dock + **responsive đã chạy thật**); U06 round 1–2 (editor song ngữ + QA inspector + context trace inspector); U07 round 1–2 (panel nháp job + job store/SSE dùng chung + danh sách job); U10 round 1 (storage retention/restore-copy + feature-flag guard + appearance prefs); U08/U09 PARTIAL.
 - M6: A01 code-verified (live NOT_RUN); A02–A05 chưa thực hiện.
 - M7/M8: chưa thực hiện (R02 là cổng phát hành; X-task không chặn Phase 1).
 
 ## Cam kết trạng thái
 
 - Không task nào bị đánh DONE khi chưa đủ evidence; các acceptance phụ thuộc môi trường live
-  (cloud trả phí, model VieNeu cài máy, corpus có quyền, reviewer/người nghe, browser visual) được ghi
-  NOT_RUN/BLOCKED và feature tương ứng giữ disabled, không claim live-verified. Riêng môi trường browser:
-  đã kiểm tra trong phiên và **không có** Chromium/Chrome/Edge/Firefox binary, không có cache
-  `ms-playwright` và không có module `playwright` trong repo ⇒ mọi kiểm visual/E2E/responsive được ghi
-  NOT_RUN có căn cứ, không phải suy đoán.
+  (cloud trả phí, model VieNeu cài máy, corpus có quyền, reviewer/người nghe) được ghi
+  NOT_RUN/BLOCKED và feature tương ứng giữ disabled, không claim live-verified.
+- **Cập nhật môi trường browser (thay thế ghi nhận cũ)**: ghi nhận trước đây "không có
+  Chromium/Chrome/Edge/Firefox binary, không có cache `ms-playwright` ⇒ visual/E2E/responsive NOT_RUN" nay
+  **không còn đúng**. Chrome 152 và Edge 152 có trên máy và Playwright 1.54.2 launch được chúng qua
+  `channel: 'chrome'`/`'msedge'` (probe + 7 E2E thật). Vì vậy các mục visual/responsive/E2E thuộc
+  fixture/fake path đã **chạy thật** (task 44 + 45) và không còn là NOT_RUN. Các mục vẫn NOT_RUN đúng quy
+  tắc §2 là những mục cần môi trường live: cloud có consent/budget (REVIEW/REPAIR/summarize handler, live
+  smoke, delta sống giữa job), model VieNeu + license (A02/A03 live probe/playback), corpus có quyền +
+  reviewer (V03), và benchmark G-PERF (V01 chưa viết CLI/fixture).
 - Toàn bộ thay đổi trong tiến trình này đều có diff/commit riêng + command/exit code như trên.
 
 ## Kết luận phiên làm việc này
@@ -79,15 +102,18 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 Tiến trình đạt: **M0–M3 hoàn chỉnh** (F01–F03, S01–S03, P01–P06, C01–C06 DONE), **M4**: J02/J03 DONE, J01
 PARTIAL (plan seam + handler TRANSLATE thật + crash-before-send/after-commit trên handler sản xuất), J04
 PARTIAL (engine/snapshot/SSE + worker ghi delta vào `workspace_drafts` + overlay feed); **M5**: U01
-code-complete (visual/a11y audit NOT_RUN), U04 DONE (code), U05 round 1–2 (reducer + API/hook layout),
-U02/U08/U09 PARTIAL; **M6**: A01 code-verified (live probe NOT_RUN). Backend **676 passed** (1 warning
-FK-cycle có sẵn), frontend **121 passed / 28 files**, `npm run build` PASS, ruff sạch trên mọi file thay đổi;
-mỗi lát cắt có report riêng trong `.superpowers/sdd/` và commit riêng.
+(browser audit PASS sau khi sửa overflow thật), U02 (shell + route tests DONE), U04 DONE (code), U05
+round 1–4 (reducer + API/hook + tab/dock UI + responsive đã chạy thật), U03/U06/U07/U10 PARTIAL,
+U08/U09 PARTIAL; **M6**: A01 code-verified (live probe NOT_RUN). **Browser E2E đã chạy thật** trên Chrome hệ
+thống (`npx --no-install playwright test` → **7 passed / 4 spec**), backend **700 passed** (1 warning FK-cycle
+có sẵn), frontend **192 passed / 40 files**, `npm run build` PASS, ruff sạch trên mọi file thay đổi; mỗi lát
+cắt có report riêng trong `.superpowers/sdd/` và commit riêng (phiên này: 8ea773b, 278c484, 149c729).
 
-Còn lại (giữ nguyên trạng thái, **không** đánh dấu hoàn thành): U03, UI dock/tab của U05, U06, U07, U10,
-A02–A05, E01, V01–V03, R01–R03, X01–X07, cùng các acceptance cần môi trường live — cloud trả phí có
-consent/budget (REVIEW/REPAIR/summarize handler, delta sống giữa job, live smoke), model VieNeu + license
-(A02/A03 live), corpus có quyền và reviewer (V03), browser/visual harness (U01 audit, U05 responsive, E2E
-keyboard dock). Các mục này ghi NOT_RUN/BLOCKED đúng quy tắc plan §2 và không được claim là đã kiểm định.
+Còn lại (giữ nguyên trạng thái, **không** đánh dấu hoàn thành): U03, U06, U07, U08, U09, U10, A02–A05, E01,
+V01, V03, R01–R03, X01–X07, spec E2E keyboard dock/reopen ngoài browser, cùng các acceptance cần môi trường
+live — cloud trả phí có consent/budget (REVIEW/REPAIR/summarize handler, delta sống giữa job, live smoke),
+model VieNeu + license (A02/A03 live), corpus có quyền và reviewer (V03). Các mục này ghi NOT_RUN/BLOCKED
+đúng quy tắc plan §2 và không được claim là đã kiểm định. Browser visual/responsive/E2E thuộc nhánh
+fixture–fake **không còn** nằm trong nhóm NOT_RUN (xem "Thay đổi môi trường browser").
 
 
