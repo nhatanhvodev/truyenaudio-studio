@@ -126,12 +126,24 @@ browser E2E **12 passed / 8 spec** trên Chrome hệ thống. Mỗi lát cắt c
 và commit riêng: `bf92ea8`, `8444c1b`, `2a77367`, `4e94fdd`, `18ccc80`, `74dc4b7`, `e471327`, `7ac92d0`,
 `171d2d6`, `6070955`.
 
-Còn lại (giữ nguyên trạng thái, **không** đánh dấu hoàn thành): U06 (virtualize + repair diff đầy đủ),
-U07 (UI batch partial-failure + E2E SSE thật), U08 (combobox/filters + credential rotate E2E), U09 (preview
-stale-scope + nested project routes), A04 (part-master/SRT), V02, R01–R03, X01–X07, cùng **mọi acceptance cần
-môi trường live** — cloud trả phí có consent/budget (REVIEW/REPAIR/summarize handler, delta sống giữa job, live
-smoke), model VieNeu + license (A01 probe, A02/A03 live), corpus có quyền và reviewer (V03 — xem
-`docs/validation/quality.md`). Các mục này ghi NOT_RUN/BLOCKED đúng quy tắc plan §2 và không được claim là đã
-kiểm định. Browser visual/responsive/E2E thuộc nhánh fixture–fake **không** nằm trong nhóm NOT_RUN.
+Số liệu xác minh toàn cây (commit `300ac00`): backend **890 passed** (1 warning FK-cycle có sẵn),
+frontend **267 passed / 45 file**, `npm run build` PASS, ruff sạch trên mọi file đã chạm,
+browser E2E **13 passed / 9 spec** trên Chrome hệ thống. Mỗi lát cắt có report riêng trong `.superpowers/sdd/`
+và commit riêng (phiên 10/09): `bf92ea8`, `8444c1b`, `2a77367`, `4e94fdd`, `18ccc80`, `74dc4b7`, `e471327`,
+`7ac92d0`, `171d2d6`, `6070955`, `8611203`, `b7c0f2c`, `8f75eda`, `fecfe76`, `d1ee513`, `78b85ac`, `fe664dd`,
+`00148a7`, `e20e3e5`, `4bbdfb7`, `416a39d`.
 
+**Hai bug thật do chính các bước kiểm chứng phát hiện và đã sửa** (không phải refactor hình thức):
+1. `Shell` gọi `useMatch(a) ?? useMatch(b)` nên số lượng hook đổi khi đi từ route project sang route chapter
+   ⇒ React throw giữa render, **sập cả app** sau khi import (`171d2d6`).
+2. `shared/api.ts` không set `Content-Type: application/json` cho body đã `JSON.stringify` ⇒ browser gửi
+   `text/plain` ⇒ FastAPI 422 `INVALID_REQUEST` ⇒ **mọi thao tác lưu từ UI đều thất bại** (`8611203`).
+3. (A04) `ArtifactCache.lookup` không scope theo chapter ⇒ hai chương cùng nội dung dùng chung hàng SRT ⇒ export gate
+   đổ `SRT_REQUIRED` (`416a39d`).
 
+Còn lại (giữ nguyên trạng thái, **không** đánh dấu hoàn thành): U06 (virtualize), U07 (E2E SSE thật + route
+retry/cancel của job chưa tồn tại), U09 (nested project routes), R01–R03, X01–X07, cùng **mọi acceptance cần môi
+trường live** — cloud trả phí có consent/budget (REVIEW/REPAIR/summarize handler thật, live smoke),
+model VieNeu + license (A01 probe, A02/A03/A04 live, nghe kiểm chất lượng), FFmpeg thật (binary không có trên máy),
+corpus có quyền và reviewer (V03 — xem `docs/validation/quality.md`). Các mục này ghi NOT_RUN/BLOCKED đúng quy tắc
+plan §2 và không được claim là đã kiểm định. Browser visual/responsive/E2E thuộc nhánh fixture–fake **không** nằm trong nhóm NOT_RUN.
