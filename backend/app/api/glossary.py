@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.db.base import create_engine_for, session_factory
 from app.modules.translation.glossary import (
     GlossaryCommand,
+    GlossaryPreviewResult,
     GlossaryService,
     active_glossary,
 )
@@ -75,4 +76,54 @@ def create_glossary_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return asdict(result)
 
+    @router.post("/preview")
+    def preview_glossary_entry(
+        project_id: str,
+        request: GlossaryUpsertRequest,
+        service: GlossaryService = Depends(service_dependency),
+    ) -> dict[str, object]:
+        try:
+            result = service.preview(
+                project_id,
+                GlossaryCommand(
+                    request.source_term,
+                    request.target_term,
+                    request.reading,
+                    request.category,
+                    request.gender,
+                    request.addressing_notes,
+                    request.is_locked,
+                    description=request.description,
+                    forbidden_forms=tuple(request.forbidden_forms or ()),
+                    evidence=request.evidence,
+                    scope_from_ordinal=request.scope_from_ordinal,
+                    scope_to_ordinal=request.scope_to_ordinal,
+                ),
+            )
+        except ValueError as exc:
+            if str(exc) == "PROJECT_NOT_FOUND":
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return _preview_json(result)
+
     return router
+
+
+def _preview_json(result: GlossaryPreviewResult) -> dict[str, object]:
+    return {
+        "revisionPreviewSha256": result.revision_preview_sha256,
+        "changed": result.changed,
+        "affectedSegments": [
+            {
+                "segmentId": segment.segment_id,
+                "chapterId": segment.chapter_id,
+                "ordinal": segment.ordinal,
+                "excerpt": segment.excerpt,
+            }
+            for segment in result.affected_segments
+        ],
+        "affectedCount": result.affected_count,
+        "invalidatedRuns": list(result.invalidated_runs),
+        "invalidatedCount": result.invalidated_count,
+        "warnings": list(result.warnings),
+    }

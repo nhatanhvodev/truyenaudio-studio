@@ -198,3 +198,126 @@ describe('GlossaryManager (U09 part 2)', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('GLOSSARY_SCOPE_INVALID'));
   });
 });
+
+describe('GlossaryManager scope preview (U09 round 2)', () => {
+  const hash64 = '1234567890abcdef'.repeat(4);
+
+  const previewResponse = (overrides: Record<string, unknown> = {}) => ({
+    revision_preview_sha256: hash64,
+    changed: true,
+    affectedSegments: [
+      { segmentId: 'seg-1', chapterId: 'ch-1', ordinal: 1, excerpt: '林动抬头。' },
+      { segmentId: 'seg-2', chapterId: 'ch-2', ordinal: 2, excerpt: '林动笑了。' },
+    ],
+    affectedCount: 2,
+    invalidatedRuns: ['run-1'],
+    invalidatedCount: 1,
+    warnings: ['ORDINAL_OUT_OF_RANGE'],
+    ...overrides,
+  });
+
+  async function fillDraft() {
+    fireEvent.change(screen.getByLabelText('Thuật ngữ gốc'), { target: { value: '林动' } });
+    fireEvent.change(screen.getByLabelText('Bản dịch chuẩn'), { target: { value: 'Lâm Động' } });
+    fireEvent.change(screen.getByLabelText('Scope từ chương'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('đến chương'), { target: { value: '999' } });
+  }
+
+  it('shows affected scope and warnings before saving without saving', async () => {
+    const calls = mockFetch((url, init) => {
+      if (init?.method === 'POST' && url.endsWith('/glossary/preview')) {
+        return { payload: previewResponse() };
+      }
+      return { payload: revisionResponse([]) };
+    });
+
+    render(<GlossaryManager projectId="project-1" />);
+    await waitFor(() => expect(screen.getByText('Chưa có thuật ngữ nào.')).toBeTruthy());
+
+    await fillDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem phạm vi' }));
+
+    const panel = await screen.findByTestId('scope-preview');
+    expect(panel.textContent).toContain('2 segment');
+    expect(panel.textContent).toContain('1 bản dịch sẽ bị');
+    expect(panel.textContent).toContain('ORDINAL_OUT_OF_RANGE');
+    expect(panel.textContent).toContain('林动抬头。');
+    expect(panel.textContent).toContain('chưa lưu');
+
+    const previewCall = calls.find(
+      (call) => call.init?.method === 'POST' && call.url.endsWith('/glossary/preview'),
+    );
+    expect(previewCall?.url).toBe('/api/projects/project-1/glossary/preview');
+    expect(JSON.parse(String(previewCall?.init?.body))).toMatchObject({
+      source_term: '林动',
+      target_term: 'Lâm Động',
+      scope_from_ordinal: 1,
+      scope_to_ordinal: 999,
+    });
+
+    const upsertCalls = calls.filter(
+      (call) => call.init?.method === 'POST' && !call.url.endsWith('/glossary/preview'),
+    );
+    expect(upsertCalls).toHaveLength(0);
+  });
+
+  it('still saves normally after a preview', async () => {
+    const calls = mockFetch((url, init) => {
+      if (init?.method === 'POST' && url.endsWith('/glossary/preview')) {
+        return { payload: previewResponse() };
+      }
+      if (init?.method === 'POST') {
+        return {
+          payload: revisionResponse([entry()], {
+            affected_source_segment_ids: ['seg-1'],
+            invalidated: ['run-1'],
+          }),
+        };
+      }
+      return { payload: revisionResponse([]) };
+    });
+
+    render(<GlossaryManager projectId="project-1" />);
+    await waitFor(() => expect(screen.getByText('Chưa có thuật ngữ nào.')).toBeTruthy());
+
+    await fillDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem phạm vi' }));
+    await screen.findByTestId('scope-preview');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu thuật ngữ' }));
+
+    // The preview panel also exposes role="status"; wait for the save banner.
+    await waitFor(() => {
+      const saveStatus = screen
+        .getAllByRole('status')
+        .find((node) => node.textContent?.includes('Đã lưu thuật ngữ'));
+      expect(saveStatus?.textContent).toContain('1 segment');
+      expect(saveStatus?.textContent).toContain('1 bản dịch bị đánh stale');
+    });
+    await waitFor(() => expect(screen.queryByTestId('scope-preview')).toBeNull());
+    expect(
+      calls.filter(
+        (call) => call.init?.method === 'POST' && !call.url.endsWith('/glossary/preview'),
+      ),
+    ).toHaveLength(1);
+    expect((screen.getByLabelText('Thuật ngữ gốc') as HTMLInputElement).value).toBe('');
+  });
+
+  it('surfaces preview errors with the raw backend code', async () => {
+    mockFetch((url, init) =>
+      init?.method === 'POST' && url.endsWith('/glossary/preview')
+        ? { status: 400, payload: { detail: 'GLOSSARY_SCOPE_INVALID' } }
+        : { payload: revisionResponse([]) },
+    );
+
+    render(<GlossaryManager projectId="project-1" />);
+    await waitFor(() => expect(screen.getByText('Chưa có thuật ngữ nào.')).toBeTruthy());
+
+    await fillDraft();
+    fireEvent.click(screen.getByRole('button', { name: 'Xem phạm vi' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('GLOSSARY_SCOPE_INVALID');
+    expect(screen.queryByTestId('scope-preview')).toBeNull();
+  });
+});

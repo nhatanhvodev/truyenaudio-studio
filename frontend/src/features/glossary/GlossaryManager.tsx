@@ -25,6 +25,23 @@ interface GlossaryResponse {
   invalidated?: string[];
 }
 
+export interface AffectedSegmentView {
+  segmentId: string;
+  chapterId: string;
+  ordinal: number;
+  excerpt: string;
+}
+
+export interface GlossaryPreviewResponse {
+  revisionPreviewSha256: string;
+  changed: boolean;
+  affectedSegments: AffectedSegmentView[];
+  affectedCount: number;
+  invalidatedRuns: string[];
+  invalidatedCount: number;
+  warnings: string[];
+}
+
 export interface GlossaryManagerProps {
   projectId: string;
 }
@@ -113,6 +130,8 @@ export function GlossaryManager({ projectId }: GlossaryManagerProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState<GlossaryPreviewResponse | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,6 +150,40 @@ export function GlossaryManager({ projectId }: GlossaryManagerProps) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setPreview(null);
+  }, [draft]);
+
+  async function previewScope() {
+    const invalid = validateDraft(draft);
+    if (invalid) {
+      setError(invalid);
+      setPreview(null);
+      return;
+    }
+    setPreviewing(true);
+    setError('');
+    try {
+      const payload = await apiJson<GlossaryPreviewResponse>(
+        `/api/projects/${projectId}/glossary/preview`,
+        {
+          method: 'POST',
+          body: JSON.stringify(buildEntryPayload(draft)),
+        },
+      );
+      setPreview(payload);
+    } catch (caught) {
+      setPreview(null);
+      setError(
+        caught instanceof Error
+          ? `Không xem được phạm vi: ${caught.message}`
+          : 'Không xem được phạm vi',
+      );
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   async function save() {
     const invalid = validateDraft(draft);
@@ -152,6 +205,7 @@ export function GlossaryManager({ projectId }: GlossaryManagerProps) {
         `Đã lưu thuật ngữ. Revision ${(payload.revision?.sha256 ?? '').slice(0, 8)}… · ${affected} segment chứa thuật ngữ · ${invalidated} bản dịch bị đánh stale.`,
       );
       setDraft(EMPTY_DRAFT);
+      setPreview(null);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không lưu được thuật ngữ');
@@ -250,9 +304,58 @@ export function GlossaryManager({ projectId }: GlossaryManagerProps) {
           style={{ width: '100%' }}
         />
       </label>
-      <button type="button" disabled={saving} onClick={() => void save()}>
-        {saving ? 'Đang lưu…' : 'Lưu thuật ngữ'}
-      </button>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" disabled={previewing} onClick={() => void previewScope()}>
+          {previewing ? 'Đang xem…' : 'Xem phạm vi'}
+        </button>
+        <button type="button" disabled={saving} onClick={() => void save()}>
+          {saving ? 'Đang lưu…' : 'Lưu thuật ngữ'}
+        </button>
+      </div>
+
+      {preview ? (
+        <div
+          data-testid="scope-preview"
+          role="status"
+          style={{ marginTop: 8, border: '1px solid #d1d5db', padding: 8 }}
+        >
+          <strong>Phạm vi sẽ bị ảnh hưởng (chưa lưu)</strong>
+          <p style={{ margin: '4px 0' }}>
+            {preview.affectedCount} segment chứa thuật ngữ · {preview.invalidatedCount} bản dịch sẽ bị
+            đánh stale
+            {preview.changed ? '' : ' · thuật ngữ không thay đổi'}
+          </p>
+          {preview.warnings.length > 0 ? (
+            <div>
+              Cảnh báo:
+              <ul style={{ margin: '4px 0' }}>
+                {preview.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {preview.affectedSegments.length > 0 ? (
+            <table>
+              <caption>Segment chứa thuật ngữ ({preview.affectedCount} tổng cộng)</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Chương</th>
+                  <th scope="col">Đoạn trích</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.affectedSegments.slice(0, 5).map((segment) => (
+                  <tr key={segment.segmentId}>
+                    <td>{segment.ordinal}</td>
+                    <td>{segment.excerpt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </div>
+      ) : null}
 
       <h3 style={{ fontSize: 14, margin: '16px 0 4px' }}>Thuật ngữ active</h3>
       {loading ? <p>Đang tải…</p> : null}
