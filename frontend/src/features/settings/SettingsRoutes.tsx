@@ -9,7 +9,9 @@ import { ProfileEditor } from '../providers/ProfileEditor';
 import { ProjectScopedPanel } from './ProjectScopedPanel';
 import { SettingsLayout } from './SettingsLayout';
 import { StyleManager } from './StyleManager';
+import VoiceBrowser from '../voices/VoiceBrowser';
 import { AppearanceSettings } from './AppearanceSettings';
+import { StorageSettings } from './StorageSettings';
 
 export interface SettingsGroupPageProps {
   title: string;
@@ -50,20 +52,19 @@ function TranslationSettings() {
 
 function TtsSettings() {
   return (
-    <SettingsGroupPending
-      title="TTS"
-      note="Engine/giọng đọc và preview sẽ nối ở A02 (catalog giọng local đã có)."
-    />
+    <section aria-label="TTS" style={{ display: 'grid', gap: 12 }}>
+      <h2 style={{ margin: 0, fontSize: 15 }}>TTS</h2>
+      <p style={{ margin: 0, color: '#4b5563', fontSize: 13 }}>
+        Catalog giọng đọc cục bộ (VieNeu). Giọng chỉ khả dụng khi đã cài model + license trên máy; nếu chưa,
+        catalog hiển thị trạng thái “chưa khả dụng” và không thể preview — không có lời gọi mạng nào được thực hiện.
+      </p>
+      <VoiceBrowser />
+    </section>
   );
 }
 
-function StorageSettings() {
-  return (
-    <SettingsGroupPending
-      title="Storage"
-      note="Dung lượng/backup/restore/retention sẽ nối ở U10 (API /api/storage và CleanupPreview đã có, cần dữ liệu plan)."
-    />
-  );
+function StorageSettingsPage() {
+  return <StorageSettings />;
 }
 
 function AppearanceSettingsPage() {
@@ -80,7 +81,7 @@ export const settingsGroupRoutes: RouteObject[] = [
       { path: 'models', element: <ModelCatalog /> },
       { path: 'translation', element: <TranslationSettings /> },
       { path: 'tts', element: <TtsSettings /> },
-      { path: 'storage', element: <StorageSettings /> },
+      { path: 'storage', element: <StorageSettingsPage /> },
       { path: 'appearance', element: <AppearanceSettingsPage /> },
       { path: 'advanced', element: <Diagnostics /> },
     ],
