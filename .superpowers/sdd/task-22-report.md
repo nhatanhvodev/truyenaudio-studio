@@ -1,6 +1,13 @@
-# Task 22 / J03 report — round 1 (PARTIAL)
+# Task 22 / J03 report — rounds 1–2 (PARTIAL)
 
-Status: PARTIAL — event feed infrastructure verified; retention/projection parity + emit-in-transaction writers remain.
+Status: PARTIAL — feed infrastructure + retention purge + rebuild parity done; emit-in-transaction at main writers remains.
+
+## Delivered (round 2)
+
+- `modules/events/retention.py`:
+  - `purge_events_before(session, cutoff)`: deletes feed rows older than an **explicit caller-provided cutoff** (no retention window invented here); source tables untouched so the projection can be rebuilt.
+  - `rebuild_feed(session)`: re-syncs the feed from jobs/audit/usage with dedupe (idempotent; second call adds 0), returning newly added rows — projection rebuild parity after a purge.
+- Tests (3): idempotent rebuild, purge only before cutoff, rebuild restores purged projection.
 
 ## Delivered / verified (round 1)
 
@@ -9,14 +16,14 @@ Status: PARTIAL — event feed infrastructure verified; retention/projection par
   - `/api/events` SSE with cursor (`after`/`Last-Event-ID`), `_events(...)` filters `sequenceId > cursor`.
   - `_sync_event_log` backfills job/audit/usage rows into the feed with race-safe dedupe (append-only constraint; commits are no-op when nothing changed) — previously hardened by `d577b18`/`deb91f3` and covered by `tests/db/test_event_log_append_only.py`.
   - Diagnostics logging/service modules exist with redaction helpers (used by S02 tests).
-- Acceptance mapping (partial): indexed cursor query ✓; replay/filter stream ✓; structured redaction on diagnostics/audit ✓ (secret/source not in feed payload); snapshot/rebuild & retention ✗; per-transaction emit at each main writer ✗ (feed is synthesized from tables at read instead).
+- Acceptance mapping (partial): indexed cursor query ✓; replay/filter stream ✓; structured redaction on diagnostics/audit ✓; snapshot/rebuild + retention purge ✓ (round 2, explicit cutoff); per-transaction emit at each main writer ✗ (feed is synthesized from tables at read instead).
 
 ## Remaining for J03 acceptance (next rounds)
 
-- Retention policy + audit purge (distinct from draft feed) with tests; projection rebuild parity test; decide/emit transitions in the same transaction as the source change at the main writers (jobs/translation/speech/export) without breaking the append-only dedupe.
+- Emit transitions in the same transaction as the source change at the main writers (jobs/translation/speech/export) without breaking the append-only dedupe; optional audit-vs-draft retention windows remain caller policy.
 
-## Validation (round 1)
+## Validation (rounds 1–2)
 
-- `backend/tests/db/test_event_log_append_only.py` green (included in full backend suite).
-- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 626 passed (after J02 close), 1 warning (pre-existing SQLAlchemy FK-cycle sort warning).
+- `backend/tests/events -q` — 3 passed (round 2); `backend/tests/db/test_event_log_append_only.py` green in full suite.
+- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 629 passed, 1 warning (pre-existing SQLAlchemy FK-cycle sort warning), exit 0.
 - No provider/cloud call added.
