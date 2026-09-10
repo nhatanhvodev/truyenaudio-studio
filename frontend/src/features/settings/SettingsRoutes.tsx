@@ -1,7 +1,7 @@
-﻿import { Navigate, type RouteObject } from 'react-router-dom';
+import { Navigate, type RouteObject } from 'react-router-dom';
 
 import { Diagnostics } from '../diagnostics/Diagnostics';
-import ProviderSettings from '../providers/ProviderSettings';
+import { ModelCatalog } from '../models/ModelCatalog';
 import { SettingsLayout } from './SettingsLayout';
 
 export interface SettingsGroupPageProps {
@@ -20,29 +20,20 @@ export function SettingsGroupPending({ title, note }: SettingsGroupPageProps) {
   );
 }
 
-function TranslationSettings() {
-  return (
-    <SettingsGroupPending
-      title="Translation"
-      note="NgÃ´n ngá»¯, thá»ƒ loáº¡i, style vÃ  quality sáº½ Ä‘Æ°á»£c ná»‘i á»Ÿ U08â€“U09 (style profile Ä‘Ã£ cÃ³ API backend)."
-    />
-  );
-}
-
 function ProvidersSettings() {
   return (
     <SettingsGroupPending
       title="AI Providers"
-      note="Credential/tráº¡ng thÃ¡i provider sáº½ ná»‘i á»Ÿ U08 (component ProviderSettings Ä‘Ã£ cÃ³ nhÆ°ng cáº§n props profile/model)."
+      note="Credential và trạng thái provider sẽ nối ở U08 (component ProviderSettings cần props profile/model)."
     />
   );
 }
 
-function ModelsSettings() {
+function TranslationSettings() {
   return (
     <SettingsGroupPending
-      title="Models"
-      note="Catalog/filter model sáº½ ná»‘i á»Ÿ U08 (API /api/models Ä‘Ã£ cÃ³)."
+      title="Translation"
+      note="Ngôn ngữ, thể loại, style và quality sẽ nối ở U08–U09 (style profile đã có API backend)."
     />
   );
 }
@@ -51,16 +42,7 @@ function TtsSettings() {
   return (
     <SettingsGroupPending
       title="TTS"
-      note="Engine/giá»ng Ä‘á»c vÃ  preview sáº½ ná»‘i á»Ÿ A02 (catalog giá»ng local Ä‘Ã£ cÃ³)."
-    />
-  );
-}
-
-function AppearanceSettings() {
-  return (
-    <SettingsGroupPending
-      title="Appearance"
-      note="Theme/font/máº­t Ä‘á»™ hiá»ƒn thá»‹ sáº½ ná»‘i á»Ÿ U10 trÃªn token cá»§a U01."
+      note="Engine/giọng đọc và preview sẽ nối ở A02 (catalog giọng local đã có)."
     />
   );
 }
@@ -69,7 +51,16 @@ function StorageSettings() {
   return (
     <SettingsGroupPending
       title="Storage"
-      note="Dung lÆ°á»£ng/backup/restore/retention sáº½ ná»‘i á»Ÿ U10 (API /api/storage vÃ  CleanupPreview Ä‘Ã£ cÃ³, cáº§n dá»¯ liá»‡u plan)."
+      note="Dung lượng/backup/restore/retention sẽ nối ở U10 (API /api/storage và CleanupPreview đã có, cần dữ liệu plan)."
+    />
+  );
+}
+
+function AppearanceSettings() {
+  return (
+    <SettingsGroupPending
+      title="Appearance"
+      note="Theme/font/mật độ hiển thị sẽ nối ở U10 trên token của U01."
     />
   );
 }
@@ -81,7 +72,7 @@ export const settingsGroupRoutes: RouteObject[] = [
     children: [
       { index: true, element: <Navigate to="providers" replace /> },
       { path: 'providers', element: <ProvidersSettings /> },
-      { path: 'models', element: <ModelsSettings /> },
+      { path: 'models', element: <ModelCatalog /> },
       { path: 'translation', element: <TranslationSettings /> },
       { path: 'tts', element: <TtsSettings /> },
       { path: 'storage', element: <StorageSettings /> },
