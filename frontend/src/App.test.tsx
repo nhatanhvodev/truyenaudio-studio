@@ -398,15 +398,34 @@ describe('App', () => {
     expect(fetchSpy.mock.calls.some(([url]) => url === '/api/chapters/chapter-1/translation/quote')).toBe(false);
   });
 
-  it('builds a private archive from the export screen and displays checksum result', async () => {
+  it('creates a private archive and a publication bundle from the export screen', async () => {
     window.history.replaceState(null, '', '/chapters/chapter-1/export');
     vi.stubGlobal('EventSource', undefined);
     const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === '/api/chapters/chapter-1/exports/gate') {
+      if (url === '/api/chapters/chapter-1/exports/status') {
         return jsonResponse({
-          allowed: false,
-          reasons: ['PUBLIC_STREAM'],
-          rightsEvaluationHash: 'abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd',
+          chapterId: 'chapter-1',
+          gate: {
+            allowed: true,
+            reasons: [],
+            rightsEvaluationHash: 'abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd',
+          },
+          bundles: [
+            {
+              id: 'export-private-1',
+              kind: 'PRIVATE_ARCHIVE',
+              status: 'READY',
+              manifestSha256: 'def456def456def456def456def456def456def456def456def456def456abcd',
+              artifactId: 'artifact-1',
+              directoryPath: 'D:/tmp/private',
+              files: ['PRIVATE_ONLY.txt', 'checksums.sha256'],
+              createdAt: '2026-09-10T00:00:00+00:00',
+              verified: true,
+              mismatches: [],
+              stale: false,
+              staleReasons: [],
+            },
+          ],
         });
       }
       if (url === '/api/security/bootstrap') {
@@ -415,6 +434,7 @@ describe('App', () => {
       if (url === '/api/chapters/chapter-1/exports/private' && init?.method === 'POST') {
         return jsonResponse({
           id: 'export-private-1',
+          kind: 'PRIVATE_ARCHIVE',
           files: ['PRIVATE_ONLY.txt', 'checksums.sha256'],
           manifestSha256: 'def456def456def456def456def456def456def456def456def456def456abcd',
           directoryPath: 'D:/tmp/private',
@@ -429,11 +449,25 @@ describe('App', () => {
     const { default: App } = await import('./App');
 
     render(<App />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Tao archive rieng tu' }));
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('/api/chapters/chapter-1/exports/private', expect.anything()));
-    expect(await screen.findByText('Đã tạo archive riêng tư')).toBeVisible();
-    expect(screen.getByText(/def456def456/)).toBeVisible();
+    // The export screen is now the real E01 review panel, not the old gate-only card.
+    expect(await screen.findByTestId('export-workflow')).toBeVisible();
+    expect(screen.getByText('Sẵn sàng xuất bản')).toBeVisible();
+    expect(screen.getByTestId('manifest-export-private-1')).toHaveTextContent(
+      'def456def456def456def456def456def456def456def456def456def456abcd',
+    );
+    expect(screen.getByText('Checksum khớp')).toBeVisible();
+    expect(screen.getByText(/studio không tự upload/)).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo archive riêng tư' }));
+
+    await waitFor(() =>
+      expect(fetchSpy).toHaveBeenCalledWith(
+        '/api/chapters/chapter-1/exports/private',
+        expect.anything(),
+      ),
+    );
+    expect(await screen.findByText('Đã tạo archive riêng tư.')).toBeVisible();
   });
 });
 

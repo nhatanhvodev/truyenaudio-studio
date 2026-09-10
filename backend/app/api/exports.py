@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.contracts import ExportKind
 from app.db.base import create_engine_for, session_factory
+from app.modules.exports.review import ExportReview
 from app.modules.exports.schemas import PublicationMetadata
 from app.modules.exports.workflow import BundleVerificationError, ExportWorkflow
 from app.providers.fake import FakeMp3AudioProcessor
@@ -40,6 +41,24 @@ def create_exports_router(settings: Settings | None = None) -> APIRouter:
                 else None,
             )
         engine.dispose()
+
+    def review_dependency() -> Iterator[ExportReview]:
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        factory = session_factory(engine)
+        with factory() as session:
+            yield ExportReview(
+                session, artifact_root=active_settings.data_root / "artifacts"
+            )
+        engine.dispose()
+
+    @router.get("/status")
+    def status(
+        chapter_id: str, review: ExportReview = Depends(review_dependency)
+    ) -> dict[str, object]:
+        try:
+            return _camel_payload(review.status(chapter_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @router.get("/gate")
     def gate(chapter_id: str, workflow: ExportWorkflow = Depends(workflow_dependency)) -> dict[str, object]:

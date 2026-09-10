@@ -9,7 +9,7 @@ import { ProjectNav } from '../features/workspace/ProjectNav';
 import { QualityPlanPanel } from '../features/providers/QualityPlanPanel';
 import { WorkspaceTabs } from '../features/workspace/WorkspaceTabs';
 import { describeRoute, projectIdForRoute } from '../features/workspace/workspaceRoutes';
-import { ExportGate } from '../features/exports/ExportGate';
+import { ExportWorkflow } from '../features/exports/ExportWorkflow';
 import { JobProgress } from '../features/jobs/JobProgress';
 import JobDraftPanel from '../features/jobs/JobDraftPanel';
 import JobsList from '../features/jobs/JobsList';
@@ -1160,75 +1160,13 @@ function AudioScreen() {
 
 function ExportScreen() {
   const { chapterId } = useParams();
-  const [gate, setGate] = useState<GateDecision | null>(null);
-  const [bundle, setBundle] = useState<ExportBundle | null>(null);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!chapterId) {
-      return;
-    }
-    apiJson<GateDecision>(`/api/chapters/${chapterId}/exports/gate`)
-      .then(setGate)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'EXPORT_GATE_FAILED'));
-  }, [chapterId]);
-
-  async function buildPublication() {
-    if (!chapterId) {
-      return;
-    }
-    setError('');
-    try {
-      const payload = await apiJson<ExportBundle>(`/api/chapters/${chapterId}/exports/publication`, {
-        method: 'POST',
-        body: {
-          episodeTitle: 'Tập 1',
-          suggestedEpisodeNumber: 1,
-          isPremium: false,
-        },
-      });
-      setBundle(payload);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'EXPORT_FAILED');
-    }
+  if (!chapterId) {
+    return <Navigate to="/" replace />;
   }
-
-  async function buildPrivate() {
-    if (!chapterId) {
-      return;
-    }
-    setError('');
-    try {
-      const payload = await apiJson<ExportBundle>(`/api/chapters/${chapterId}/exports/private`, {
-        method: 'POST',
-        body: {},
-      });
-      setBundle(payload);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'PRIVATE_EXPORT_FAILED');
-    }
-  }
-
   return (
     <section style={styles.panel} aria-label="Xuất bản">
-      <h1 style={styles.title}>Export</h1>
-      {gate ? (
-        <ExportGate
-          decision={gate}
-          onBuildPrivate={() => void buildPrivate()}
-          onBuildPublication={() => void buildPublication()}
-        />
-      ) : (
-        <p>Đang kiểm tra quyền</p>
-      )}
-      {bundle ? (
-        <section style={styles.result}>
-          <strong>{bundle.files.includes('PRIVATE_ONLY.txt') ? 'Đã tạo archive riêng tư' : 'Đã verify checksum'}</strong>
-          <span>{bundle.manifestSha256.slice(0, 12)}</span>
-          <span>{bundle.files.join(', ')}</span>
-        </section>
-      ) : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {/* ExportWorkflow sở hữu tiêu đề "Xuất bản"; không render thêm heading trùng. */}
+      <ExportWorkflow chapterId={chapterId} />
     </section>
   );
 }

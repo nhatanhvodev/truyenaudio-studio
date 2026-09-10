@@ -141,5 +141,5 @@ test('A05: artifact content is served by HTTP Range and the player uses that URL
   await page.keyboard.press('ArrowRight');
   await expect(page.getByTestId('playback-position')).toHaveText('0:05');
   await page.getByRole('button', { name: 'Phê duyệt audio' }).click();
-  await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
+  await expect(page.getByTestId('export-workflow')).toBeVisible();
 });

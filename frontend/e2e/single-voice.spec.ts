@@ -65,8 +65,11 @@ test('fake single narrator reaches verified publication bundle', async ({
   await expect(page.getByText(/sẵn sàng duyệt/)).toBeVisible();
   await page.getByRole('button', { name: 'Phê duyệt audio' }).click();
 
-  // Publication export is allowed after rights and audio approval.
-  await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
+  // Publication export is allowed after rights and audio approval (E01 review panel).
+  await expect(page.getByTestId('export-workflow')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tạo bundle publication' })).toBeEnabled();
+  await page.getByLabel('Tiêu đề tập').fill('Tập 1');
   await page.getByRole('button', { name: 'Tạo bundle publication' }).click();
-  await expect(page.getByText('Đã verify checksum')).toBeVisible();
+  await expect(page.getByText('Đã tạo bundle publication.')).toBeVisible();
+  await expect(page.getByText(/studio không tự upload/)).toBeVisible();
 });
