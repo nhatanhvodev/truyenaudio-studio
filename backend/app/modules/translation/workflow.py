@@ -7,6 +7,7 @@ import hashlib
 import json
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.contracts import (
@@ -107,16 +108,28 @@ class _ProviderSelection:
     region: str | None
 
 
+DeltaSink = Callable[[str, int | None], object]
+DeltaSinkFactory = Callable[[str, str, str], DeltaSink | None]
+"""Factory ``(chapter_id, base_revision_id, segment_id) -> sink`` (J04 round 4).
+
+The sink receives ``(delta, offset)`` for every provider delta of a segment;
+offset is the position of the delta inside the segment text, so a replayed
+frame can be recognized as stale (duplicate) or gapped.
+"""
+
+
 class TranslationWorkflow:
     def __init__(
         self,
         session: Session,
         translator: TranslatorAdapter | None = None,
         id_factory: Callable[[], str] = new_id,
+        draft_sink: DeltaSinkFactory | None = None,
     ) -> None:
         self.session = session
         self.translator = translator
         self.id_factory = id_factory
+        self.draft_sink = draft_sink
 
     def estimate(self, chapter_id: str) -> dict[str, object]:
         chapter, revision = self._chapter_and_revision(chapter_id)
@@ -210,6 +223,7 @@ class TranslationWorkflow:
                     cloud_consent_id=cloud_consent_id,
                     budget_authorization_id=budget_authorization_id,
                     tm_list=tm_list,
+                    base_revision_id=revision.id,
                 )
                 target_text = result.target_text
                 provider_request_id = _provider_request_id(result)
@@ -461,6 +475,7 @@ class TranslationWorkflow:
         cloud_consent_id: str | None,
         budget_authorization_id: str | None,
         tm_list: tuple[tuple[str, str], ...] = (),
+        base_revision_id: str | None = None,
     ) -> TranslationResult:
         request = TranslationRequest(
             context=OperationContext(
@@ -480,7 +495,58 @@ class TranslationWorkflow:
             domain_instruction=project.style_guide_text or "",
             story_memory=story_memory,
         )
-        return asyncio.run(provider.adapter.translate(request))
+        return asyncio.run(
+            self._dispatch_translate(
+                provider, request, chapter.id, base_revision_id, source_segment.id
+            )
+        )
+
+    async def _dispatch_translate(
+        self,
+        provider: _ProviderSelection,
+        request: TranslationRequest,
+        chapter_id: str,
+        base_revision_id: str | None,
+        segment_id: str,
+    ) -> TranslationResult:
+        """Streaming when a delta sink is configured, else one-shot (J04 round 4).
+
+        Streaming is only used when the adapter advertises ``stream_translate``
+        and a sink is configured; the streamed text becomes the segment output,
+        so a partial stream can never be approved by accident.
+        """
+        adapter = provider.adapter
+        stream = getattr(adapter, "stream_translate", None)
+        sink = None
+        if self.draft_sink is not None and base_revision_id is not None and stream is not None:
+            # A sink that can share the run's transaction must do so: SQLite has
+            # a single writer, so a second connection would block until commit.
+            binder = getattr(self.draft_sink, "bind", None)
+            factory = binder(self.session) if binder is not None else self.draft_sink
+            sink = factory(chapter_id, base_revision_id, segment_id)
+        if sink is None or stream is None:
+            return await adapter.translate(request)
+
+        text = ""
+        offset = 0
+        async for delta in stream(request):
+            if not isinstance(delta, str) or delta == "":
+                continue
+            text += delta
+            self._emit_delta(sink, delta, offset)
+            offset = len(text)
+        builder = getattr(adapter, "stream_result", None)
+        if builder is None:
+            raise ValueError("STREAM_RESULT_UNAVAILABLE")
+        return builder(text)
+
+    @staticmethod
+    def _emit_delta(sink: DeltaSink, delta: str, offset: int) -> None:
+        """Draft persistence is auxiliary: a sink failure never fails the run."""
+        try:
+            sink(delta, offset)
+        except (ValueError, SQLAlchemyError):
+            return
 
     def _invalidate_downstream(self, chapter: Chapter) -> None:
         chapter.approved_translation_run_id = None

@@ -45,6 +45,16 @@ class DraftView:
     revision: int
 
 
+@dataclass(frozen=True)
+class DraftAppendResult:
+    """Outcome of one provider delta applied to a segment draft (J04 round 4)."""
+
+    status: str  # applied | duplicate | gap
+    offset: int
+    text: str
+    revision: int | None
+
+
 def restore_draft(
     session: Session, chapter_id: str, base_revision_id: str
 ) -> DraftView | None:
@@ -92,6 +102,79 @@ def save_draft(
     session.flush()
     session.commit()
     return _view(row)
+
+
+def append_draft_delta(
+    session: Session,
+    chapter_id: str,
+    base_revision_id: str,
+    segment_id: str,
+    delta: str,
+    *,
+    offset: int | None = None,
+    id_factory: Callable[[], str] = new_id,
+    commit: bool = True,
+) -> DraftAppendResult:
+    """Append one provider delta to a segment of the workspace draft.
+
+    The stream offset is derived from the persisted text length, so a
+    reconnecting writer replays safely:
+
+    - ``offset`` behind the stored length -> ``duplicate`` (nothing written;
+      the revision is not bumped, so readers never see a phantom change);
+    - ``offset`` ahead of the stored length -> ``gap`` (the caller must resync
+      from the snapshot instead of writing);
+    - empty delta -> ``duplicate`` as well (a frame with no text is a no-op).
+
+    Only ``workspace_drafts`` is written: the approved translation segments are
+    never touched by a streaming draft. ``commit=False`` is used when the caller
+    already owns a transaction (the worker writes the draft inside the run's
+    transaction, because SQLite allows a single writer).
+    """
+    chapter = session.get(Chapter, chapter_id)
+    if chapter is None:
+        raise ValueError("CHAPTER_NOT_FOUND")
+    revision = session.get(SourceRevision, base_revision_id)
+    if revision is None or revision.chapter_id != chapter.id:
+        raise ValueError("BASE_REVISION_NOT_FOUND")
+    if not isinstance(delta, str):
+        raise ValueError("DRAFT_TEXT_INVALID")
+    segment = session.get(SourceSegment, segment_id)
+    if segment is None or segment.source_revision_id != base_revision_id:
+        raise ValueError("DRAFT_SEGMENT_UNKNOWN")
+
+    row = _load(session, chapter_id, base_revision_id)
+    content = dict(row.content_json or {}) if row is not None else {}
+    existing = content.get(segment_id, "")
+    current = len(existing)
+
+    if offset is not None and offset < current:
+        return DraftAppendResult("duplicate", current, existing, None if row is None else row.revision)
+    if offset is not None and offset > current:
+        return DraftAppendResult("gap", current, existing, None if row is None else row.revision)
+    if delta == "":
+        return DraftAppendResult("duplicate", current, existing, None if row is None else row.revision)
+
+    updated = existing + delta
+    content[segment_id] = updated
+    normalized = _normalize_content(content)
+    if row is None:
+        row = WorkspaceDraft(
+            id=id_factory(),
+            project_id=chapter.project_id,
+            chapter_id=chapter.id,
+            base_revision_id=base_revision_id,
+            content_json=normalized,
+            revision=1,
+        )
+        session.add(row)
+    else:
+        row.content_json = normalized
+        row.revision = row.revision + 1
+    session.flush()
+    if commit:
+        session.commit()
+    return DraftAppendResult("applied", len(updated), updated, row.revision)
 
 
 def _load(session: Session, chapter_id: str, base_revision_id: str) -> WorkspaceDraft | None:

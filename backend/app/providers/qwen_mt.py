@@ -209,6 +209,30 @@ class QwenMtAdapter:
             ),
         )
 
+    def stream_result(self, text: str) -> TranslationResult:
+        """Final result for a streamed attempt (J04 round 4).
+
+        The streamed text is the accepted output; usage comes from the last
+        usage frame seen by ``stream_translate``. An empty stream is malformed
+        (never a silent empty translation).
+        """
+        cleaned = text.strip()
+        if not cleaned:
+            raise ProviderTransportError(
+                "EMPTY_RESPONSE",
+                "provider stream produced no translation",
+                True,
+                BillingState.UNKNOWN,
+                None,
+            )
+        return TranslationResult(
+            target_text=cleaned,
+            provider=PROVIDER,
+            model=self.model,
+            provider_version=PROVIDER_VERSION_FALLBACK,
+            usage=tuple(self.last_stream_usage),
+        )
+
     def _validate_request(self, request: TranslationRequest) -> None:
         if request.context.cloud_consent_id is None:
             raise CloudCallBlocked(("CLOUD_CONSENT_REQUIRED",))

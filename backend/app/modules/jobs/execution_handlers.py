@@ -125,13 +125,20 @@ def _run_guarded_translate(
     def dispatch() -> None:
         if provider == "qwen":
             from app.api.translation import _qwen_workflow
+            from app.modules.translation.draft_sink import DraftDeltaSinkFactory
 
-            with _qwen_workflow(settings, chapter_id, profile_id) as workflow:
-                workflow.enqueue_translation(
-                    chapter_id,
-                    cloud_consent_id=cloud_consent_id,
-                    budget_authorization_id=budget_authorization_id,
-                )
+            # J04 round 4: the worker persists provider deltas into the U04
+            # workspace draft so the API can serve live offsets.
+            sink = DraftDeltaSinkFactory(_database_path(settings, None))
+            try:
+                with _qwen_workflow(settings, chapter_id, profile_id, draft_sink=sink) as workflow:
+                    workflow.enqueue_translation(
+                        chapter_id,
+                        cloud_consent_id=cloud_consent_id,
+                        budget_authorization_id=budget_authorization_id,
+                    )
+            finally:
+                sink.close()
             return
         from app.api.translation import _gemini_workflow
 

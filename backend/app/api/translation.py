@@ -237,10 +237,17 @@ def _workflow_dependency(
 
 
 class _qwen_workflow:
-    def __init__(self, active_settings: Settings, chapter_id: str, profile_id: str) -> None:
+    def __init__(
+        self,
+        active_settings: Settings,
+        chapter_id: str,
+        profile_id: str,
+        draft_sink: object | None = None,
+    ) -> None:
         self.active_settings = active_settings
         self.chapter_id = chapter_id
         self.profile_id = profile_id
+        self.draft_sink = draft_sink
         self.engine = None
         self.session_cm = None
 
@@ -269,7 +276,7 @@ class _qwen_workflow:
                 dispatch_authorization=RegistryAuthorization(profile.id, profile.revision, model),
                 endpoint=endpoint,
             )
-            return TranslationWorkflow(session, translator=adapter)
+            return TranslationWorkflow(session, translator=adapter, draft_sink=self.draft_sink)
         except Exception:
             self.__exit__(None, None, None)
             raise
