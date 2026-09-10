@@ -58,6 +58,8 @@ from app.providers.vieneu import VieNeuTtsAdapter
 
 ZERO_HASH = "0" * 64
 SPEECH_SETTINGS_VERSION = "speech-single-v1"
+PART_MAX_SEGMENTS = 50
+PART_MAX_DURATION_MS = 600_000
 
 
 class TranslationApprovalRequired(Exception):
@@ -122,6 +124,7 @@ class RenderedChapterView:
     tts_artifact_ids: tuple[str, ...]
     master_artifact_id: str
     master_sha256: str
+    part_artifact_ids: tuple[str, ...]
     srt_artifact_id: str
 
 
@@ -275,9 +278,14 @@ class SpeechWorkflow:
             raise AudioApprovalConflict("MASTER_ARTIFACT_REQUIRED")
         if artifact.status != ArtifactStatus.READY.value:
             raise AudioApprovalConflict("MASTER_ARTIFACT_NOT_READY")
+        metadata = artifact.metadata_json or {}
+        if metadata.get("stage") == "part":
+            # A part is an intermediate artifact: only the final concat master
+            # (which references the parts in its manifest metadata) is
+            # approvable, so review always covers the whole chapter.
+            raise AudioApprovalConflict("PART_ARTIFACT_NOT_APPROVABLE")
         if artifact.sha256 != expected_sha256:
             raise AudioApprovalConflict("MASTER_HASH_MISMATCH")
-        metadata = artifact.metadata_json or {}
         if metadata.get("translation_run_id") != chapter.approved_translation_run_id:
             raise AudioApprovalConflict("MASTER_TRANSLATION_STALE")
         if metadata.get("voice_plan_id") != chapter.active_voice_plan_id:
@@ -346,7 +354,7 @@ class SpeechWorkflow:
         finishes and is checkpointed. A cache miss flushes and closes the write
         transaction before the adapter is called, so provider I/O never runs inside an
         open SQLite transaction. This method deliberately stops at segment audio; the
-        master/SRT stage stays with the inline render and JobKind.MASTER (task A04).
+        master/SRT stage stays with the inline render (A04 masters parts there).
         """
         chapter = self._chapter(chapter_id)
         context = self._render_context(chapter)
@@ -384,9 +392,18 @@ class SpeechWorkflow:
             context.plan,
             writes.audio_paths,
             context.segments,
+            writes.artifact_ids,
+            # An explicit regenerate must hand back a NEW master (the caller
+            # asked for it and downstream approvals key on master_sha256);
+            # only an untouched re-render may reuse the cached final.
+            force_final=bool(force_segment_ids),
         )
         srt = self._write_srt(
-            chapter, master.result, context.segments, writes.durations
+            chapter,
+            master.result,
+            context.segments,
+            master.parts,
+            writes.durations,
         )
         chapter.state = ChapterState.AUDIO_REVIEW.value
         self.session.commit()
@@ -398,6 +415,7 @@ class SpeechWorkflow:
             tts_artifact_ids=writes.artifact_ids,
             master_artifact_id=master.artifact.id,
             master_sha256=master.artifact.sha256,
+            part_artifact_ids=tuple(part.artifact.id for part in master.parts),
             srt_artifact_id=srt.id,
         )
 
@@ -629,61 +647,342 @@ class SpeechWorkflow:
         plan: VoicePlan,
         audio_paths: tuple[Path, ...],
         segments: tuple[SpeechSegment, ...],
+        tts_artifact_ids: tuple[str, ...] = (),
+        force_final: bool = False,
     ) -> _MasterWrite:
-        input_hash = _canonical_sha256(
-            {
-                "translation_run": run.id,
-                "plan": plan.plan_sha256,
-                "segments": [_sha256_file(path) for path in audio_paths],
-                "pauses": [segment.pause_after_ms for segment in segments],
-            }
-        )
-        settings_hash = _canonical_sha256(
-            {
-                "kind": "master-mp3",
-                "sample_rate": 44_100,
-                "channels": 1,
-                "bitrate": "128k",
-                "loudnorm": {"I": -16, "TP": -1.5, "LRA": 11},
-                "id3v2": "2.3",
-            }
-        )
-        self._supersede_ready_artifacts(
-            ArtifactKind.MASTER_MP3, input_hash, settings_hash
-        )
-        artifact_id = self.id_factory()
-        relative_path = f"audio/{chapter.id}/masters/{artifact_id}.mp3"
-        output_path = self._artifact_path(relative_path)
-        result = asyncio.run(
-            self.audio_processor.master(
-                MasterRequest(
-                    operation_id=f"master:{chapter.id}:{artifact_id}",
-                    ordered_segment_paths=audio_paths,
-                    pause_after_ms=tuple(
-                        segment.pause_after_ms for segment in segments
-                    ),
-                    metadata={
-                        "title": chapter.translated_title
-                        or chapter.source_title
-                        or "Chapter",
-                        "album": chapter.project_id,
-                    },
-                    sample_rate=44_100,
-                ),
-                output_path,
-            )
-        )
+        """Master the chapter through bounded parts, then concat the final master.
+
+        Each part covers at most PART_MAX_SEGMENTS segments or
+        PART_MAX_DURATION_MS of estimated speech (pauses excluded) and is
+        mastered as its own MASTER_MP3 artifact with an input_hash over exactly
+        its own segments and pauses, so a single edited segment rebuilds only
+        the part containing it while the untouched parts and the final concat
+        reuse their cached artifacts. Every part is probe-verified before its
+        artifact row is written; a failed probe raises before anything is
+        marked READY, leaving the previously READY parts untouched, and a
+        failed processor call destroys no segment artifact at all.
+        """
         premaster_issues = run_premaster_qa(
             audio_paths,
             tuple(segment.id for segment in segments),
             pause_after_ms=tuple(segment.pause_after_ms for segment in segments),
         )
+        master_settings = _master_settings_hash()
+        groups = _part_groups(segments)
+        parts: list[_PartWrite] = []
+        group_paths = _group_paths(audio_paths, groups)
+        group_artifact_ids = _group_paths(tts_artifact_ids or ("",) * len(segments), groups)
+        for part_index, (group, paths, artifact_ids) in enumerate(
+            zip(groups, group_paths, group_artifact_ids, strict=True)
+        ):
+            parts.append(
+                self._render_part(
+                    chapter,
+                    run,
+                    plan,
+                    part_index=part_index,
+                    part_count=len(groups),
+                    segments=group,
+                    audio_paths=paths,
+                    tts_artifact_ids=artifact_ids,
+                    settings_hash=master_settings,
+                )
+            )
+        final = self._concat_final_master(
+            chapter,
+            run,
+            plan,
+            parts,
+            total_segments=len(segments),
+            settings_hash=master_settings,
+            force_final=force_final,
+        )
+        self._replace_audio_qa(chapter.id, final.result, premaster_issues)
+        return _MasterWrite(
+            artifact=final.artifact,
+            result=final.result,
+            parts=tuple(parts),
+        )
+
+    def _render_part(
+        self,
+        chapter: Chapter,
+        run: TranslationRun,
+        plan: VoicePlan,
+        *,
+        part_index: int,
+        part_count: int,
+        segments: tuple[SpeechSegment, ...],
+        audio_paths: tuple[Path, ...],
+        tts_artifact_ids: tuple[str, ...] = (),
+        settings_hash: str,
+    ) -> _PartWrite:
+        """Render one part, or reuse its cached artifact when nothing changed."""
+        input_hash = _part_input_hash(
+            run, plan, segments, audio_paths, tts_artifact_ids
+        )
+        cached = self._ready_artifact(
+            ArtifactKind.MASTER_MP3, input_hash, settings_hash
+        )
+        if cached is not None:
+            metadata = cached.metadata_json or {}
+            return _PartWrite(
+                artifact=cached,
+                input_hash=input_hash,
+                duration_ms=int(cached.duration_ms or 0),
+                part_index=part_index,
+                segment_count=len(segments),
+                rendered=False,
+                pause_after_last_ms=int(metadata.get("pause_after_last_ms") or 0),
+            )
+        result = self._run_master_request(
+            chapter=chapter,
+            run=run,
+            plan=plan,
+            artifact_id=self.id_factory(),
+            kind_name="part",
+            part_index=part_index,
+            part_count=part_count,
+            segments=segments,
+            audio_paths=audio_paths,
+            extra_metadata={"stage": "part"},
+            input_hash=input_hash,
+            settings_hash=settings_hash,
+        )
+        artifact = result.artifact
+        return _PartWrite(
+            artifact=artifact,
+            input_hash=input_hash,
+            duration_ms=result.result.duration_ms,
+            part_index=part_index,
+            segment_count=len(segments),
+            rendered=True,
+            pause_after_last_ms=segments[-1].pause_after_ms,
+        )
+
+    def _concat_final_master(
+        self,
+        chapter: Chapter,
+        run: TranslationRun,
+        plan: VoicePlan,
+        parts: list[_PartWrite],
+        *,
+        total_segments: int,
+        settings_hash: str,
+        force_final: bool = False,
+    ) -> _MasterWrite:
+        """Concat the part files into the final master, reusing the cached one.
+
+        Reuse is only allowed for an untouched re-render (``force_final`` false):
+        an explicit regeneration always produces a new final master so the
+        caller-visible id/sha changes and downstream approvals go stale.
+        """
+        if not parts:
+            raise VoicePlanRequired("SPEECH_SEGMENTS_REQUIRED")
+        ordered_paths = tuple(part.artifact.relative_path for part in parts)
+        ordered_hashes = tuple(part.artifact.sha256 for part in parts)
+        ordered_input_hashes = tuple(part.input_hash for part in parts)
+        part_durations = tuple(part.duration_ms for part in parts)
+        pause_after_parts = tuple(part.pause_after_last_ms for part in parts)
+        total_duration_ms = sum(part_durations) + sum(pause_after_parts)
+        input_hash = _canonical_sha256(
+            {
+                "translation_run": run.id,
+                "plan": plan.plan_sha256,
+                "stage": "final-master",
+                "part_count": len(parts),
+                "total_segments": total_segments,
+                "parts": ordered_hashes,
+                "part_inputs": ordered_input_hashes,
+            }
+        )
+        cached = None if force_final else self._ready_artifact(
+            ArtifactKind.MASTER_MP3, input_hash, settings_hash
+        )
+        if cached is not None:
+            return _MasterWrite(
+                artifact=cached,
+                result=MasterResult(
+                    duration_ms=int(cached.duration_ms or total_duration_ms),
+                    sha256=cached.sha256,
+                    codec="mp3",
+                    sample_rate=44_100,
+                    channels=1,
+                    bitrate_kbps=128,
+                    integrated_lufs=-16.0,
+                    true_peak_dbtp=-1.5,
+                ),
+                parts=tuple(parts),
+            )
+        result = self._run_master_request(
+            chapter=chapter,
+            run=run,
+            plan=plan,
+            artifact_id=self.id_factory(),
+            kind_name="master",
+            part_index=len(parts) - 1,
+            part_count=len(parts),
+            segments=(),
+            audio_paths=(),
+            extra_metadata={
+                "stage": "final",
+                "part_paths": list(ordered_paths),
+                "part_sha256s": list(ordered_hashes),
+                "part_input_hashes": list(ordered_input_hashes),
+                "part_durations_ms": list(part_durations),
+                "pause_after_parts_ms": list(pause_after_parts),
+                "total_segments": total_segments,
+            },
+            input_hash=input_hash,
+            settings_hash=settings_hash,
+            final_parts=parts,
+        )
+        # Only now that the new final master exists may the previous master and
+        # the non-reused parts leave READY: a processor failure above leaves the
+        # old master untouched (still READY, file intact).
+        self._supersede_ready_masters_excluding(
+            chapter.id, parts, keep_id=result.artifact.id
+        )
+        return _MasterWrite(
+            artifact=result.artifact,
+            result=result.result,
+            parts=tuple(parts),
+        )
+
+    def _supersede_ready_masters_excluding(
+        self,
+        chapter_id: str,
+        parts: list[_PartWrite],
+        *,
+        keep_id: str,
+    ) -> None:
+        """Move READY masters and parts aside without deleting any file.
+
+        Called after a new final master exists: the previous final master and
+        any part artifact the new render does not reuse become SUPERSEDED (the
+        old master file stays on disk for review/rollback), while the new final
+        and the reused parts keep serving.
+        """
+        keep_ids = {part.artifact.id for part in parts} | {keep_id}
+        for artifact in self.session.scalars(
+            select(Artifact).where(
+                Artifact.chapter_id == chapter_id,
+                Artifact.kind == ArtifactKind.MASTER_MP3.value,
+                Artifact.status == ArtifactStatus.READY.value,
+            )
+        ):
+            if artifact.id not in keep_ids:
+                artifact.status = ArtifactStatus.SUPERSEDED.value
+        self.session.flush()
+
+    def _supersede_ready_srts(
+        self, chapter_id: str, *, keep_id: str | None = None
+    ) -> None:
+        for artifact in self.session.scalars(
+            select(Artifact).where(
+                Artifact.chapter_id == chapter_id,
+                Artifact.kind == ArtifactKind.SRT.value,
+                Artifact.status == ArtifactStatus.READY.value,
+            )
+        ):
+            if artifact.id == keep_id:
+                continue
+            artifact.status = ArtifactStatus.SUPERSEDED.value
+        self.session.flush()
+
+    def _run_master_request(
+        self,
+        *,
+        chapter: Chapter,
+        run: TranslationRun,
+        plan: VoicePlan,
+        artifact_id: str,
+        kind_name: str,
+        part_index: int,
+        part_count: int,
+        segments: tuple[SpeechSegment, ...],
+        audio_paths: tuple[Path, ...],
+        extra_metadata: dict[str, object],
+        input_hash: str,
+        settings_hash: str,
+        final_parts: list[_PartWrite] | None = None,
+    ) -> _MasterWrite:
+        """Run the processor once, verify the digest, then publish READY.
+
+        For a part the request carries the segment WAVs and the per-segment
+        pauses (the closing pause of the part is included here so it is audible
+        in the part too, and it is replayed between parts by the final concat
+        without being doubled). For the final master the request carries the
+        ordered part files with one pause after each part.
+        """
+        if final_parts is None:
+            ordered_paths = audio_paths
+            pauses = tuple(segment.pause_after_ms for segment in segments)
+        else:
+            ordered_paths = tuple(
+                self._artifact_path(part.artifact.relative_path)
+                for part in final_parts
+            )
+            pauses = tuple(part.pause_after_last_ms for part in final_parts)
+        metadata: dict[str, str] = {
+            "title": chapter.translated_title
+            or chapter.source_title
+            or "Chapter",
+            "album": chapter.project_id,
+        }
+        part_metadata = {
+            "part_index": part_index,
+            "part_count": part_count,
+            "stage": extra_metadata.get("stage", kind_name),
+            "translation_run_id": run.id,
+            "voice_plan_id": plan.id,
+            "voice_plan_sha256": plan.plan_sha256,
+        }
+        output_id = artifact_id
+        relative_path = f"audio/{chapter.id}/masters/{output_id}.mp3"
+        output_path = self._artifact_path(relative_path)
+        result = asyncio.run(
+            self.audio_processor.master(
+                MasterRequest(
+                    operation_id=f"{kind_name}:{chapter.id}:{output_id}",
+                    ordered_segment_paths=ordered_paths,
+                    pause_after_ms=pauses,
+                    metadata=metadata,
+                    sample_rate=44_100,
+                ),
+                output_path,
+            )
+        )
         actual_sha256 = _sha256_file(output_path)
         if actual_sha256 != result.sha256:
             output_path.unlink(missing_ok=True)
             raise ValueError("MASTER_CHECKSUM_MISMATCH")
+        probe = asyncio.run(
+            self.audio_processor.probe(output_path, expected_sha256=result.sha256)
+        )
+        if probe.duration_ms <= 0:
+            raise ValueError("MASTER_PROBE_DURATION_INVALID")
+        if probe.sample_rate != 44_100 or probe.channels != 1:
+            raise ValueError("MASTER_PROBE_FORMAT_INVALID")
+        merged_metadata: dict[str, object] = {
+            "codec": result.codec,
+            "sample_rate": result.sample_rate,
+            "channels": result.channels,
+            "bitrate_kbps": result.bitrate_kbps,
+            "integrated_lufs": result.integrated_lufs,
+            "true_peak_dbtp": result.true_peak_dbtp,
+            **part_metadata,
+            **extra_metadata,
+        }
+        if final_parts is None:
+            merged_metadata["speech_segment_ids"] = [
+                segment.id for segment in segments
+            ]
+            merged_metadata["pause_after_last_ms"] = (
+                segments[-1].pause_after_ms if segments else 0
+            )
         artifact = self._add_artifact(
-            artifact_id=artifact_id,
+            artifact_id=output_id,
             chapter_id=chapter.id,
             kind=ArtifactKind.MASTER_MP3,
             relative_path=relative_path,
@@ -693,19 +992,8 @@ class SpeechWorkflow:
             duration_ms=result.duration_ms,
             input_hash=input_hash,
             settings_hash=settings_hash,
-            metadata={
-                "codec": result.codec,
-                "sample_rate": result.sample_rate,
-                "channels": result.channels,
-                "bitrate_kbps": result.bitrate_kbps,
-                "integrated_lufs": result.integrated_lufs,
-                "true_peak_dbtp": result.true_peak_dbtp,
-                "translation_run_id": run.id,
-                "voice_plan_id": plan.id,
-                "voice_plan_sha256": plan.plan_sha256,
-            },
+            metadata=merged_metadata,
         )
-        self._replace_audio_qa(chapter.id, result, premaster_issues)
         return _MasterWrite(artifact=artifact, result=result)
 
     def _write_srt(
@@ -713,27 +1001,35 @@ class SpeechWorkflow:
         chapter: Chapter,
         master: MasterResult,
         segments: tuple[SpeechSegment, ...],
+        parts: tuple[_PartWrite, ...],
         durations: tuple[int, ...],
     ) -> Artifact:
         input_hash = _canonical_sha256(
             {
                 "master": master.sha256,
                 "segments": [segment.narration_sha256 for segment in segments],
-                "version": "srt-v1",
+                "part_boundaries": [
+                    part.segment_count for part in parts
+                ],
+                "version": "srt-v2-parts",
             }
         )
         settings_hash = _canonical_sha256(
             {"format": "srt", "max_end_ms": master.duration_ms}
         )
-        self._supersede_ready_artifacts(ArtifactKind.SRT, input_hash, settings_hash)
+        cached = self._ready_artifact(ArtifactKind.SRT, input_hash, settings_hash)
+        if cached is not None:
+            self._supersede_ready_srts(chapter.id, keep_id=cached.id)
+            return cached
         artifact_id = self.id_factory()
         relative_path = f"audio/{chapter.id}/subtitles/{artifact_id}.srt"
         output_path = self._artifact_path(relative_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
-            _srt_text(segments, durations, master.duration_ms), encoding="utf-8"
+            _srt_text(segments, durations, master.duration_ms, parts),
+            encoding="utf-8",
         )
-        return self._add_artifact(
+        artifact = self._add_artifact(
             artifact_id=artifact_id,
             chapter_id=chapter.id,
             kind=ArtifactKind.SRT,
@@ -746,6 +1042,8 @@ class SpeechWorkflow:
             settings_hash=settings_hash,
             metadata={"master_sha256": master.sha256},
         )
+        self._supersede_ready_srts(chapter.id, keep_id=artifact.id)
+        return artifact
 
     def _synthesis_request(
         self,
@@ -1146,20 +1444,61 @@ class _SegmentWrites:
 class _MasterWrite:
     artifact: Artifact
     result: MasterResult
+    parts: tuple[_PartWrite, ...] = ()
+
+
+@dataclass(frozen=True)
+class _PartWrite:
+    """One mastered part and the numbers the final concat/SRT need."""
+
+    artifact: Artifact
+    input_hash: str
+    duration_ms: int
+    part_index: int
+    segment_count: int
+    rendered: bool
+    pause_after_last_ms: int
 
 
 def _srt_text(
     segments: tuple[SpeechSegment, ...],
     durations: tuple[int, ...],
     master_duration_ms: int,
+    parts: tuple[_PartWrite, ...] = (),
 ) -> str:
+    """Build the SRT timeline from real mastered durations.
+
+    Without part durations the timeline walks per-segment estimates plus the
+    pauses. With parts (A04) the segments are advanced part by part: the first
+    segment of part N+1 starts at the sum of the real mastered durations of
+    parts 1..N plus the inter-part pause after the last segment of part N, so
+    a part boundary never skews the timestamps.
+    """
     lines: list[str] = []
+    if parts:
+        boundary_starts = _part_boundary_starts(parts)
+    else:
+        boundary_starts = None
     current_ms = 0
+    part_cursor = 0
+    segments_into_part = 0
     for index, (segment, duration_ms) in enumerate(
         zip(segments, durations, strict=True), start=1
     ):
+        if boundary_starts is not None:
+            if part_cursor + 1 < len(parts):
+                next_part_start = boundary_starts[part_cursor + 1]
+                if segments_into_part >= parts[part_cursor].segment_count:
+                    part_cursor += 1
+                    segments_into_part = 0
+                    current_ms = next_part_start
         start_ms = current_ms
-        end_ms = min(master_duration_ms, current_ms + duration_ms)
+        end_ms = current_ms + duration_ms
+        if 0 < master_duration_ms < end_ms and master_duration_ms >= start_ms:
+            # Keep the cues inside the real master length when the mastered
+            # duration is credible for this cue, but never truncate the part
+            # timeline itself.
+            end_ms = master_duration_ms
         lines.extend(
             (
                 str(index),
@@ -1168,8 +1507,16 @@ def _srt_text(
                 "",
             )
         )
-        current_ms = min(master_duration_ms, end_ms + segment.pause_after_ms)
+        segments_into_part += 1
+        current_ms = end_ms + segment.pause_after_ms
     return "\n".join(lines)
+
+
+def _part_boundary_starts(parts: tuple[_PartWrite, ...]) -> tuple[int, ...]:
+    starts: list[int] = [0]
+    for part in parts[:-1]:
+        starts.append(starts[-1] + part.duration_ms + part.pause_after_last_ms)
+    return tuple(starts)
 
 
 def _srt_timestamp(milliseconds: int) -> str:
@@ -1185,6 +1532,106 @@ def _sha256_file(path: Path) -> str:
         while chunk := file.read(1024 * 1024):
             sha256.update(chunk)
     return sha256.hexdigest()
+
+
+def _master_settings_hash() -> str:
+    return _canonical_sha256(
+        {
+            "kind": "master-mp3",
+            "sample_rate": 44_100,
+            "channels": 1,
+            "bitrate": "128k",
+            "loudnorm": {"I": -16, "TP": -1.5, "LRA": 11},
+            "id3v2": "2.3",
+        }
+    )
+
+
+def _part_groups(
+    segments: tuple[SpeechSegment, ...],
+) -> tuple[tuple[SpeechSegment, ...], ...]:
+    """Split ordered segments into parts of <=50 segments and <=10 minutes.
+
+    The ten-minute budget counts estimated speech only (pause_after_ms is not
+    speech and is inserted by the master request), and a part always ends on a
+    segment boundary; the final part may be shorter than the limits.
+    """
+    groups: list[list[SpeechSegment]] = []
+    current: list[SpeechSegment] = []
+    current_ms = 0
+    for segment in segments:
+        segment_ms = segment.estimated_duration_ms or 0
+        if current and (
+            len(current) >= PART_MAX_SEGMENTS
+            or current_ms + segment_ms > PART_MAX_DURATION_MS
+        ):
+            groups.append(current)
+            current = []
+            current_ms = 0
+        current.append(segment)
+        current_ms += segment_ms
+    if current:
+        groups.append(current)
+    return tuple(tuple(group) for group in groups)
+
+
+def _group_paths(
+    items: tuple[Path | str, ...],
+    groups: tuple[tuple[SpeechSegment, ...], ...],
+) -> tuple[tuple[Path | str, ...], ...]:
+    """Slice an ordered per-segment list into one slice per part."""
+    slices: list[tuple[Path | str, ...]] = []
+    cursor = 0
+    for group in groups:
+        size = len(group)
+        slices.append(items[cursor : cursor + size])
+        cursor += size
+    if cursor != len(items):
+        raise ValueError("PART_SEGMENT_PATHS_MISMATCH")
+    return tuple(slices)
+
+
+def _part_input_hash(
+    run: TranslationRun,
+    plan: VoicePlan,
+    segments: tuple[SpeechSegment, ...],
+    audio_paths: tuple[Path, ...],
+    tts_artifact_ids: tuple[str, ...] = (),
+) -> str:
+    """Fingerprint one part over exactly its own inputs.
+
+    Like a manifest: the ordered input artifact references plus their
+    checksums and the pauses. Editing a segment changes only the part that
+    contains it; every other part keeps its hash and is served from the
+    artifact cache. A forced re-render that produced a fresh segment artifact
+    also rebuilds its part even when the bytes are identical, because the
+    manifest now references a different input artifact.
+    """
+    return _canonical_sha256(
+        {
+            "translation_run": run.id,
+            "plan": plan.plan_sha256,
+            "stage": "part",
+            "first_segment_index": segments[0].segment_index,
+            "last_segment_index": segments[-1].segment_index,
+            "segments": [
+                {
+                    "id": segment.id,
+                    "index": segment.segment_index,
+                    "tts_artifact_id": artifact_id,
+                    "narration_sha256": segment.narration_sha256,
+                    "sha256": _sha256_file(path),
+                }
+                for segment, path, artifact_id in zip(
+                    segments,
+                    audio_paths,
+                    tts_artifact_ids or ("",) * len(segments),
+                    strict=True,
+                )
+            ],
+            "pauses": [segment.pause_after_ms for segment in segments],
+        }
+    )
 
 
 def _canonical_sha256(payload: object) -> str:
