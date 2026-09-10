@@ -46,6 +46,11 @@ export function describeRoute(pathname: string): WorkspaceTabDefinition {
     return { id: clean, kind: descriptor.kind, title: descriptor.title, chapterId: chapter[1], to: clean };
   }
 
+  const jobDraft = /^\/jobs\/([^/]+)\/([^/]+)$/.exec(clean);
+  if (jobDraft) {
+    return { id: clean, kind: 'JOB', title: 'Nháp job', chapterId: null, to: clean };
+  }
+
   const project = /^\/projects\/([^/]+)\/([^/]+)(\/.*)?$/.exec(clean);
   if (project) {
     const descriptor =

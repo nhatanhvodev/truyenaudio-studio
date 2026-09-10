@@ -24,6 +24,15 @@ describe('workspace route description (U05 round 3)', () => {
     expect(describeRoute('/chapters/c1/export')).toMatchObject({ kind: 'INSPECTOR', chapterId: 'c1' });
   });
 
+  it('maps a job draft route to a job tab', () => {
+    expect(describeRoute('/jobs/job-1/draft')).toMatchObject({
+      id: '/jobs/job-1/draft',
+      kind: 'JOB',
+      title: 'Nháp job',
+      chapterId: null,
+    });
+  });
+
   it('maps project routes and falls back for unknown paths', () => {
     expect(describeRoute(`/projects/${PROJECT_UUID}/import`)).toMatchObject({ kind: 'INSPECTOR', title: 'Nhập nội dung' });
     expect(describeRoute(`/projects/${PROJECT_UUID}/batch`)).toMatchObject({ kind: 'JOB', title: 'Hàng đợi batch' });

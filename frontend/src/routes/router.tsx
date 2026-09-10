@@ -9,6 +9,7 @@ import { WorkspaceTabs } from '../features/workspace/WorkspaceTabs';
 import { describeRoute, projectIdForRoute } from '../features/workspace/workspaceRoutes';
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
+import JobDraftPanel from '../features/jobs/JobDraftPanel';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { WenkuImport } from '../features/import/WenkuImport';
 import { WenkuCrawlProvider } from '../features/import/WenkuCrawlContext';
@@ -101,6 +102,7 @@ export const router = createBrowserRouter([
       { path: 'chapters/:chapterId/audio', element: <AudioScreen /> },
       { path: 'chapters/:chapterId/export', element: <ExportScreen /> },
       { path: 'jobs', element: <JobsScreen /> },
+      { path: 'jobs/:jobId/draft', element: <JobDraftScreen /> },
       { path: 'diagnostics', element: <Diagnostics /> },
       ...settingsGroupRoutes,
       ...projectSettingsRoutes,
@@ -1110,6 +1112,19 @@ function JobsScreen() {
     <section style={styles.panel}>
       <h1 style={styles.title}>Jobs</h1>
       <JobProgress />
+    </section>
+  );
+}
+
+function JobDraftScreen() {
+  const { jobId } = useParams();
+  if (!jobId) {
+    return <Navigate to="/jobs" replace />;
+  }
+  return (
+    <section style={styles.panel} aria-label="Nháp job">
+      <h1 style={styles.title}>Nháp đang dịch</h1>
+      <JobDraftPanel jobId={jobId} />
     </section>
   );
 }
