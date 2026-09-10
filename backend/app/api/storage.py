@@ -4,13 +4,15 @@ from collections.abc import Iterator
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.base import create_engine_for, session_factory
 from app.modules.artifacts.store import ArtifactStore
 from app.modules.storage.backup import (
     BackupError,
+    BackupProgressTracker,
     BackupService,
     BackupVerificationError,
     RestoreConfirmationRequired,
@@ -41,10 +43,20 @@ class RestoreCopyRequest(BaseModel):
     confirm_target: str | None = Field(default=None, alias="confirmTarget")
 
 
-def create_storage_router(settings: Settings | None = None) -> APIRouter:
+def create_storage_router(
+    settings: Settings | None = None,
+    *,
+    progress_tracker: BackupProgressTracker | None = None,
+) -> APIRouter:
+    """Storage routes; ``progress_tracker`` lets a caller observe the running backup.
+
+    A dedicated tracker is created when none is given, so the progress route below always
+    answers for this router instance.
+    """
     router = APIRouter(prefix="/api/storage")
     active_settings = settings or Settings()
     cleanup_plans: dict[str, CleanupPlan] = {}
+    tracker = progress_tracker or BackupProgressTracker()
 
     def backup_service() -> BackupService:
         return BackupService(
@@ -72,10 +84,25 @@ def create_storage_router(settings: Settings | None = None) -> APIRouter:
 
     @router.post("/backups")
     def create_backup(service: BackupService = Depends(backup_service)) -> dict[str, object]:
+        """Run one backup and report its real milestones to GET /backups/progress."""
+        tracker.begin()
         try:
-            return _camel_payload(service.create())
+            return _camel_payload(service.create(progress=tracker))
         except BackupVerificationError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        finally:
+            tracker.end()
+
+    @router.get(
+        "/backups/progress",
+        responses={204: {"description": "No backup is running right now"}},
+    )
+    def backup_progress() -> Response:
+        """Progress of the create() running right now, or 204 when none is in flight."""
+        progress = tracker.snapshot()
+        if progress is None:
+            return Response(status_code=204)
+        return JSONResponse(_camel_payload(progress))
 
     @router.get("/backups")
     def list_backups(service: BackupService = Depends(backup_service)) -> dict[str, object]:

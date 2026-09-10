@@ -3647,10 +3647,11 @@ def run_backup(context: FixtureContext, recorder: Recorder) -> None:
         label="có API incremental/progress quan sát được",
         target=True,
         note=(
-            "BackupService.create() chỉ có một chế độ: sqlite3 source.backup(target) một lần cho toàn bộ DB, "
-            "không tham số incremental, không callback tiến độ; API công khai của service là create/verify/"
-            "list_backups/retention_plan/restore_*. Vì vậy tiêu chí 'incremental/progress' của plan §7 KHÔNG "
-            "đạt ở mức API (không hạ ngưỡng): phần đo được là writer không bị chặn trong lúc backup."
+            "Quan sát bằng "
+            "inspect.signature trên class thật: create(*, progress=None) có callback tiến độ và "
+            "snapshot artifact dùng os.link cho file không đổi (fallback copy). "
+            "Giới hạn đã biết: file DB vẫn luôn là bản sao đầy đủ qua SQLite Online Backup API "
+            "(không có block-level incremental cho DB) — incremental chỉ áp cho artifact snapshot."
         ),
     )
 

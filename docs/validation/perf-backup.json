@@ -13,10 +13,10 @@
     "writerOps": 40,
     "dataProfile": "backup"
   },
-  "generatedAt": "2026-09-10T10:36:21.762834Z",
-  "startedAt": "2026-09-10T10:34:17.649549Z",
-  "finishedAt": "2026-09-10T10:36:21.762834Z",
-  "durationSeconds": 124.113,
+  "generatedAt": "2026-09-10T12:56:31.713651Z",
+  "startedAt": "2026-09-10T12:55:22.455638Z",
+  "finishedAt": "2026-09-10T12:56:31.713651Z",
+  "durationSeconds": 69.258,
   "tool": {
     "name": "scripts/benchmarks/run.py",
     "harnessVersion": "v01.2",
@@ -38,12 +38,12 @@
     "cpuCountPhysical": 6,
     "machine": "AMD64",
     "ramTotalMb": 7411.5,
-    "ramAvailableMb": 2350.0,
-    "ramUsedMb": 5061.5,
+    "ramAvailableMb": 2594.4,
+    "ramUsedMb": 4817.2,
     "pythonVersion": "3.12.13",
     "pythonImplementation": "CPython",
     "nodeVersion": "v24.11.1",
-    "capturedAt": "2026-09-10T10:36:22.139374Z"
+    "capturedAt": "2026-09-10T12:56:32.047504Z"
   },
   "iterations": 20,
   "warmup": 5,
@@ -60,36 +60,36 @@
   "fakeLatencyMs": 0,
   "metrics": {
     "backup.create": {
-      "p50": 3743.12,
-      "p95": 5517.16,
-      "p99": 10802.357,
+      "p50": 1587.304,
+      "p95": 4972.054,
+      "p99": 5703.929,
       "unit": "ms",
       "samples": 25,
-      "min": 3655.958,
-      "max": 12387.331,
-      "mean": 4210.695,
+      "min": 1377.679,
+      "max": 5870.862,
+      "mean": 2030.872,
       "note": "BackupService.create() thật: sqlite3 online backup + integrity_check + copy artifact + sha256 + manifest."
     },
     "backup.verify": {
-      "p50": 349.462,
-      "p95": 389.496,
-      "p99": 413.378,
+      "p50": 379.749,
+      "p95": 515.273,
+      "p99": 721.661,
       "unit": "ms",
       "samples": 25,
-      "min": 341.773,
-      "max": 420.347,
-      "mean": 357.579,
+      "min": 321.464,
+      "max": 782.757,
+      "mean": 403.806,
       "note": "BackupService.verify(): integrity_check + sha256 + kiểm tra con trỏ artifact."
     },
     "backup.writerLatency": {
-      "p50": 3.959,
-      "p95": 10.3,
-      "p99": 16.7,
+      "p50": 3.735,
+      "p95": 18.558,
+      "p99": 21.458,
       "unit": "ms",
       "samples": 40,
-      "min": 2.743,
-      "max": 18.751,
-      "mean": 4.968,
+      "min": 2.413,
+      "max": 23.278,
+      "mean": 6.055,
       "note": "Độ trễ commit của writer trên DB nguồn TRONG LÚC backup đang chạy (đo 'user downtime' thay vì chỉ đo thời gian backup)."
     }
   },
@@ -116,7 +116,7 @@
     "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
     "totals": {
       "statements": 2956,
-      "seconds": 0.25,
+      "seconds": 0.345,
       "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
       "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
     }
@@ -126,12 +126,12 @@
     "note": "Bytes của response/ payload mỗi thao tác."
   },
   "rssMb": {
-    "baseline": 88.57,
-    "peak": 88.57,
+    "baseline": 89.1,
+    "peak": 89.1,
     "delta": 0.0,
     "marks": {
-      "baseline": 88.57,
-      "final": 77.14
+      "baseline": 89.1,
+      "final": 75.63
     },
     "unit": "MiB",
     "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
@@ -213,9 +213,9 @@
         "operations": 40,
         "succeeded": 40,
         "failed": 0,
-        "p95Ms": 10.3,
-        "maxMs": 18.751,
-        "backupDurationMs": 3709.736
+        "p95Ms": 18.558,
+        "maxMs": 23.278,
+        "backupDurationMs": 1632.913
       },
       "unit": "ms",
       "status": "PASS",
@@ -227,6 +227,7 @@
       "targetLabel": "có API incremental/progress quan sát được",
       "measured": {
         "createParameters": [
+          "progress",
           "self"
         ],
         "constructorParameters": [
@@ -235,10 +236,15 @@
           "backup_root",
           "clock",
           "db_path",
+          "incremental",
+          "progress_callback",
           "retention_count",
           "worker_lock_path"
         ],
-        "incrementalOrProgressParameters": [],
+        "incrementalOrProgressParameters": [
+          "incremental",
+          "progress_callback"
+        ],
         "publicMethods": [
           "acquire_restore_locks",
           "create",
@@ -249,21 +255,21 @@
           "retention_plan",
           "verify"
         ],
-        "incrementalOrProgressApi": false,
+        "incrementalOrProgressApi": true,
         "note": "create() nhận tham số nào thì đây là toàn bộ bề mặt điều khiển của nó."
       },
       "unit": "api",
-      "status": "FAIL",
-      "note": "BackupService.create() chỉ có một chế độ: sqlite3 source.backup(target) một lần cho toàn bộ DB, không tham số incremental, không callback tiến độ; API công khai của service là create/verify/list_backups/retention_plan/restore_*. Vì vậy tiêu chí 'incremental/progress' của plan §7 KHÔNG đạt ở mức API (không hạ ngưỡng): phần đo được là writer không bị chặn trong lúc backup."
+      "status": "PASS",
+      "note": "Quan sát bằng inspect.signature trên class thật: create(*, progress=None) có callback tiến độ và snapshot artifact dùng os.link cho file không đổi (fallback copy). Giới hạn đã biết: file DB vẫn luôn là bản sao đầy đủ qua SQLite Online Backup API (không có block-level incremental cho DB) — incremental chỉ áp cho artifact snapshot."
     }
   ],
   "statusSummary": {
-    "PASS": 3,
-    "FAIL": 1,
+    "PASS": 4,
+    "FAIL": 0,
     "NOT_RUN": 0,
     "BLOCKED": 0
   },
-  "overallStatus": "FAIL",
+  "overallStatus": "PASS",
   "extras": {
     "backup": {
       "chapters": 2000,
@@ -271,8 +277,8 @@
       "artifactBytes": 32768,
       "retention": 7,
       "creates": 25,
-      "createP95Ms": 5517.16,
-      "verifyP95Ms": 389.496,
+      "createP95Ms": 4972.054,
+      "verifyP95Ms": 515.273,
       "integrityAllOk": true,
       "checksumAllOk": true,
       "referenceAllOk": true,
@@ -317,12 +323,13 @@
         "failed": 0,
         "allSucceeded": true,
         "failures": [],
-        "p95Ms": 10.3,
-        "maxMs": 18.751,
-        "backupDurationMs": 3709.736
+        "p95Ms": 18.558,
+        "maxMs": 23.278,
+        "backupDurationMs": 1632.913
       },
       "incrementalApi": {
         "createParameters": [
+          "progress",
           "self"
         ],
         "constructorParameters": [
@@ -331,10 +338,15 @@
           "backup_root",
           "clock",
           "db_path",
+          "incremental",
+          "progress_callback",
           "retention_count",
           "worker_lock_path"
         ],
-        "incrementalOrProgressParameters": [],
+        "incrementalOrProgressParameters": [
+          "incremental",
+          "progress_callback"
+        ],
         "publicMethods": [
           "acquire_restore_locks",
           "create",
@@ -345,7 +357,7 @@
           "retention_plan",
           "verify"
         ],
-        "incrementalOrProgressApi": false,
+        "incrementalOrProgressApi": true,
         "note": "create() nhận tham số nào thì đây là toàn bộ bề mặt điều khiển của nó."
       }
     }
