@@ -220,6 +220,57 @@ describe('App', () => {
     });
   });
 
+  it('mounts the U08 quality/quote panel on the translation screen once a cloud profile is set', async () => {
+    window.history.replaceState(null, '', '/chapters/chapter-1/translation');
+    vi.stubGlobal('EventSource', undefined);
+    const fetchSpy = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/chapters/chapter-1/translation') {
+        return jsonResponse(translationPayload('run-1'));
+      }
+      if (url === '/api/security/bootstrap') {
+        return jsonResponse({ csrfToken: 'token-1' });
+      }
+      if (url === '/api/chapters/chapter-1/translation/quote' && init?.method === 'POST') {
+        return jsonResponse({
+          budgetAuthorizationId: 'budget-1',
+          stage: 'TRANSLATE',
+          totalVnd: 12_000,
+          estimateVnd: 10_000,
+          contingencyVnd: 2_000,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          quoteHash: 'a'.repeat(64),
+          warnings: [],
+        });
+      }
+      if (url === '/api/jobs/snapshot') {
+        return jsonResponse({ events: [] });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { default: App } = await import('./App');
+
+    render(<App />);
+    await screen.findByText('Đã tải bản dịch hiện tại');
+
+    // No profile yet -> the per-stage quality panel is not mounted.
+    expect(screen.queryByRole('heading', { name: 'Translation quality' })).toBeNull();
+
+    // Entering a cloud profile mounts the U08 panel (Balanced default, per-stage).
+    fireEvent.change(screen.getByLabelText('Gemini profile ID'), { target: { value: 'profile-1' } });
+    expect(screen.getByRole('heading', { name: 'Translation quality' })).toBeVisible();
+    expect(screen.getByLabelText('Chế độ')).toHaveValue('BALANCED');
+
+    // Quality/Maximum are opt-in: choosing them without the opt-in checkbox
+    // blocks the quote request entirely (no POST goes out).
+    fireEvent.change(screen.getByLabelText('Chế độ'), { target: { value: 'QUALITY' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Lấy báo giá' }));
+    await waitFor(() =>
+      expect(screen.getByText('Cần bật opt-in trước khi lấy báo giá cho Quality/Maximum.')).toBeVisible(),
+    );
+    expect(fetchSpy.mock.calls.some(([url]) => url === '/api/chapters/chapter-1/translation/quote')).toBe(false);
+  });
+
   it('builds a private archive from the export screen and displays checksum result', async () => {
     window.history.replaceState(null, '', '/chapters/chapter-1/export');
     vi.stubGlobal('EventSource', undefined);

@@ -6,6 +6,7 @@ import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
 import { GlobalNav } from '../features/workspace/GlobalNav';
 import { ProjectNav } from '../features/workspace/ProjectNav';
+import { QualityPlanPanel } from '../features/providers/QualityPlanPanel';
 import { WorkspaceTabs } from '../features/workspace/WorkspaceTabs';
 import { describeRoute, projectIdForRoute } from '../features/workspace/workspaceRoutes';
 import { ExportGate } from '../features/exports/ExportGate';
@@ -641,6 +642,16 @@ function TranslationScreen() {
           ) : null}
         </div>
       </section>
+
+      {/* U08: per-stage quality/quote panel, only meaningful for a cloud profile. */}
+      {geminiProfileId.trim() ? (
+        <QualityPlanPanel
+          chapterId={chapterId ?? ''}
+          profileId={geminiProfileId.trim()}
+          cloudConsentId={cloudConsentId.trim() || null}
+          modelKey={geminiProfileId.trim()}
+        />
+      ) : null}
 
       {/* ⚙️ Tùy chọn dịch khác (Collapsible) */}
       <details open style={{ ...styles.guardBox, marginTop: 4, background: '#f8fafc' }}>
