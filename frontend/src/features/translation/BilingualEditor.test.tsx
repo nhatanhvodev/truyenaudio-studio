@@ -256,3 +256,126 @@ describe('BilingualEditor (U06 round 1)', () => {
     expect(screen.getByLabelText('Bản dịch seg-1')).toHaveValue('Bản đang sửa');
   });
 });
+
+describe('BilingualEditor repair proposals (U06 round 3)', () => {
+  function repairProposal() {
+    return {
+      id: 'prop-1',
+      baseRunId: 'run-1',
+      baseRunSha256: 'b'.repeat(64),
+      providerModel: 'qwen-mt-plus',
+      storyMemoryRevisionHash: 'c'.repeat(64),
+      hash: 'd'.repeat(64),
+      estimatedCostVnd: 12000,
+      replacements: [
+        {
+          sourceSegmentId: 'seg-1',
+          sourceText: '林动 có 42 đồng.',
+          currentTargetText: 'Lam Dong co 42 dong.',
+          targetText: 'Lam Dong co 42 dong, chinh xac.',
+        },
+      ],
+    };
+  }
+
+  it('shows the preview button only when at least one segment is selected', async () => {
+    mockFetch(() => jsonResponse(payload()));
+
+    render(<BilingualEditor chapterId="chapter-1" />);
+    await screen.findByLabelText('Bản dịch seg-1');
+
+    expect(screen.queryByTestId('preview-repair')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Chọn đoạn seg-1'));
+    expect(screen.getByTestId('preview-repair')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Chọn đoạn seg-1'));
+    expect(screen.queryByTestId('preview-repair')).toBeNull();
+  });
+
+  it('previews the repair diff for the selected segments', async () => {
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/review/repair-preview')) {
+        return jsonResponse(repairProposal());
+      }
+      return jsonResponse(payload());
+    });
+
+    render(<BilingualEditor chapterId="chapter-1" />);
+    await screen.findByLabelText('Bản dịch seg-1');
+    fireEvent.click(screen.getByLabelText('Chọn đoạn seg-1'));
+    fireEvent.click(screen.getByTestId('preview-repair'));
+
+    const diffSection = await screen.findByLabelText('Repair diff');
+    // RepairDiff renders a word-level diff: the proposed target is the
+    // "Proposed target" line, not a single text node.
+    const proposed = within(diffSection).getByLabelText('Proposed target');
+    expect(proposed.textContent).toBe('Lam Dong co 42 dong, chinh xac.');
+    const preview = calls.find((call) => call.url.endsWith('/review/repair-preview'));
+    expect(JSON.parse(String(preview?.init?.body))).toEqual({ selectedSegmentIds: ['seg-1'] });
+  });
+
+  it('accepting one replacement changes only that local draft', async () => {
+    mockFetch((url) => (url.endsWith('/review/repair-preview') ? jsonResponse(repairProposal()) : jsonResponse(payload())));
+
+    render(<BilingualEditor chapterId="chapter-1" />);
+    await screen.findByLabelText('Bản dịch seg-1');
+    fireEvent.click(screen.getByLabelText('Chọn đoạn seg-1'));
+    fireEvent.click(screen.getByTestId('preview-repair'));
+    await screen.findByLabelText('Repair diff');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Chấp nhận' }));
+
+    expect(screen.getByLabelText('Bản dịch seg-1')).toHaveValue('Lam Dong co 42 dong, chinh xac.');
+    expect(screen.getByLabelText('Bản dịch seg-2')).toHaveValue('Doan hai.');
+  });
+
+  it('applies the proposal with its id and immutable hash', async () => {
+    const calls = mockFetch((url, init) => {
+      if (url.endsWith('/review/repair-preview')) {
+        return jsonResponse(repairProposal());
+      }
+      if (url.endsWith('/review/repair-apply')) {
+        return jsonResponse({ runId: 'run-2', sha256: 'e'.repeat(64), appliedCount: 1 });
+      }
+      return jsonResponse(payload());
+    });
+
+    render(<BilingualEditor chapterId="chapter-1" />);
+    await screen.findByLabelText('Bản dịch seg-1');
+    fireEvent.click(screen.getByLabelText('Chọn đoạn seg-1'));
+    fireEvent.click(screen.getByTestId('preview-repair'));
+    await screen.findByLabelText('Repair diff');
+    fireEvent.click(screen.getByTestId('apply-repair'));
+
+    await waitFor(() => expect(screen.getByText(/Đã áp dụng 1 câu sửa/)).toBeVisible());
+    const apply = calls.find((call) => call.url.endsWith('/review/repair-apply'));
+    expect(JSON.parse(String(apply?.init?.body))).toEqual({
+      proposalId: 'prop-1',
+      expectedProposalHash: 'd'.repeat(64),
+    });
+  });
+
+  it('surfaces the raw conflict code when apply fails with 409', async () => {
+    mockFetch((url) => {
+      if (url.endsWith('/review/repair-preview')) {
+        return jsonResponse(repairProposal());
+      }
+      if (url.endsWith('/review/repair-apply')) {
+        return jsonResponse({ detail: 'REPAIR_PROPOSAL_CONFLICT' }, 409);
+      }
+      return jsonResponse(payload());
+    });
+
+    render(<BilingualEditor chapterId="chapter-1" />);
+    await screen.findByLabelText('Bản dịch seg-1');
+    fireEvent.click(screen.getByLabelText('Chọn đoạn seg-1'));
+    fireEvent.click(screen.getByTestId('preview-repair'));
+    await screen.findByLabelText('Repair diff');
+    fireEvent.click(screen.getByTestId('apply-repair'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('REPAIR_PROPOSAL_CONFLICT');
+    // The proposal stays mounted so the operator can retry after re-previewing.
+    expect(screen.getByLabelText('Repair diff')).toBeTruthy();
+  });
+});

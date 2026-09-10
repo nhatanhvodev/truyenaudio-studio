@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiJson } from '../../shared/api';
 
 import ContextInspector from './ContextInspector';
+import RepairDiff from './RepairDiff';
 
 type Run = { id: string; sha256: string; status: string };
 
@@ -28,6 +29,25 @@ type TranslationPayload = {
   segments: Segment[];
   issues: Issue[];
   sourceRevisionId?: string | null;
+};
+
+type RepairReplacement = {
+  sourceSegmentId: string;
+  sourceText: string;
+  currentTargetText: string;
+  targetText: string;
+};
+
+/** U06 round 3: camelCase repair proposal as returned by repair-preview. */
+type RepairProposal = {
+  id: string;
+  baseRunId: string;
+  baseRunSha256: string;
+  providerModel: string;
+  storyMemoryRevisionHash: string;
+  hash: string;
+  estimatedCostVnd: number;
+  replacements: RepairReplacement[];
 };
 
 type Props = {
@@ -64,6 +84,11 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // U06 round 3: repair preview state (proposal is immutable once returned).
+  const [selectedSegmentIds, setSelectedSegmentIds] = useState<string[]>([]);
+  const [repairProposal, setRepairProposal] = useState<RepairProposal | null>(null);
+  const [decidedReplacements, setDecidedReplacements] = useState<Record<string, 'accepted' | 'rejected'>>({});
+  const [applyingProposal, setApplyingProposal] = useState(false);
   const rowRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
@@ -180,6 +205,76 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
     }
   }
 
+  // U06 round 3: the preview button appears only when at least one segment row
+  // is selected; selections stay stable across re-renders.
+  function toggleSegment(sourceSegmentId: string) {
+    setSelectedSegmentIds((current) =>
+      current.includes(sourceSegmentId)
+        ? current.filter((id) => id !== sourceSegmentId)
+        : [...current, sourceSegmentId],
+    );
+  }
+
+  async function previewRepair() {
+    if (selectedSegmentIds.length === 0) {
+      setError('REPAIR_SEGMENT_REQUIRED');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      const proposal = await apiJson<RepairProposal>(`/api/chapters/${chapterId}/review/repair-preview`, {
+        method: 'POST',
+        body: { selectedSegmentIds },
+      });
+      setRepairProposal(proposal);
+      setDecidedReplacements({});
+      setMessage('Đã có đề xuất sửa — xem xét từng dòng trước khi áp dụng.');
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : 'REPAIR_PREVIEW_FAILED');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Accepting a line only edits the local draft; the server is called once the
+  // whole proposal is applied ("Áp dụng đề xuất" below) with the proposal hash.
+  function acceptReplacement(replacement: RepairReplacement) {
+    setDecidedReplacements((current) => ({ ...current, [replacement.sourceSegmentId]: 'accepted' }));
+    setDrafts((current) => ({ ...current, [replacement.sourceSegmentId]: replacement.targetText }));
+  }
+
+  function rejectReplacement(replacement: RepairReplacement) {
+    setDecidedReplacements((current) => ({ ...current, [replacement.sourceSegmentId]: 'rejected' }));
+  }
+
+  async function applyRepair() {
+    if (!repairProposal) {
+      return;
+    }
+    setApplyingProposal(true);
+    setError('');
+    setMessage('');
+    try {
+      const result = await apiJson<{ runId: string; sha256: string; appliedCount: number }>(
+        `/api/chapters/${chapterId}/review/repair-apply`,
+        {
+          method: 'POST',
+          body: { proposalId: repairProposal.id, expectedProposalHash: repairProposal.hash },
+        },
+      );
+      setMessage(`Đã áp dụng ${result.appliedCount} câu sửa vào run mới.`);
+      setRepairProposal(null);
+      setDecidedReplacements({});
+    } catch (reason: unknown) {
+      // 409/400 surface the raw server code so the operator sees the reason.
+      setError(reason instanceof Error ? reason.message : 'REPAIR_APPLY_FAILED');
+    } finally {
+      setApplyingProposal(false);
+    }
+  }
+
   if (!payload && !error) {
     return <p role="status">Đang tải bản dịch…</p>;
   }
@@ -212,6 +307,97 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
       {message ? <p role="status" style={styles.success}>{message}</p> : null}
       {error ? <p role="alert" style={styles.error}>{error}</p> : null}
 
+      <div style={styles.repairBar}>
+        {selectedSegmentIds.length > 0 ? (
+          <button
+            type="button"
+            data-testid="preview-repair"
+            onClick={() => void previewRepair()}
+            disabled={busy}
+            style={styles.secondary}
+          >
+            Xem đề xuất sửa
+          </button>
+        ) : null}
+        <span style={styles.repairHint}>
+          {selectedSegmentIds.length === 0
+            ? 'Chọn ít nhất một đoạn để xem đề xuất sửa.'
+            : `Đã chọn ${selectedSegmentIds.length} đoạn.`}
+        </span>
+        {repairProposal ? (
+          <button
+            type="button"
+            data-testid="apply-repair"
+            onClick={() => void applyRepair()}
+            disabled={applyingProposal}
+            style={styles.primary}
+          >
+            {applyingProposal ? 'Đang áp dụng…' : 'Áp dụng đề xuất'}
+          </button>
+        ) : null}
+      </div>
+
+      {repairProposal ? (
+        <RepairDiff
+          proposal={{
+            id: repairProposal.id,
+            baseRunId: repairProposal.baseRunId,
+            estimatedCostVnd: repairProposal.estimatedCostVnd,
+            hash: repairProposal.hash,
+            replacements: repairProposal.replacements,
+          }}
+          onAccept={(_proposalId, _expectedHash) => {
+            // Per-line decision: the diff rows below are the authority.
+            for (const replacement of repairProposal.replacements) {
+              if (decidedReplacements[replacement.sourceSegmentId] !== 'rejected') {
+                acceptReplacement(replacement);
+              }
+            }
+          }}
+          onReject={(proposalId) => {
+            void proposalId;
+            setRepairProposal(null);
+            setDecidedReplacements({});
+          }}
+        />
+      ) : null}
+
+      {repairProposal
+        ? repairProposal.replacements.map((replacement) => {
+            const decision = decidedReplacements[replacement.sourceSegmentId];
+            return (
+              <section
+                key={replacement.sourceSegmentId}
+                aria-label={`Đề xuất sửa đoạn ${replacement.sourceSegmentId}`}
+                style={styles.repairRow}
+              >
+                <div style={styles.repairActions}>
+                  <strong>{replacement.sourceSegmentId}</strong>
+                  {decision === 'accepted' ? (
+                    <span style={styles.repairAccepted}>Đã nhận — draft đã đổi</span>
+                  ) : decision === 'rejected' ? (
+                    <span style={styles.repairRejected}>Đã bỏ qua</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => acceptReplacement(replacement)}
+                    style={styles.primary}
+                  >
+                    Chấp nhận
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => rejectReplacement(replacement)}
+                    style={styles.secondary}
+                  >
+                    Bỏ qua
+                  </button>
+                </div>
+              </section>
+            );
+          })
+        : null}
+
       <div style={styles.layout}>
         <div style={styles.segments}>
           {(payload?.segments ?? []).map((segment) => {
@@ -229,6 +415,14 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
                 style={{ ...styles.row, ...(revealed ? styles.rowRevealed : {}) }}
               >
                 <div style={styles.sourceCell}>
+                  <label style={styles.pick}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Chọn đoạn ${segment.sourceSegmentId}`}
+                      checked={selectedSegmentIds.includes(segment.sourceSegmentId)}
+                      onChange={() => toggleSegment(segment.sourceSegmentId)}
+                    />
+                  </label>
                   <span style={styles.cellLabel}>GỐC (chỉ đọc)</span>
                   <p
                     aria-readonly="true"
@@ -367,6 +561,13 @@ const styles: Record<string, React.CSSProperties> = {
   issueText: { fontSize: 13, color: '#344054' },
   issueSegment: { fontSize: 11, color: '#667085' },
   footer: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  pick: { display: 'flex', alignItems: 'center', gap: 4 },
+  repairBar: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  repairHint: { color: '#667085', fontSize: 13 },
+  repairRow: { border: '1px solid #e3e8ef', borderRadius: 6, padding: '6px 10px', background: '#fffdf5' },
+  repairActions: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  repairAccepted: { color: '#166534', fontWeight: 700, fontSize: 13 },
+  repairRejected: { color: '#667085', fontSize: 13 },
   success: { margin: 0, color: '#166534', fontWeight: 700 },
   error: { margin: 0, color: '#9a3412', fontWeight: 700 },
   warning: { color: '#92400e', fontWeight: 700, fontSize: 13 },

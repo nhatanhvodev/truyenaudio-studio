@@ -166,7 +166,7 @@ class RepairService:
             raise ValueError("REPAIR_PROPOSAL_NOT_FOUND")
         if proposal.consumed:
             raise RepairConflict("REPAIR_PROPOSAL_CONSUMED")
-        if proposal.hash != expected_hash:
+        if _is_unknown_id(expected_hash) or proposal.hash != expected_hash:
             raise RepairConflict("REPAIR_PROPOSAL_HASH_MISMATCH")
 
         base = self.session.get(TranslationRun, proposal.base_run_id)
@@ -185,6 +185,11 @@ class RepairService:
             raise ValueError("SOURCE_REVISION_NOT_FOUND")
 
         replacements = {replacement.source_segment_id: replacement for replacement in proposal.replacements}
+        run_segment_ids = {segment.source_segment_id for segment in self._translation_segments(base.id)}
+        if set(replacements) - run_segment_ids:
+            # A proposal that references a segment missing from the current run
+            # must fail loudly instead of silently skipping replacements.
+            raise ValueError("SOURCE_SEGMENT_NOT_IN_RUN")
         new_run = TranslationRun(
             id=self.id_factory(),
             chapter_id=chapter.id,
@@ -243,6 +248,10 @@ class RepairService:
         _PROPOSALS[proposal.id] = RepairProposal(**{**proposal.__dict__, "consumed": True})
         self.session.commit()
         return workflow._run_view(new_run.id)
+
+    def stored_proposal(self, proposal_id: str) -> RepairProposal | None:
+        """Returns a stored (possibly consumed) proposal for apply reporting."""
+        return _PROPOSALS.get(proposal_id)
 
     def _estimate(self, project: Project, provider_model: str, segments: tuple[tuple[SourceSegment, TranslationSegment], ...]) -> int:
         if self.budget_guard is None:
@@ -393,6 +402,13 @@ def _proposal_hash(
             "replacements": [replacement.__dict__ for replacement in replacements],
         }
     )
+
+
+def _is_unknown_id(value: str | None) -> bool:
+    """C06 invariant: run hashes and proposal hashes are 64-char lowercase digests."""
+    if value is None or len(value) != 64:
+        return True
+    return any(char not in "0123456789abcdef" for char in value)
 
 
 def _provider_request_id(usage: tuple[Usage, ...]) -> str | None:
