@@ -13,7 +13,13 @@ from app.db.base import create_engine_for, session_factory
 from app.db.models import Chapter, Project
 from sqlalchemy import select
 from app.modules.artifacts.store import ArtifactStore
-from app.modules.projects.queries import ChapterQueries, InvalidCursor
+from app.modules.projects.queries import (
+    DEFAULT_PROJECT_LIMIT,
+    MOUNTED_CHAPTERS_PER_PROJECT,
+    ChapterQueries,
+    InvalidCursor,
+    ProjectQueries,
+)
 from app.modules.projects.state_machine import InvalidChapterTransition
 from app.modules.projects.workflow import CreateProject, ImportChapters, ProjectWorkflow
 from app.modules.sources.archive_guard import ImportCandidate
@@ -67,42 +73,59 @@ def create_projects_router(settings: Settings | None = None, *, cursor_secret: s
         finally:
             engine.dispose()
 
+    def library_dependency() -> Iterator[ProjectQueries]:
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        try:
+            yield ProjectQueries(engine, cursor_secret=cursor_secret)
+        finally:
+            engine.dispose()
+
     @router.get("")
     def list_projects(
-        workflow: ProjectWorkflow = Depends(workflow_dependency),
+        limit: int = DEFAULT_PROJECT_LIMIT,
+        cursor: str | None = None,
+        q: str | None = None,
+        archived: bool = False,
+        queries: ProjectQueries = Depends(library_dependency),
     ) -> dict[str, object]:
-        projects = workflow.session.scalars(
-            select(Project).order_by(Project.created_at.desc())
-        ).all()
-        result = []
-        for p in projects:
-            chapters = workflow.session.scalars(
-                select(Chapter).where(Chapter.project_id == p.id).order_by(Chapter.ordinal)
-            ).all()
-            first_chapter_id = chapters[0].id if chapters else None
-            result.append(
+        """Library page: cursor-paginated, filtered, with bounded chapter summaries (U03)."""
+        try:
+            page = queries.list_projects(limit=limit, cursor=cursor, query=q, archived=archived)
+        except InvalidCursor as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "projects": [
                 {
-                    "id": p.id,
-                    "title": p.title,
-                    "slug": p.slug,
-                    "sourceType": p.source_type,
-                    "rightsStatus": p.rights_status,
-                    "createdAt": p.created_at.isoformat() if p.created_at else None,
-                    "updatedAt": p.updated_at.isoformat() if p.updated_at else None,
-                    "chapterCount": len(chapters),
-                    "firstChapterId": first_chapter_id,
+                    "id": project.id,
+                    "title": project.title,
+                    "slug": project.slug,
+                    "sourceType": project.source_type,
+                    "rightsStatus": project.rights_status,
+                    "createdAt": project.created_at,
+                    "updatedAt": project.updated_at,
+                    "chapterCount": project.chapter_count,
+                    "firstChapterId": project.first_chapter_id,
                     "chapters": [
                         {
-                            "id": ch.id,
-                            "ordinal": ch.ordinal,
-                            "title": ch.source_title,
-                            "state": ch.state,
+                            "id": chapter.id,
+                            "ordinal": chapter.ordinal,
+                            "title": chapter.title,
+                            "state": chapter.state,
                         }
-                        for ch in chapters[:30]
+                        for chapter in project.chapters
                     ],
                 }
-            )
-        return {"projects": result}
+                for project in page.projects
+            ],
+            "page": {
+                "limit": page.limit,
+                "total": page.total,
+                "count": len(page.projects),
+                "hasMore": page.next_cursor is not None,
+                "nextCursor": page.next_cursor,
+                "mountedChaptersPerProject": MOUNTED_CHAPTERS_PER_PROJECT,
+            },
+        }
 
     @router.get("/{project_id}")
     def get_project(

@@ -34,11 +34,19 @@ type ProjectItem = {
 
 const scopes = ['TRANSLATE_VI', 'CREATE_AUDIO', 'PUBLIC_STREAM'];
 
+/** U03: the library mounts at most this many rows per request (server caps at 100). */
+const LIBRARY_PAGE_SIZE = 20;
+
 export function ProjectWizard() {
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(true);
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
+  // U03: the library is cursor-paginated on the server, so the screen keeps the
+  // cursor, the total and the current filter instead of loading everything.
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [pageTotal, setPageTotal] = useState<number | null>(null);
+  const [libraryQuery, setLibraryQuery] = useState('');
 
   const [title, setTitle] = useState('');
   const [sourceType, setSourceType] = useState('SELF_AUTHORED');
@@ -58,12 +66,25 @@ export function ProjectWizard() {
     void loadProjects();
   }, []);
 
-  async function loadProjects() {
+  async function loadProjects(options: { cursor?: string | null; append?: boolean } = {}) {
     setLoadingProjects(true);
     try {
-      const resp = await apiJson<{ projects: ProjectItem[] }>('/api/projects');
-      setProjects(resp.projects);
-      if (resp.projects.length === 0) {
+      const params = new URLSearchParams({ limit: String(LIBRARY_PAGE_SIZE) });
+      if (options.cursor) {
+        params.set('cursor', options.cursor);
+      }
+      if (libraryQuery.trim()) {
+        params.set('q', libraryQuery.trim());
+      }
+      const resp = await apiJson<{
+        projects: ProjectItem[];
+        page?: { total: number; nextCursor: string | null; hasMore: boolean; limit: number };
+      }>(`/api/projects?${params.toString()}`);
+      setProjects((current) => (options.append ? [...current, ...resp.projects] : resp.projects));
+      // A backend without page metadata (older build) simply has no next page.
+      setNextCursor(resp.page?.nextCursor ?? null);
+      setPageTotal(resp.page?.total ?? null);
+      if (!options.append && resp.projects.length === 0) {
         setShowCreateForm(true);
       }
     } catch {
@@ -163,18 +184,36 @@ export function ProjectWizard() {
 
       {/* Danh sách các dự án đã tạo */}
       <section aria-label="Danh sách dự án" style={{ display: 'grid', gap: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <h2 style={{ margin: 0, fontSize: 20, color: '#0f172a' }}>
-            Dự án hiện có ({projects.length})
+            Dự án hiện có ({projects.length}
+            {pageTotal !== null ? `/${pageTotal}` : ''})
           </h2>
-          <button
-            type="button"
-            onClick={() => void loadProjects()}
-            disabled={loadingProjects}
-            style={{ ...styles.secondaryButton, padding: '4px 10px', fontSize: 13 }}
-          >
-            {loadingProjects ? 'Đang tải...' : 'Làm mới'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <label style={{ display: 'grid', gap: 4, fontSize: 12, fontWeight: 700 }}>
+              Tìm dự án
+              <input
+                aria-label="Tìm dự án"
+                value={libraryQuery}
+                onChange={(event) => setLibraryQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void loadProjects();
+                  }
+                }}
+                style={{ ...styles.input, minHeight: 34, fontSize: 13 }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void loadProjects()}
+              disabled={loadingProjects}
+              style={{ ...styles.secondaryButton, padding: '4px 10px', fontSize: 13 }}
+            >
+              {loadingProjects ? 'Đang tải...' : 'Tìm / Làm mới'}
+            </button>
+          </div>
         </div>
 
         {loadingProjects && projects.length === 0 ? (
@@ -356,6 +395,17 @@ export function ProjectWizard() {
             );
           })}
         </div>
+
+        {nextCursor ? (
+          <button
+            type="button"
+            onClick={() => void loadProjects({ cursor: nextCursor, append: true })}
+            disabled={loadingProjects}
+            style={{ ...styles.secondaryButton, justifySelf: 'center' }}
+          >
+            {loadingProjects ? 'Đang tải...' : 'Tải thêm dự án'}
+          </button>
+        ) : null}
       </section>
 
       {/* Form tạo dự án mới */}
