@@ -1,6 +1,16 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JobProgress } from './JobProgress';
+
+/** The overlay links each job to its draft, so it renders inside a router. */
+function renderOverlay() {
+  return render(
+    <MemoryRouter>
+      <JobProgress />
+    </MemoryRouter>,
+  );
+}
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -56,7 +66,7 @@ describe('JobProgress', () => {
     );
     vi.stubGlobal('EventSource', FakeEventSource);
 
-    render(<JobProgress />);
+    renderOverlay();
 
     expect(await screen.findByText('job-1')).toBeVisible();
     await waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
@@ -75,6 +85,37 @@ describe('JobProgress', () => {
 
     expect(await screen.findByText('job-2')).toBeVisible();
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it('shows a cancel request clearly and links a job to its draft', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/api/jobs/snapshot') {
+          return jsonResponse({
+            events: [
+              {
+                sequenceId: '010',
+                jobId: 'job-cancel',
+                status: 'CANCEL_REQUESTED',
+                current: 2,
+                total: 5,
+                errorCode: null,
+              },
+            ],
+          });
+        }
+        throw new Error(`unexpected url ${url}`);
+      }),
+    );
+    vi.stubGlobal('EventSource', FakeEventSource);
+
+    renderOverlay();
+
+    expect(await screen.findByText('Đang hủy…')).toBeVisible();
+    expect(screen.getByText('Yêu cầu hủy đã gửi, job dừng ở ranh giới an toàn.')).toBeVisible();
+    const link = screen.getByRole('link', { name: 'job-cancel' });
+    expect(link).toHaveAttribute('href', '/jobs/job-cancel/draft');
   });
 });
 

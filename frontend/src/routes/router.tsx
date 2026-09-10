@@ -10,6 +10,7 @@ import { describeRoute, projectIdForRoute } from '../features/workspace/workspac
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
 import JobDraftPanel from '../features/jobs/JobDraftPanel';
+import JobsList from '../features/jobs/JobsList';
 import BilingualEditor from '../features/translation/BilingualEditor';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { WenkuImport } from '../features/import/WenkuImport';
@@ -1113,6 +1114,7 @@ function JobsScreen() {
   return (
     <section style={styles.panel}>
       <h1 style={styles.title}>Jobs</h1>
+      <JobsList />
       <JobProgress />
     </section>
   );

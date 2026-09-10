@@ -1,15 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { apiJson } from '../../shared/api';
-import { useWenkuCrawl } from '../import/WenkuCrawlContext';
+import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 
-type JobEvent = {
-  sequenceId: string | number;
-  jobId: string;
-  status: string;
-  current: number;
-  total: number;
-  errorCode?: string | null;
-};
+import { useJobEvents, type JobEvent } from './jobStore';
+import { useWenkuCrawl } from '../import/WenkuCrawlContext';
 
 type Props = {
   events?: JobEvent[];
@@ -21,6 +14,17 @@ const STATE_LABEL: Record<string, string> = {
   connected: 'Trực tuyến',
 };
 
+/** Statuses that need a distinct label in a small overlay. */
+const STATUS_LABEL: Record<string, string> = {
+  QUEUED: 'Đang chờ',
+  RUNNING: 'Đang chạy',
+  CANCEL_REQUESTED: 'Đang hủy…',
+  CANCELED: 'Đã hủy',
+  SUCCEEDED: 'Hoàn tất',
+  FAILED: 'Lỗi',
+  BILLING_UNKNOWN: 'Chưa rõ phí',
+};
+
 const STATE_COLOR: Record<string, { bg: string; text: string; dot: string }> = {
   offline:    { bg: '#fef2f2', text: '#b91c1c', dot: '#ef4444' },
   connecting: { bg: '#fffbeb', text: '#92400e', dot: '#f59e0b' },
@@ -28,57 +32,12 @@ const STATE_COLOR: Record<string, { bg: string; text: string; dot: string }> = {
 };
 
 export function JobProgress({ events = [] }: Props) {
-  const [streamEvents, setStreamEvents] = useState<JobEvent[]>([]);
-  const [streamState, setStreamState] = useState('offline');
+  // U07 round 2: the shared store owns the single SSE subscription, so two
+  // consumers (overlay + jobs screen) never open two connections.
+  const { events: streamEvents, state: streamState, truncated } = useJobEvents();
   const [collapsed, setCollapsed] = useState(false);
-  const lastSequenceRef = useRef<string | null>(null);
 
   const { crawlState } = useWenkuCrawl();
-
-  useEffect(() => {
-    let cancelled = false;
-    let source: EventSource | null = null;
-
-    async function connect() {
-      try {
-        const snapshot = await apiJson<{ events: JobEvent[] }>('/api/jobs/snapshot');
-        if (cancelled) return;
-        appendEvents(snapshot.events);
-      } catch {
-        if (cancelled) return;
-        setStreamState('offline');
-      }
-
-      if (cancelled || typeof EventSource === 'undefined') return;
-      const lastEventId = lastSequenceRef.current;
-      const url = lastEventId ? `/api/events?after=${encodeURIComponent(lastEventId)}` : '/api/events';
-      source = new EventSource(url);
-      setStreamState('connecting');
-      source.onopen = () => setStreamState('connected');
-      const handleJobEvent = (message: MessageEvent) => {
-        try {
-          appendEvents([JSON.parse(message.data) as JobEvent]);
-        } catch {
-          setStreamState('offline');
-        }
-      };
-      source.addEventListener('job', (message) => handleJobEvent(message as MessageEvent));
-      source.onerror = () => setStreamState('offline');
-    }
-
-    function appendEvents(nextEvents: JobEvent[]) {
-      if (nextEvents.length === 0) return;
-      const nextSequence = nextEvents.at(-1)?.sequenceId;
-      lastSequenceRef.current = nextSequence === undefined ? lastSequenceRef.current : String(nextSequence);
-      setStreamEvents((current) => [...current, ...nextEvents].slice(-6));
-    }
-
-    void connect();
-    return () => {
-      cancelled = true;
-      source?.close();
-    };
-  }, []);
 
   const visibleEvents = useMemo(() => [...events, ...streamEvents].slice(-6), [events, streamEvents]);
 
@@ -138,13 +97,24 @@ export function JobProgress({ events = [] }: Props) {
             <p style={styles.empty}>Chưa có job đang chạy</p>
           ) : null}
 
+          {truncated ? (
+            <p style={styles.empty} role="status">
+              Đã lược bớt sự kiện cũ (giữ 1.000 mục gần nhất).
+            </p>
+          ) : null}
+
           {visibleEvents.map((event) => (
             <article key={`${event.sequenceId}-${event.jobId}`} style={styles.job}>
               <div style={styles.jobTop}>
-                <span>{event.jobId}</span>
-                <strong>{event.status}</strong>
+                <Link to={`/jobs/${event.jobId}/draft`} style={styles.jobLink}>
+                  {event.jobId}
+                </Link>
+                <strong>{STATUS_LABEL[event.status] ?? event.status}</strong>
               </div>
               <progress value={event.current} max={Math.max(event.total, 1)} style={styles.progress} />
+              {event.status === 'CANCEL_REQUESTED' ? (
+                <p style={styles.cancelNote}>Yêu cầu hủy đã gửi, job dừng ở ranh giới an toàn.</p>
+              ) : null}
               {event.errorCode ? <p style={styles.error}>{event.errorCode}</p> : null}
             </article>
           ))}
@@ -232,6 +202,8 @@ const styles: Record<string, React.CSSProperties> = {
   // Regular jobs
   job: { display: 'grid', gap: 6, marginTop: 10 },
   jobTop: { display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12 },
+  jobLink: { color: '#155eef', fontWeight: 700, textDecoration: 'none' },
+  cancelNote: { margin: 0, fontSize: 12, color: '#92400e', fontWeight: 700 },
   progress: { width: '100%' },
   error: { margin: 0, color: '#9a3412', fontSize: 12 },
 };
