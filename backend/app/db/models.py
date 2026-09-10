@@ -339,6 +339,27 @@ class CharacterRelationship(MutableMixin, Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ACTIVE")
 
 
+class WorkspaceDraft(MutableMixin, Base):
+    """Segmented editor draft; never an approved translation (U04)."""
+
+    __tablename__ = "workspace_drafts"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "chapter_id",
+            "base_revision_id",
+            name="uq_workspace_drafts_scope",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
+    chapter_id: Mapped[str] = mapped_column(UUID, ForeignKey("chapters.id"), nullable=False)
+    base_revision_id: Mapped[str] = mapped_column(UUID, ForeignKey("source_revisions.id"), nullable=False)
+    content_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class TranslationRun(MutableMixin, Base):
     __tablename__ = "translation_runs"
     __table_args__ = (

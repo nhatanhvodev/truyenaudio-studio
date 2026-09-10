@@ -2,17 +2,26 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from app.db.base import create_engine_for, session_factory
 from app.modules.translation.draft_service import draft_frames, draft_snapshot
+from app.modules.translation.drafts import DraftConflict, restore_draft, save_draft
 from app.settings.config import Settings
 
 
+class DraftSaveRequest(BaseModel):
+    base_revision_id: str
+    content: dict[str, str]
+    expected_revision: int | None = None
+
+
 def create_drafts_router(settings: Settings | None = None) -> APIRouter:
-    router = APIRouter(prefix="/api/jobs")
+    router = APIRouter()
     active_settings = settings or Settings()
 
     def session_dependency() -> Iterator[object]:
@@ -22,7 +31,7 @@ def create_drafts_router(settings: Settings | None = None) -> APIRouter:
             yield session
         engine.dispose()
 
-    @router.get("/{job_id}/draft")
+    @router.get("/api/jobs/{job_id}/draft")
     def read_draft(
         job_id: str,
         after_offset: int | None = Query(default=None, alias="afterOffset", ge=0),
@@ -33,7 +42,7 @@ def create_drafts_router(settings: Settings | None = None) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @router.get("/{job_id}/draft/stream")
+    @router.get("/api/jobs/{job_id}/draft/stream")
     def stream_draft(
         job_id: str,
         session: object = Depends(session_dependency),
@@ -54,6 +63,35 @@ def create_drafts_router(settings: Settings | None = None) -> APIRouter:
                 cursor = None
 
         return EventSourceResponse(build_stream_events(frames, snapshot, cursor))
+
+    @router.get("/api/chapters/{chapter_id}/draft")
+    def read_chapter_draft(
+        chapter_id: str,
+        base_revision_id: str = Query(alias="baseRevisionId"),
+        session: object = Depends(session_dependency),
+    ) -> dict[str, object]:
+        draft = restore_draft(session, chapter_id, base_revision_id)
+        return {"draft": asdict(draft) if draft is not None else None}
+
+    @router.put("/api/chapters/{chapter_id}/draft")
+    def save_chapter_draft(
+        chapter_id: str,
+        request: DraftSaveRequest,
+        session: object = Depends(session_dependency),
+    ) -> dict[str, object]:
+        try:
+            draft = save_draft(
+                session,
+                chapter_id,
+                request.base_revision_id,
+                request.content,
+                expected_revision=request.expected_revision,
+            )
+        except DraftConflict as exc:
+            raise HTTPException(status_code=409, detail=exc.code) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"draft": asdict(draft)}
 
     return router
 
