@@ -19,6 +19,11 @@ describe('workspace route description (U05 round 3)', () => {
       title: 'Dịch & hiệu đính',
       chapterId: 'c1',
     });
+    expect(describeRoute('/chapters/c1/editor')).toMatchObject({
+      kind: 'EDITOR',
+      title: 'Editor song ngữ',
+      chapterId: 'c1',
+    });
     expect(describeRoute('/chapters/c1/voice')).toMatchObject({ kind: 'PREVIEW', chapterId: 'c1' });
     expect(describeRoute('/chapters/c1/audio')).toMatchObject({ kind: 'PREVIEW', chapterId: 'c1' });
     expect(describeRoute('/chapters/c1/export')).toMatchObject({ kind: 'INSPECTOR', chapterId: 'c1' });

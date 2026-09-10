@@ -10,6 +10,7 @@ import { describeRoute, projectIdForRoute } from '../features/workspace/workspac
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
 import JobDraftPanel from '../features/jobs/JobDraftPanel';
+import BilingualEditor from '../features/translation/BilingualEditor';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { WenkuImport } from '../features/import/WenkuImport';
 import { WenkuCrawlProvider } from '../features/import/WenkuCrawlContext';
@@ -98,6 +99,7 @@ export const router = createBrowserRouter([
       { path: 'projects/:projectId/import', element: <ImportScreen /> },
       { path: 'projects/:projectId/batch', element: <BatchScreen /> },
       { path: 'chapters/:chapterId/translation', element: <TranslationScreen /> },
+      { path: 'chapters/:chapterId/editor', element: <BilingualScreen /> },
       { path: 'chapters/:chapterId/voice', element: <VoiceScreen /> },
       { path: 'chapters/:chapterId/audio', element: <AudioScreen /> },
       { path: 'chapters/:chapterId/export', element: <ExportScreen /> },
@@ -1116,8 +1118,23 @@ function JobsScreen() {
   );
 }
 
-function JobDraftScreen() {
-  const { jobId } = useParams();
+function BilingualScreen() {
+  const { chapterId } = useParams();
+  const navigate = useNavigate();
+  if (!chapterId) {
+    return <Navigate to="/" replace />;
+  }
+  return (
+    <section style={styles.panel} aria-label="Editor song ngữ">
+      <BilingualEditor
+        chapterId={chapterId}
+        onApproved={() => navigate(`/chapters/${chapterId}/voice`)}
+      />
+    </section>
+  );
+}
+
+function JobDraftScreen() {  const { jobId } = useParams();
   if (!jobId) {
     return <Navigate to="/jobs" replace />;
   }

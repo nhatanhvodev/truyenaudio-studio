@@ -17,6 +17,7 @@ const EXACT_ROUTES: Record<string, RouteDescriptor> = {
 
 const CHAPTER_ROUTES: Record<string, RouteDescriptor> = {
   translation: { kind: 'EDITOR', title: 'Dịch & hiệu đính' },
+  editor: { kind: 'EDITOR', title: 'Editor song ngữ' },
   voice: { kind: 'PREVIEW', title: 'Giọng đọc' },
   audio: { kind: 'PREVIEW', title: 'Audio' },
   export: { kind: 'INSPECTOR', title: 'Xuất bản' },
