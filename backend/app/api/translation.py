@@ -18,6 +18,7 @@ from app.modules.compliance.cloud import CloudCallBlocked, CloudCallGuard
 from app.modules.security.credentials import CredentialUnavailable
 from app.modules.security.model_identifier import validate_model_identifier
 from app.modules.translation.hanviet import convert_hanviet
+from app.modules.translation.context_trace import build_context_trace
 from app.modules.translation.workflow import (
     ApprovalBlocked,
     RevisionConflict,
@@ -83,6 +84,13 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
         yield from _workflow_dependency(
             active_settings, translator=CleanFakeTranslator()
         )
+
+    def trace_session_dependency() -> Iterator[object]:
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        factory = session_factory(engine)
+        with factory() as session:
+            yield session
+        engine.dispose()
 
     @router.post("/fake")
     def run_fake_translation(
@@ -169,6 +177,18 @@ def create_translation_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=403, detail=",".join(exc.reasons)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.get("/context-trace")
+    def read_context_trace(
+        chapter_id: str,
+        session: object = Depends(trace_session_dependency),
+    ) -> dict[str, object]:
+        """U06: what the latest run used (glossary/memory/characters) + staleness."""
+        try:
+            trace = build_context_trace(session, chapter_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return _camelize(trace)
 
     @router.get("")
     def read_translation(
@@ -520,3 +540,16 @@ def _convert(value: object) -> object:
     if isinstance(value, tuple | list):
         return [_convert(item) for item in value]
     return value
+
+
+def _camelize(value: object) -> object:
+    if isinstance(value, dict):
+        return {_camel_key(str(key)): _camelize(item) for key, item in value.items()}
+    if isinstance(value, tuple | list):
+        return [_camelize(item) for item in value]
+    return value
+
+
+def _camel_key(value: str) -> str:
+    head, *tail = value.split("_")
+    return head + "".join(part[:1].upper() + part[1:] for part in tail)

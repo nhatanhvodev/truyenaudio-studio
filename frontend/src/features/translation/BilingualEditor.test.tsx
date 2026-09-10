@@ -10,6 +10,20 @@ function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, text: async () => text, json: async () => body } as Response;
 }
 
+function contextTrace() {
+  return {
+    chapterId: 'chapter-1',
+    projectId: 'project-1',
+    ordinal: 1,
+    state: 'TRANSLATION_REVIEW',
+    run: null,
+    glossary: { sha256: 'a'.repeat(64), entryCount: 0, lockedRules: [] },
+    memory: { sha256: 'b'.repeat(64), entries: [] },
+    characters: [],
+    stale: { glossary: false, memory: false },
+  };
+}
+
 function mockFetch(handler: (url: string, init?: RequestInit) => Response) {
   const calls: Call[] = [];
   vi.stubGlobal(
@@ -17,6 +31,10 @@ function mockFetch(handler: (url: string, init?: RequestInit) => Response) {
     vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/api/security/bootstrap')) {
         return jsonResponse({ csrfToken: 'test-token' });
+      }
+      if (url.endsWith('/context-trace')) {
+        calls.push({ url, init });
+        return jsonResponse(contextTrace());
       }
       calls.push({ url, init });
       return handler(url, init);

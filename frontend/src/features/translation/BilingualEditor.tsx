@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
 
+import ContextInspector from './ContextInspector';
+
 type Run = { id: string; sha256: string; status: string };
 
 type Segment = {
@@ -308,6 +310,8 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
           ))}
         </aside>
       </div>
+
+      <ContextInspector chapterId={chapterId} />
 
       <footer style={styles.footer}>
         <button
