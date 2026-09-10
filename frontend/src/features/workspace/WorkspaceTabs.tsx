@@ -89,15 +89,23 @@ export function WorkspaceTabs({
   const tabs = layout.panes.primary.tabs;
   const secondaryTabs = layout.panes.secondary.tabs;
 
+  // The roving tabindex follows the active tab only when the ACTIVE TAB changes.
+  // Depending on focusIndex/tabs here made the effect fight the keyboard: after
+  // ArrowLeft the DOM focus moved but the effect immediately restored focusIndex to
+  // the active tab, so the next Enter re-activated the old tab (found by the browser
+  // E2E in e2e/workspace-tabs.spec.ts).
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
+
   useEffect(() => {
     if (currentTabId === null) {
       return;
     }
-    const index = tabs.findIndex((tab) => tab.id === currentTabId);
-    if (index >= 0 && index !== focusIndex) {
+    const index = tabsRef.current.findIndex((tab) => tab.id === currentTabId);
+    if (index >= 0) {
       setFocusIndex(index);
     }
-  }, [currentTabId, focusIndex, tabs]);
+  }, [currentTabId]);
 
   const focusTabAt = useCallback(
     (index: number) => {
@@ -116,15 +124,26 @@ export function WorkspaceTabs({
     [openTabs],
   );
 
+  /**
+   * Route to open for a tab. A tab restored from the saved layout was not visited
+   * in this session, so it has no route definition yet — the tab id *is* the
+   * pathname, which keeps restored tabs navigable instead of dead.
+   */
+  const routeFor = useCallback(
+    (tabId: string): string | null =>
+      definitionFor(tabId)?.to ?? (tabId.startsWith('/') ? tabId : null),
+    [definitionFor],
+  );
+
   const activate = useCallback(
     (tabId: string) => {
       dispatch({ type: 'activate', projectId, pane: 'primary', tabId });
-      const definition = definitionFor(tabId);
-      if (definition) {
-        onNavigate(definition.to);
+      const to = routeFor(tabId);
+      if (to) {
+        onNavigate(to);
       }
     },
-    [definitionFor, dispatch, onNavigate, projectId],
+    [dispatch, onNavigate, projectId, routeFor],
   );
 
   const closeTab = useCallback(
@@ -147,11 +166,10 @@ export function WorkspaceTabs({
       setPendingCloseId(null);
       if (tabId === currentTabId) {
         const next = remaining[Math.max(0, remaining.length - 1)];
-        const nextDefinition = next ? definitionFor(next.id) : undefined;
-        onNavigate(nextDefinition?.to ?? '/');
+        onNavigate((next ? routeFor(next.id) : null) ?? '/');
       }
     },
-    [currentTabId, definitionFor, dirtyTabIds, dispatch, onNavigate, projectId, tabs],
+    [currentTabId, dirtyTabIds, dispatch, onNavigate, projectId, routeFor, tabs],
   );
 
   function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {

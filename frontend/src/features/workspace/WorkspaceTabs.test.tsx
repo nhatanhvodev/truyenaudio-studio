@@ -114,6 +114,22 @@ describe('WorkspaceTabs (U05 round 3)', () => {
     expect(screen.getByLabelText('route')).toHaveTextContent(TABS[0].id);
   });
 
+  it('activates the tab that has keyboard focus, not the previously active one', async () => {
+    mockFetch(() => jsonResponse(emptyLayoutPayload()));
+
+    render(<Harness />);
+    const tablist = await waitForTabs();
+
+    // Focus moves to the last tab while the *active* tab is still the first one.
+    fireEvent.keyDown(tablist, { key: 'End' });
+    expect(screen.getByRole('tab', { name: 'Công việc' })).toHaveFocus();
+
+    fireEvent.keyDown(tablist, { key: 'Enter' });
+
+    expect(screen.getByLabelText('route')).toHaveTextContent('/jobs');
+    expect(screen.getByRole('tab', { name: 'Công việc' })).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('refuses to close a dirty tab until the user confirms losing the changes', async () => {
     mockFetch(() => jsonResponse(emptyLayoutPayload()));
 
