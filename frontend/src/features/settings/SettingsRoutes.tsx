@@ -2,6 +2,7 @@ import { Navigate, type RouteObject } from 'react-router-dom';
 
 import { Diagnostics } from '../diagnostics/Diagnostics';
 import { ModelCatalog } from '../modelCatalog/ModelCatalog';
+import { ProfileEditor } from '../providers/ProfileEditor';
 import { SettingsLayout } from './SettingsLayout';
 
 export interface SettingsGroupPageProps {
@@ -21,12 +22,7 @@ export function SettingsGroupPending({ title, note }: SettingsGroupPageProps) {
 }
 
 function ProvidersSettings() {
-  return (
-    <SettingsGroupPending
-      title="AI Providers"
-      note="Credential và trạng thái provider sẽ nối ở U08 (component ProviderSettings cần props profile/model)."
-    />
-  );
+  return <ProfileEditor />;
 }
 
 function TranslationSettings() {

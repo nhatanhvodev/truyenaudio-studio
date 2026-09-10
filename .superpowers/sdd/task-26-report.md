@@ -1,6 +1,15 @@
-# Task 26 / U08 report — part 1 (PARTIAL)
+# Task 26 / U08 report — parts 1–2 (PARTIAL)
 
-Status: PARTIAL — model catalog UI (filters/provenance/stale/unknown-price) shipped and mounted in Settings; provider credential editor, quality/quote/consent stage controls remain.
+Status: PARTIAL — model catalog + provider profile/credential editor shipped in Settings; quality picker and per-stage quote/ceiling/consent controls remain.
+
+## Delivered (part 2)
+
+- `features/providers/ProfileEditor.tsx` mounted as Settings → AI Providers:
+  - lists profiles from `/api/cloud-profiles` showing adapter/model/region, a **masked credential state** ("Đã cấu hình" / "Chưa có"), revision status, and never any secret value;
+  - credential entry is a `type="password"` `autoComplete="off"` field whose value is held only in component state and sent once in the `PUT .../credential` body, then cleared; empty input is refused client-side ("Cần nhập credential") without calling the API; `DELETE .../credential` revokes; `POST .../validate` reports the backend health status;
+  - create-profile form sends providerKind/adapterName/displayName/model/region to `POST /api/cloud-profiles` and refreshes the list; API errors surface via `role="alert"`.
+- Tests (5, with a fetch mock that also serves `/api/security/bootstrap` for the CSRF header): masked status rendering, credential send-once + field cleared + **localStorage stays empty**, empty-credential refusal, validate + delete flows, create-profile payload + API error alert.
+- Note: tests must stub the CSRF bootstrap endpoint — `apiJson` performs a state-changing request only after fetching a CSRF token, which the earlier mock lacked.
 
 ## Delivered (part 1)
 
@@ -14,10 +23,10 @@ Status: PARTIAL — model catalog UI (filters/provenance/stale/unknown-price) sh
 
 ## Remaining for U08 acceptance (later parts)
 
-- Provider profile CRUD with masked credential + validate/status, quality picker (Free/Paid/Recommended/Fast/High Quality/Long Context/Translation Optimized/Cloud) and per-stage quote/ceiling/consent controls; model change invalidating an existing quote; combobox/filter E2E and credential rotate tests.
+- Provider quality picker (Free/Paid/Recommended/Fast/High Quality/Long Context/Translation Optimized/Cloud) and per-stage quote/ceiling/consent controls; model change invalidating an existing quote; combobox/filter and credential-rotate E2E.
 
-## Validation (part 1)
+## Validation (parts 1–2)
 
-- `npx vitest run src/features/modelCatalog` — 6 passed (plus 4 settings route tests in the same run set).
-- Full frontend suite: `npm test -- --run` — 59 passed / 18 files; production build `npm run build` PASS.
-- No backend/API change in this part.
+- `npx vitest run src/features/modelCatalog src/features/providers` — 11 passed (6 catalog + 5 profile).
+- Full frontend suite: `npm test -- --run` — 64 passed / 19 files; production build `npm run build` PASS.
+- No backend/API change in these parts.
