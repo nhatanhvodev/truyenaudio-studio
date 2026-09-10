@@ -1,4 +1,4 @@
-"""Worker execution handlers wired to real domain services (task J01).
+"""Worker execution handlers wired to real domain services (task J01, extended by A03).
 
 TRANSLATE handler executes the existing guarded translation workflow under
 the worker. Cloud/model providers (qwen/gemini) reuse the API workflow
@@ -6,18 +6,31 @@ scopes (guarded adapter + fresh session); the local fake provider runs the
 deterministic hanviet translator. Plan and revision are validated before any
 dispatch; a rejection surfaces as a HandlerUnavailable subclass so the worker
 fails the job with a precise, non-retryable code.
+
+SYNTHESIZE handler renders the segment audio of the chapter's active voice plan
+under the worker, checkpointing every finished segment on the recovery session
+so an interrupted attempt resumes from the synthesis cache instead of paying
+for the same segment twice. It runs on the recovery session (not a private
+engine) precisely because that session is the one the checkpoints commit; the
+worker owns both the database and the artifact root.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
-from app.contracts import JobKind
+from app.contracts import AudioProcessor, JobKind, TtsAdapter
 from app.db.base import create_engine_for, session_factory
 from app.db.models import Chapter, ProviderProfile
 from app.modules.jobs.handlers import PlanRequiredError, require_plan
 from app.modules.jobs.recovery import RecoveryJobContext
+from app.modules.speech.workflow import (
+    SpeechWorkflow,
+    TranslationApprovalRequired,
+    TtsUnavailable,
+    VoicePlanRequired,
+)
 from app.settings.config import Settings
 from app.worker import HandlerUnavailable
 
@@ -34,6 +47,125 @@ def build_translate_handler(settings: Settings, *, db_path: object | None = None
         return None
 
     return handler
+
+
+class SynthesizeReject(HandlerUnavailable):
+    """A SYNTHESIZE job refused before any segment is rendered."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(JobKind.SYNTHESIZE)
+        self.code = code
+
+
+def build_synthesize_handler(
+    *,
+    tts: TtsAdapter | None = None,
+    audio_processor: AudioProcessor | None = None,
+    allow_fake_tts: bool = False,
+) -> Callable[..., Awaitable[str | None]]:
+    """Render segment audio under the worker, one durable checkpoint per segment.
+
+    The adapters are injected (and fake adapters must say so through allow_fake_tts)
+    so offline tests exercise the real handler, worker, cache and artifact store
+    without a network call. The database session and the artifact root come from the
+    recovery context the worker built for this attempt, which is what makes the
+    per-segment commits real checkpoints rather than bookkeeping.
+    """
+
+    async def handler(lease, recovery: RecoveryJobContext) -> str | None:
+        await asyncio.to_thread(
+            _execute_synthesize,
+            recovery,
+            lease,
+            tts,
+            audio_processor,
+            allow_fake_tts,
+        )
+        return None
+
+    return handler
+
+
+def _execute_synthesize(
+    recovery: RecoveryJobContext,
+    lease,
+    tts: TtsAdapter | None,
+    audio_processor: AudioProcessor | None,
+    allow_fake_tts: bool,
+) -> None:
+    job = recovery.runner.get(lease.job_id)
+    try:
+        plan = require_plan(JobKind.SYNTHESIZE, job.plan)
+    except PlanRequiredError as exc:
+        raise SynthesizeReject(exc.code) from exc
+    chapter_id = job.chapter_id
+    if not chapter_id:
+        raise SynthesizeReject("SYNTHESIZE_CHAPTER_REQUIRED")
+
+    session = recovery.session
+    chapter = session.get(Chapter, chapter_id)
+    if chapter is None:
+        raise SynthesizeReject("SYNTHESIZE_CHAPTER_NOT_FOUND")
+    _validate_synthesize_plan(chapter, plan)
+    # Close the validation read before the first provider call: no TTS call may run
+    # inside an open SQLite transaction.
+    session.commit()
+
+    workflow = SpeechWorkflow(
+        session,
+        tts=tts,
+        audio_processor=audio_processor,
+        artifact_root=recovery.artifacts.artifact_root,
+        allow_fake_tts=allow_fake_tts,
+    )
+    try:
+        workflow.synthesize_segments(
+            chapter_id,
+            checkpoint=recovery,
+            force_segment_ids=_planned_segment_ids(plan),
+        )
+    except TranslationApprovalRequired as exc:
+        raise SynthesizeReject(f"SYNTHESIZE_{exc}") from exc
+    except VoicePlanRequired as exc:
+        raise SynthesizeReject(f"SYNTHESIZE_{exc}") from exc
+    except TtsUnavailable as exc:
+        raise SynthesizeReject(f"SYNTHESIZE_{exc}") from exc
+
+
+def _validate_synthesize_plan(
+    chapter: Chapter, plan: Mapping[str, object]
+) -> None:
+    """Fail closed before any render when the immutable plan no longer matches.
+
+    The plan is written once at enqueue and never mutated, so an approved translation
+    run, a voice plan or a source revision that moved after enqueue is a stale plan and
+    the job is refused with a precise code instead of rendering something else.
+    """
+    approved_run_id = chapter.approved_translation_run_id
+    if approved_run_id is None:
+        raise SynthesizeReject("SYNTHESIZE_TRANSLATION_APPROVAL_REQUIRED")
+    planned_run_id = plan.get("translationRunId")
+    if planned_run_id is not None and str(planned_run_id) != str(approved_run_id):
+        raise SynthesizeReject("SYNTHESIZE_TRANSLATION_STALE")
+
+    voice_plan_id = chapter.active_voice_plan_id
+    if voice_plan_id is None:
+        raise SynthesizeReject("SYNTHESIZE_VOICE_PLAN_REQUIRED")
+    planned_voice_plan_id = plan.get("voicePlanId")
+    if planned_voice_plan_id is not None and str(planned_voice_plan_id) != str(voice_plan_id):
+        raise SynthesizeReject("SYNTHESIZE_VOICE_PLAN_STALE")
+
+    revision_id = plan.get("revisionId")
+    if revision_id is not None and str(chapter.active_source_revision_id or "") != str(revision_id):
+        raise SynthesizeReject("SYNTHESIZE_REVISION_STALE")
+
+
+def _planned_segment_ids(plan: Mapping[str, object]) -> frozenset[str]:
+    """Read the optional selective re-render list pinned in the execution plan."""
+    requested = plan.get("forceSegmentIds")
+    if not isinstance(requested, (list, tuple)):
+        return frozenset()
+    return frozenset(str(segment_id) for segment_id in requested)
 
 
 def _database_path(settings: Settings, db_path: object | None) -> object:

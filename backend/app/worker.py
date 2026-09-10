@@ -192,9 +192,16 @@ def build_default_worker(settings: Settings | None = None) -> Worker:
 def build_default_handlers(settings: Settings | None = None) -> dict[JobKind, Handler]:
     handlers = {kind: _unconfigured_recovery_handler for kind in JobKind}
     if settings is not None:
-        from app.modules.jobs.execution_handlers import build_translate_handler
+        # A03: SYNTHESIZE reuses the recovery session/artifact root, so the
+        # handler needs no arguments; without this registration the audio
+        # render-jobs route would enqueue jobs the worker cannot execute.
+        from app.modules.jobs.execution_handlers import (
+            build_synthesize_handler,
+            build_translate_handler,
+        )
 
         handlers[JobKind.TRANSLATE] = build_translate_handler(settings)
+        handlers[JobKind.SYNTHESIZE] = build_synthesize_handler()
     return handlers
 
 

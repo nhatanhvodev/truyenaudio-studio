@@ -11,13 +11,14 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.contracts import ArtifactKind, ArtifactStatus
+from app.contracts import ArtifactKind, ArtifactStatus, JobKind, JobStatus, new_id
 from app.db.base import create_engine_for, session_factory
 from app.db.models import Artifact, Chapter
 from app.modules.artifacts.store import ArtifactStore, UnsafeArtifactPath
+from app.modules.jobs.runner import JobRunner
 from app.modules.speech.workflow import (
     AudioApprovalBlocked,
     AudioApprovalConflict,
@@ -63,6 +64,18 @@ class RenderAudioRequest(BaseModel):
 
     cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
     budget_authorization_id: str | None = Field(default=None, alias="budgetAuthorizationId")
+
+
+class RenderJobRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    cloud_consent_id: str | None = Field(default=None, alias="cloudConsentId")
+    budget_authorization_id: str | None = Field(default=None, alias="budgetAuthorizationId")
+    idempotency_key: str | None = Field(default=None, alias="idempotencyKey")
+    force_segment_ids: tuple[str, ...] = Field(default=(), alias="forceSegmentIds")
+
+
+LOCAL_TTS_PROFILE_ID = "local-tts"
 
 
 def create_audio_router(settings: Settings | None = None) -> APIRouter:
@@ -121,6 +134,58 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.post("/render-jobs")
+    def enqueue_render_job(
+        chapter_id: str,
+        request: RenderJobRequest | None = None,
+    ) -> dict[str, object]:
+        """Enqueue the durable SYNTHESIZE job for this chapter and return its id.
+
+        Async seam chosen for A03: the existing POST .../audio/render route is left
+        exactly as it was (synchronous, answering a RenderedChapterView) so the current
+        frontend keeps working, and this sibling route adds the worker path for long
+        chapters. The worker renders segment by segment, committing a READY artifact
+        and the segment cache key for every finished segment, so a crash or a cancel
+        request never loses finished audio and the next attempt serves it from cache.
+
+        Two guards keep the enqueue safe: a chapter that still has no approved
+        translation run or no active voice plan is refused here (the handler re-checks
+        it), and a job for this chapter that is already queued, running or waiting to
+        be canceled is returned instead of starting a second render. The immutable
+        execution plan pins the approved translation run, the voice plan and the source
+        revision at enqueue time; the handler refuses a job whose pins have moved.
+        """
+        job_request = request or RenderJobRequest()
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        factory = session_factory(engine)
+        try:
+            with factory() as session:
+                chapter = session.get(Chapter, chapter_id)
+                if chapter is None:
+                    raise HTTPException(status_code=404, detail="CHAPTER_NOT_FOUND")
+                if chapter.approved_translation_run_id is None:
+                    raise HTTPException(
+                        status_code=409, detail="TRANSLATION_APPROVAL_REQUIRED"
+                    )
+                if chapter.active_voice_plan_id is None:
+                    raise HTTPException(status_code=409, detail="VOICE_PLAN_REQUIRED")
+                in_flight = _in_flight_render_job(session, chapter_id)
+                if in_flight is not None:
+                    return _job_payload(in_flight[0], in_flight[1], deduplicated=True)
+                project_id = chapter.project_id
+                plan = _render_job_plan(chapter, job_request)
+            runner = JobRunner(engine)
+            job = runner.enqueue(
+                JobKind.SYNTHESIZE,
+                project_id,
+                chapter_id,
+                job_request.idempotency_key or f"synthesize:{chapter_id}:{new_id()}",
+                plan=plan,
+            )
+            return _job_payload(job.id, job.status.value, deduplicated=False)
+        finally:
+            engine.dispose()
 
     @router.post("/approve")
     def approve_audio(
@@ -291,6 +356,61 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
         )
 
     return router
+
+
+def _in_flight_render_job(session: Session, chapter_id: str) -> tuple[str, str] | None:
+    """Return the queued/running SYNTHESIZE job of this chapter, if there is one."""
+    row = session.execute(
+        text(
+            "SELECT id, status FROM jobs"
+            " WHERE chapter_id = :chapter_id"
+            " AND kind = :kind"
+            " AND status IN (:queued, :running, :cancel_requested)"
+            " ORDER BY priority ASC, id ASC"
+            " LIMIT 1"
+        ),
+        {
+            "chapter_id": chapter_id,
+            "kind": JobKind.SYNTHESIZE.value,
+            "queued": JobStatus.QUEUED.value,
+            "running": JobStatus.RUNNING.value,
+            "cancel_requested": JobStatus.CANCEL_REQUESTED.value,
+        },
+    ).first()
+    if row is None:
+        return None
+    return str(row[0]), str(row[1])
+
+
+def _render_job_plan(
+    chapter: Chapter, request: RenderJobRequest
+) -> dict[str, object]:
+    """Build the immutable execution plan the SYNTHESIZE handler re-validates.
+
+    The plan carries the four keys every model-backed job kind requires (project,
+    profile, cloud consent, budget authorization). Segment synthesis of a local voice
+    preset needs no cloud profile, so the profile is the local TTS marker and consent
+    and budget are empty unless the caller pinned them for a cloud preset.
+    """
+    return {
+        "projectId": chapter.project_id,
+        "profileId": LOCAL_TTS_PROFILE_ID,
+        "cloudConsentId": request.cloud_consent_id or "",
+        "budgetAuthorizationId": request.budget_authorization_id or "",
+        "translationRunId": chapter.approved_translation_run_id,
+        "voicePlanId": chapter.active_voice_plan_id,
+        "revisionId": chapter.active_source_revision_id,
+        "forceSegmentIds": list(request.force_segment_ids),
+    }
+
+
+def _job_payload(job_id: str, status: str, *, deduplicated: bool) -> dict[str, object]:
+    return {
+        "jobId": job_id,
+        "kind": JobKind.SYNTHESIZE.value,
+        "status": status,
+        "deduplicated": deduplicated,
+    }
 
 
 def _decide_range(range_header: str | None, total: int) -> _RangeDecision:

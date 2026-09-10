@@ -15,5 +15,8 @@ poc = ["vieneu==3.2.9"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["."]
+markers = [
+  "slow: long-running fixture (e.g. the 500-segment resumable render); still runs by default",
+]
 [tool.setuptools.packages.find]
 include = ["app*"]

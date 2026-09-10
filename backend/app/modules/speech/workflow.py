@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import asyncio
 from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+from typing import Protocol
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,6 +24,7 @@ from app.contracts import (
     QaStatus,
     RunStatus,
     SynthesisRequest,
+    SynthesisResult,
     TtsAdapter,
     VoiceMode,
     new_id,
@@ -41,6 +43,7 @@ from app.db.models import (
     VoiceRole,
 )
 from app.modules.artifacts.cache import ArtifactCache
+from app.modules.artifacts.store import ArtifactStore, ArtifactWrite
 from app.modules.audio.qa import AudioIssueDraft, run_master_qa, run_premaster_qa
 from app.modules.projects.state_machine import next_state
 from app.modules.speech.narration import (
@@ -120,6 +123,31 @@ class RenderedChapterView:
     master_artifact_id: str
     master_sha256: str
     srt_artifact_id: str
+
+
+@dataclass(frozen=True)
+class SynthesizedChapterView:
+    """Result of a resumable segment render, before any master is produced."""
+
+    chapter_id: str
+    segment_ids: tuple[str, ...]
+    reused_segment_ids: tuple[str, ...]
+    rendered_segment_ids: tuple[str, ...]
+    tts_artifact_ids: tuple[str, ...]
+    state: str
+
+
+class RenderCheckpoint(Protocol):
+    """Durable per-segment checkpoint hook used by the worker-driven render (A03).
+
+    RecoveryJobContext satisfies this structurally: commit publishes the work finished
+    for one segment, and raise_if_cancel_requested stops the pass at a segment boundary
+    by raising RecoveryCanceled for the worker to acknowledge.
+    """
+
+    def raise_if_cancel_requested(self) -> None: ...
+
+    def commit(self) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -297,6 +325,46 @@ class SpeechWorkflow:
             status="APPROVED",
         )
 
+    def synthesize_segments(
+        self,
+        chapter_id: str,
+        *,
+        checkpoint: RenderCheckpoint | None = None,
+        force_segment_ids: frozenset[str] = frozenset(),
+    ) -> SynthesizedChapterView:
+        """Render TTS_SEGMENT artifacts resumably, one durable checkpoint per segment.
+
+        Every segment is synthesized into a staging file, probe-verified against the
+        digest the adapter reported and stored through ArtifactStore (atomic os.link
+        inside the artifact root) before its artifact row is marked READY. When a
+        checkpoint is supplied (the worker path) the session is committed after each
+        segment, so a crash, an expired lease or a cancel request never discards the
+        segments that already finished: the next attempt serves them from the synthesis
+        cache instead of paying for them again.
+
+        Cancellation is observed at segment boundaries, so the segment in flight always
+        finishes and is checkpointed. A cache miss flushes and closes the write
+        transaction before the adapter is called, so provider I/O never runs inside an
+        open SQLite transaction. This method deliberately stops at segment audio; the
+        master/SRT stage stays with the inline render and JobKind.MASTER (task A04).
+        """
+        chapter = self._chapter(chapter_id)
+        context = self._render_context(chapter)
+        writes = self._render_segment_artifacts(
+            context,
+            force_segment_ids=force_segment_ids,
+            checkpoint=checkpoint,
+        )
+        self._commit(checkpoint)
+        return SynthesizedChapterView(
+            chapter_id=chapter.id,
+            segment_ids=tuple(segment.id for segment in context.segments),
+            reused_segment_ids=writes.reused_segment_ids,
+            rendered_segment_ids=writes.rendered_segment_ids,
+            tts_artifact_ids=writes.artifact_ids,
+            state=chapter.state,
+        )
+
     def _render(
         self,
         chapter_id: str,
@@ -304,6 +372,37 @@ class SpeechWorkflow:
         force_segment_ids: frozenset[str],
     ) -> RenderedChapterView:
         chapter = self._chapter(chapter_id)
+        context = self._render_context(chapter)
+        writes = self._render_segment_artifacts(
+            context,
+            force_segment_ids=force_segment_ids,
+            checkpoint=None,
+        )
+        master = self._master(
+            chapter,
+            context.run,
+            context.plan,
+            writes.audio_paths,
+            context.segments,
+        )
+        srt = self._write_srt(
+            chapter, master.result, context.segments, writes.durations
+        )
+        chapter.state = ChapterState.AUDIO_REVIEW.value
+        self.session.commit()
+        return RenderedChapterView(
+            chapter_id=chapter.id,
+            segment_ids=tuple(segment.id for segment in context.segments),
+            reused_segment_ids=writes.reused_segment_ids,
+            rendered_segment_ids=writes.rendered_segment_ids,
+            tts_artifact_ids=writes.artifact_ids,
+            master_artifact_id=master.artifact.id,
+            master_sha256=master.artifact.sha256,
+            srt_artifact_id=srt.id,
+        )
+
+    def _render_context(self, chapter: Chapter) -> _RenderContext:
+        """Resolve the active plan, the approved run and the per-role presets to render."""
         if chapter.active_voice_plan_id is None:
             raise VoicePlanRequired("VOICE_PLAN_REQUIRED")
         plan = self.session.get(VoicePlan, chapter.active_voice_plan_id)
@@ -319,21 +418,43 @@ class SpeechWorkflow:
             role.id: self._voice_preset(role.voice_preset_id)
             for role in roles_by_id.values()
         }
+        return _RenderContext(
+            chapter=chapter,
+            plan=plan,
+            run=run,
+            segments=segments,
+            preset_by_role_id=preset_by_role_id,
+        )
 
-        if chapter.state == ChapterState.VOICE_CONFIGURED.value:
-            chapter.state = next_state(chapter.state, ChapterState.TTS_QUEUED).value
-        if chapter.state == ChapterState.TTS_QUEUED.value:
-            chapter.state = next_state(chapter.state, ChapterState.SYNTHESIZING).value
+    def _render_segment_artifacts(
+        self,
+        context: _RenderContext,
+        *,
+        force_segment_ids: frozenset[str],
+        checkpoint: RenderCheckpoint | None,
+    ) -> _SegmentWrites:
+        """Render every speech segment, checkpointing each finished segment.
 
+        Cache hits are reused, cache misses are synthesized and stored atomically and,
+        once the pass ends, READY segment audio whose fingerprint is no longer the one
+        this plan computes is retired (SUPERSEDED), so a narration text or voice change
+        leaves no live stale artifact behind.
+        """
+        chapter = context.chapter
+        self._advance_to_synthesizing(chapter)
+        store = ArtifactStore(self.artifact_root)
         rendered_segment_ids: list[str] = []
         reused_segment_ids: list[str] = []
         artifact_ids: list[str] = []
         audio_paths: list[Path] = []
         durations: list[int] = []
-        for segment in segments:
-            if segment.role_id not in preset_by_role_id:
+        for segment in context.segments:
+            if checkpoint is not None:
+                # Safe cancellation point: only whole, checkpointed segments exist.
+                checkpoint.raise_if_cancel_requested()
+            if segment.role_id not in context.preset_by_role_id:
                 raise VoicePlanRequired("VOICE_ROLE_NOT_FOUND")
-            preset = preset_by_role_id[segment.role_id]
+            preset = context.preset_by_role_id[segment.role_id]
             tts = self._tts_for_preset(preset)
             settings_hash = self._settings_hash(preset)
             cache_key = self._synthesis_cache_key(segment, preset)
@@ -354,6 +475,9 @@ class SpeechWorkflow:
                 )
                 continue
 
+            if checkpoint is not None:
+                # Flush the cache key and close the transaction before provider I/O.
+                checkpoint.commit()
             self._supersede_ready_artifacts(
                 ArtifactKind.TTS_SEGMENT,
                 cache_key,
@@ -362,47 +486,141 @@ class SpeechWorkflow:
             artifact_id = self.id_factory()
             relative_path = f"audio/{chapter.id}/segments/{artifact_id}.wav"
             output_path = self._artifact_path(relative_path)
-            result = asyncio.run(
-                tts.synthesize(
-                    self._synthesis_request(segment, preset, cache_key), output_path
-                )
+            result, payload = self._synthesize_segment_payload(
+                tts, segment, preset, cache_key, output_path, artifact_id
             )
-            actual_sha256 = _sha256_file(output_path)
-            if actual_sha256 != result.sha256:
-                output_path.unlink(missing_ok=True)
-                raise ValueError("TTS_CHECKSUM_MISMATCH")
-            artifact = self._add_artifact(
+            artifact = self._store_segment_artifact(
+                store,
                 artifact_id=artifact_id,
                 chapter_id=chapter.id,
-                kind=ArtifactKind.TTS_SEGMENT,
                 relative_path=relative_path,
-                sha256=result.sha256,
-                byte_size=output_path.stat().st_size,
-                mime_type="audio/wav",
+                payload=payload,
                 duration_ms=result.duration_ms,
                 input_hash=cache_key,
                 settings_hash=settings_hash,
-                metadata={"speech_segment_id": segment.id},
+                speech_segment_id=segment.id,
             )
             rendered_segment_ids.append(segment.id)
             artifact_ids.append(artifact.id)
             audio_paths.append(output_path)
             durations.append(result.duration_ms)
-
-        master = self._master(chapter, run, plan, tuple(audio_paths), tuple(segments))
-        srt = self._write_srt(chapter, master.result, tuple(segments), tuple(durations))
-        chapter.state = ChapterState.AUDIO_REVIEW.value
-        self.session.commit()
-        return RenderedChapterView(
-            chapter_id=chapter.id,
-            segment_ids=tuple(segment.id for segment in segments),
-            reused_segment_ids=tuple(reused_segment_ids),
-            rendered_segment_ids=tuple(rendered_segment_ids),
-            tts_artifact_ids=tuple(artifact_ids),
-            master_artifact_id=master.artifact.id,
-            master_sha256=master.artifact.sha256,
-            srt_artifact_id=srt.id,
+            if checkpoint is not None:
+                # Durable checkpoint: the READY artifact row and the segment cache key
+                # are committed before the next segment starts.
+                checkpoint.commit()
+        self._retire_stale_segment_artifacts(
+            chapter, used_artifact_ids=frozenset(artifact_ids)
         )
+        return _SegmentWrites(
+            rendered_segment_ids=tuple(rendered_segment_ids),
+            reused_segment_ids=tuple(reused_segment_ids),
+            artifact_ids=tuple(artifact_ids),
+            audio_paths=tuple(audio_paths),
+            durations=tuple(durations),
+        )
+
+    def _advance_to_synthesizing(self, chapter: Chapter) -> None:
+        if chapter.state == ChapterState.VOICE_CONFIGURED.value:
+            chapter.state = next_state(chapter.state, ChapterState.TTS_QUEUED).value
+        if chapter.state == ChapterState.TTS_QUEUED.value:
+            chapter.state = next_state(chapter.state, ChapterState.SYNTHESIZING).value
+
+    def _synthesize_segment_payload(
+        self,
+        tts: TtsAdapter,
+        segment: SpeechSegment,
+        preset: VoicePreset,
+        cache_key: str,
+        output_path: Path,
+        artifact_id: str,
+    ) -> tuple[SynthesisResult, bytes]:
+        """Run the adapter into a staging file and probe the bytes it wrote.
+
+        The adapter never writes the final artifact path: the bytes are verified against
+        the digest the adapter reported and only then handed to ArtifactStore, so a
+        failed or truncated synthesis can never leave a READY or half written artifact.
+        """
+        staging_path = output_path.with_name(f".tmp-{artifact_id}.wav")
+        try:
+            result = asyncio.run(
+                tts.synthesize(
+                    self._synthesis_request(segment, preset, cache_key), staging_path
+                )
+            )
+            actual_sha256 = _sha256_file(staging_path)
+            if actual_sha256 != result.sha256:
+                raise ValueError("TTS_CHECKSUM_MISMATCH")
+            return result, staging_path.read_bytes()
+        finally:
+            staging_path.unlink(missing_ok=True)
+
+    def _store_segment_artifact(
+        self,
+        store: ArtifactStore,
+        *,
+        artifact_id: str,
+        chapter_id: str,
+        relative_path: str,
+        payload: bytes,
+        duration_ms: int,
+        input_hash: str,
+        settings_hash: str,
+        speech_segment_id: str,
+    ) -> Artifact:
+        """Write the verified bytes atomically, then publish the READY artifact row."""
+        write = ArtifactWrite(
+            kind=ArtifactKind.TTS_SEGMENT,
+            relative_path=relative_path,
+            input_hash=input_hash,
+            settings_hash=settings_hash,
+            mime_type="audio/wav",
+        )
+        with store.begin(write) as writer:
+            writer.file.write(payload)
+            stored = writer.commit()
+        return self._add_artifact(
+            artifact_id=artifact_id,
+            chapter_id=chapter_id,
+            kind=ArtifactKind.TTS_SEGMENT,
+            relative_path=stored.relative_path,
+            sha256=stored.sha256,
+            byte_size=stored.byte_size,
+            mime_type="audio/wav",
+            duration_ms=duration_ms,
+            input_hash=input_hash,
+            settings_hash=settings_hash,
+            metadata={"speech_segment_id": speech_segment_id},
+        )
+
+    def _retire_stale_segment_artifacts(
+        self,
+        chapter: Chapter,
+        *,
+        used_artifact_ids: frozenset[str],
+    ) -> None:
+        """Supersede READY segment audio that the finished pass no longer serves.
+
+        A whole pass touches every segment of the active plan, so any READY segment
+        artifact of this chapter that the pass neither rendered nor reused (edited
+        narration text, changed role preset, superseded plan revision) is retired while
+        reused audio keeps serving. Nothing is deleted: only the READY flag moves.
+        """
+        for artifact in self.session.scalars(
+            select(Artifact).where(
+                Artifact.chapter_id == chapter.id,
+                Artifact.kind == ArtifactKind.TTS_SEGMENT.value,
+                Artifact.status == ArtifactStatus.READY.value,
+            )
+        ):
+            if artifact.id not in used_artifact_ids:
+                artifact.status = ArtifactStatus.SUPERSEDED.value
+        self.session.flush()
+
+    def _commit(self, checkpoint: RenderCheckpoint | None) -> None:
+        if checkpoint is None:
+            self.session.commit()
+        else:
+            checkpoint.commit()
 
     def _master(
         self,
@@ -669,10 +887,18 @@ class SpeechWorkflow:
         self.session.flush()
 
     def _synthesis_cache_key(self, segment: SpeechSegment, preset: VoicePreset) -> str:
+        """Fingerprint one segment's audio.
+
+        The narration text itself is part of the key (not only its stored digest), so an
+        edited narration text invalidates exactly the segments it touched even when the
+        row was written without refreshing narration_sha256, while unchanged segments
+        keep their fingerprint and stay cache hits.
+        """
         capabilities = self._tts_for_preset(preset).capabilities()
         return _canonical_sha256(
             {
-                "narration": segment.narration_sha256,
+                "narration": segment.narration_text,
+                "narration_sha256": segment.narration_sha256,
                 "provider": str(capabilities.get("provider") or "unknown"),
                 "model": str(capabilities.get("model") or "unknown"),
                 "provider_version": str(capabilities.get("provider_version") or "unknown"),
@@ -892,6 +1118,28 @@ class SpeechWorkflow:
             raise ValueError("UNSAFE_ARTIFACT_PATH")
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
+
+
+@dataclass(frozen=True)
+class _RenderContext:
+    """Everything one render pass needs, resolved before any provider call."""
+
+    chapter: Chapter
+    plan: VoicePlan
+    run: TranslationRun
+    segments: tuple[SpeechSegment, ...]
+    preset_by_role_id: Mapping[str, VoicePreset]
+
+
+@dataclass(frozen=True)
+class _SegmentWrites:
+    """Per-segment outcome of a render pass, in plan order."""
+
+    rendered_segment_ids: tuple[str, ...]
+    reused_segment_ids: tuple[str, ...]
+    artifact_ids: tuple[str, ...]
+    audio_paths: tuple[Path, ...]
+    durations: tuple[int, ...]
 
 
 @dataclass(frozen=True)
