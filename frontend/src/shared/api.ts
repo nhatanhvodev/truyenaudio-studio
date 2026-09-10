@@ -20,9 +20,19 @@ export async function apiBlob(url: string, options: RequestOptions = {}): Promis
   const headers = new Headers(options.headers);
   let body = options.body;
 
-  if (body !== undefined && !(body instanceof FormData) && typeof body !== 'string') {
-    headers.set('Content-Type', 'application/json');
-    body = JSON.stringify(body);
+  // JSON bodies reach this helper in two shapes: a plain object, or an
+  // already-stringified payload (every call site passes JSON.stringify(...)).
+  // Both need Content-Type: application/json - without it the browser sends
+  // text/plain and FastAPI rejects the request with 422 INVALID_REQUEST.
+  // FormData is left untouched so the browser can add the multipart boundary.
+  if (body !== undefined && !(body instanceof FormData)) {
+    if (typeof body !== 'string') {
+      body = JSON.stringify(body);
+    }
+    // An explicit caller header wins (e.g. application/merge-patch+json).
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
   }
   if (stateChanging) {
     headers.set('X-CSRF-Token', await bootstrapCsrf());
@@ -48,9 +58,19 @@ async function request<T>(url: string, options: RequestOptions, retried: boolean
   const headers = new Headers(options.headers);
   let body = options.body;
 
-  if (body !== undefined && !(body instanceof FormData) && typeof body !== 'string') {
-    headers.set('Content-Type', 'application/json');
-    body = JSON.stringify(body);
+  // JSON bodies reach this helper in two shapes: a plain object, or an
+  // already-stringified payload (every call site passes JSON.stringify(...)).
+  // Both need Content-Type: application/json - without it the browser sends
+  // text/plain and FastAPI rejects the request with 422 INVALID_REQUEST.
+  // FormData is left untouched so the browser can add the multipart boundary.
+  if (body !== undefined && !(body instanceof FormData)) {
+    if (typeof body !== 'string') {
+      body = JSON.stringify(body);
+    }
+    // An explicit caller header wins (e.g. application/merge-patch+json).
+    if (!headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
   }
   if (stateChanging) {
     headers.set('X-CSRF-Token', await bootstrapCsrf());
