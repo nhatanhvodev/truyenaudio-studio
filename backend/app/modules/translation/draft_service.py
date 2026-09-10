@@ -51,3 +51,35 @@ def draft_snapshot(session: Session, job_id: str, after_offset: int | None = Non
     snapshot["truncated"] = stream.truncated
     snapshot["approvable"] = stream.is_approvable
     return snapshot
+
+
+def draft_frames(session: Session, job_id: str, *, max_frames: int = 1_000) -> tuple[dict[str, object], ...]:
+    """Stored draft frames as (offset_end, text) with a bounded frame count.
+
+    Used by the SSE feed so a reconnecting client can resume by offset id
+    without the provider being re-run.
+    """
+    job = session.get(Job, job_id)
+    if job is None:
+        raise ValueError("JOB_NOT_FOUND")
+    run = session.scalar(
+        select(TranslationRun)
+        .where(TranslationRun.chapter_id == job.chapter_id)
+        .order_by(TranslationRun.created_at.desc(), TranslationRun.id.desc())
+        .limit(1)
+    )
+    if run is None:
+        return ()
+    rows = session.execute(
+        select(TranslationSegment.target_text)
+        .join(SourceSegment, SourceSegment.id == TranslationSegment.source_segment_id)
+        .where(TranslationSegment.translation_run_id == run.id)
+        .order_by(SourceSegment.segment_index, TranslationSegment.id)
+    ).all()
+    frames: list[dict[str, object]] = []
+    offset = 0
+    for (target_text,) in rows:
+        text = target_text or ""
+        offset += len(text)
+        frames.append({"offset": offset, "text": text})
+    return tuple(frames[-max_frames:])

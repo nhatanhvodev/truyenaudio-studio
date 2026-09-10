@@ -7,11 +7,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
 
-from app.api.drafts import create_drafts_router
+from app.api.drafts import build_stream_events, create_drafts_router
 from app.contracts import ChapterState, ImportKind, JobKind, JobStatus, RightsStatus, RunStatus, SourceType
 from app.db.base import session_factory
 from app.db.models import Chapter, Job, Project, SourceRevision, SourceSegment, TranslationRun, TranslationSegment
-from app.modules.translation.draft_service import draft_snapshot
+from app.modules.translation.draft_service import draft_frames, draft_snapshot
 from app.settings.config import Settings
 
 
@@ -136,3 +136,46 @@ def test_draft_endpoint_returns_snapshot_and_404_for_unknown_job(migrated_engine
 
         missing = client.get("/api/jobs/018f0000-0000-7000-8000-000000000999/draft")
         assert missing.status_code == 404
+
+
+def test_draft_stream_events_emit_frames_then_terminal() -> None:
+    frames = ({"offset": 3, "text": "Một"}, {"offset": 6, "text": "Hai"})
+    snapshot = {"offset": 6, "text": "MộtHai", "status": "FINISHED", "approvable": False}
+
+    events = list(build_stream_events(frames, snapshot, None))
+
+    assert [event["event"] for event in events] == ["draft", "draft", "terminal"]
+    assert events[0]["id"] == "3"
+    assert '"text": "Hai"' in events[1]["data"]
+    assert '"status": "FINISHED"' in events[2]["data"]
+    assert '"approvable": false' in events[2]["data"]
+
+
+def test_draft_stream_events_resume_from_boundary_cursor() -> None:
+    frames = ({"offset": 3, "text": "Một"}, {"offset": 6, "text": "Hai"})
+    snapshot = {"offset": 6, "text": "MộtHai", "status": "FINISHED", "approvable": False}
+
+    events = list(build_stream_events(frames, snapshot, 3))
+
+    assert [event["event"] for event in events] == ["draft", "terminal"]
+    assert events[0]["id"] == "6"
+
+
+def test_draft_stream_events_send_gap_snapshot_for_unknown_cursor() -> None:
+    frames = ({"offset": 3, "text": "Một"}, {"offset": 6, "text": "Hai"})
+    snapshot = {"offset": 6, "text": "MộtHai", "status": "FINISHED", "approvable": False}
+
+    events = list(build_stream_events(frames, snapshot, 2))
+
+    assert events[0]["event"] == "gap"
+    assert '"text": "MộtHai"' in events[0]["data"]
+    assert events[-1]["event"] == "terminal"
+
+
+def test_draft_frames_are_ordered_by_segment_offset(db_session) -> None:
+    seed = _seed(db_session)
+
+    frames = draft_frames(db_session, seed["job_id"])
+
+    assert [frame["offset"] for frame in frames] == [3, 6]
+    assert [frame["text"] for frame in frames] == ["Một", "Hai"]
