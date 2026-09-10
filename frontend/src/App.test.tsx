@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => {
@@ -139,6 +139,52 @@ describe('App', () => {
     expect(
       fetchSpy.mock.calls.filter(([url]) => String(url).includes('/audio/approve')),
     ).toHaveLength(0);
+  });
+
+  it('mounts the A02 voice preview panel and keeps the chosen voice id', async () => {
+    window.history.replaceState(null, '', '/chapters/chapter-1/voice');
+    vi.stubGlobal('EventSource', undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/api/voices?locale=vi-VN') {
+          return jsonResponse({
+            previewText: 'Xin chào',
+            voices: [
+              { id: 'voice-1', name: 'Giọng 1', locale: 'vi-VN', available: true, active: true },
+              { id: 'voice-2', name: 'Giọng 2', locale: 'vi-VN', available: true, active: false },
+              {
+                id: 'voice-3',
+                name: 'Giọng 3',
+                locale: 'vi-VN',
+                available: false,
+                active: false,
+                activationHint: 'Cần cài model và license.',
+              },
+            ],
+          });
+        }
+        if (url === '/api/jobs/snapshot') {
+          return jsonResponse({ events: [] });
+        }
+        throw new Error(`unexpected url ${url}`);
+      }),
+    );
+    const { default: App } = await import('./App');
+
+    render(<App />);
+
+    expect(await screen.findByLabelText('Nghe thử và chọn giọng')).toBeVisible();
+    expect(screen.getByText('Preset voice-1')).toBeVisible();
+
+    const available = screen.getByText('Giọng 2').closest('li') as HTMLElement;
+    fireEvent.click(within(available).getByRole('button', { name: 'Chọn giọng này' }));
+
+    expect(screen.getByText('Preset voice-2')).toBeVisible();
+    // Giọng chưa cài model/license: chỉ hiện hướng dẫn, không có điều khiển giả.
+    const missing = screen.getByText('Giọng 3').closest('li') as HTMLElement;
+    expect(within(missing).queryByRole('button', { name: 'Nghe thử' })).toBeNull();
+    expect(within(missing).getByText('Cần cài model và license.')).toBeVisible();
   });
 
   it('requires guard IDs before calling the Qwen translation route', async () => {

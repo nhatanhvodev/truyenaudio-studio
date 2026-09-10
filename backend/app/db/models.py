@@ -774,3 +774,52 @@ class EventLog(CreatedAtMixin, Base):
     sequence_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     entity_type: Mapped[str] = mapped_column(String(16), nullable=False)
     entity_id: Mapped[str] = mapped_column(UUID, nullable=False)
+
+
+
+class VoicePreviewStatus(StrEnum):
+    """Lifecycle of a durable voice-preview job (A02)."""
+
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    READY = "READY"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class VoicePreviewTextKind(StrEnum):
+    """Whether the preview text is the shared sample or owner-typed custom text."""
+
+    SAMPLE = "SAMPLE"
+    CUSTOM = "CUSTOM"
+
+
+class VoicePreviewJob(MutableMixin, Base):
+    """Durable voice-preview job; one row per cache key so finished previews are reusable.
+
+    preset_id names a catalog preset (local manifest or built-in defaults) rather than a
+    voice_presets row, so it deliberately carries no foreign key.
+    """
+
+    __tablename__ = "voice_preview_jobs"
+    __table_args__ = (
+        UniqueConstraint("cache_key", name="uq_voice_preview_jobs_cache_key"),
+        enum_constraint("status", VoicePreviewStatus),
+        enum_constraint("text_kind", VoicePreviewTextKind),
+        hash_constraint("text_sha256"),
+        hash_constraint("cache_key"),
+        hash_constraint("audio_sha256"),
+        Index("ix_voice_preview_jobs_status_updated_at", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    preset_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    text_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    cache_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(64))
+    relative_path: Mapped[str | None] = mapped_column(Text)
+    audio_sha256: Mapped[str | None] = mapped_column(String(64))
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger)

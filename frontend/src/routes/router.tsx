@@ -19,6 +19,7 @@ import { WenkuImport } from '../features/import/WenkuImport';
 import { WenkuCrawlProvider } from '../features/import/WenkuCrawlContext';
 import { apiForm, apiJson } from '../shared/api';
 import ArtifactPlayer from '../features/audio/ArtifactPlayer';
+import VoicePreviewPanel, { type VoiceOption } from '../features/voices/VoicePreviewPanel';
 import ImportPreview, { type ImportCandidate } from '../features/import/ImportPreview';
 import MultiVoiceCloudDemo from '../features/voices/MultiVoiceCloudDemo';
 
@@ -88,8 +89,11 @@ type ExportBundle = {
 type VoiceCatalogPayload = {
   voices: {
     id: string;
+    name: string;
+    locale: string;
     available: boolean;
     active: boolean;
+    activationHint?: string;
   }[];
 };
 
@@ -919,6 +923,7 @@ function VoiceScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [presetId, setPresetId] = useState(fakeAudioEnabled ? fakePresetId : '');
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
 
   useEffect(() => {
     if (fakeAudioEnabled) {
@@ -930,6 +935,17 @@ function VoiceScreen() {
         if (cancelled) {
           return;
         }
+        // Nghe thử chỉ có nghĩa với giọng đã cài model + license; giọng chưa khả dụng
+        // vẫn hiện trong danh sách kèm hướng dẫn, nhưng không có nút điều khiển giả (A02).
+        setVoices(
+          payload.voices.map((voice) => ({
+            id: voice.id,
+            name: voice.name,
+            locale: voice.locale,
+            available: voice.available,
+            activationHint: voice.activationHint,
+          })),
+        );
         const selected = payload.voices.find((voice) => voice.active && voice.available)
           ?? payload.voices.find((voice) => voice.available);
         setPresetId(selected?.id ?? '');
@@ -973,6 +989,11 @@ function VoiceScreen() {
       <p style={styles.quote}>
         {presetId ? `Preset ${presetId}` : 'Chưa có giọng local đã verify để render.'}
       </p>
+      <VoicePreviewPanel
+        voices={voices}
+        selectedVoiceId={presetId || null}
+        onSelect={(voiceId) => setPresetId(voiceId)}
+      />
       <button type="button" onClick={() => void renderAudio()} disabled={busy || !presetId} style={styles.primaryButton}>
         Render một giọng
       </button>
