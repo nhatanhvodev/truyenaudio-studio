@@ -26,10 +26,15 @@ def test_defaults_are_explicit_and_unsafe_flags_default_off() -> None:
 
 
 def test_safe_flags_can_be_toggled_both_ways() -> None:
-    resolved = effective_flags({"workspace_tabs": False, "cloud_quality_mode": True})
+    # R01 narrowed this: a *safe* flag with an evidence_feature (cloud_quality_mode)
+    # can no longer be switched on by the API alone - see
+    # tests/settings/test_release_manifest.py. Flags without an evidence requirement
+    # still toggle both ways.
+    resolved = effective_flags({"workspace_tabs": False, "nested_project_settings": False})
 
     assert resolved["workspace_tabs"] is False
-    assert resolved["cloud_quality_mode"] is True
+    assert resolved["nested_project_settings"] is False
+    assert effective_flags({"workspace_tabs": True})["workspace_tabs"] is True
 
 
 def test_unsafe_flags_are_rejected_even_when_false_comparisons_enable_them() -> None:
