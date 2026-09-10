@@ -4,7 +4,7 @@ Status: PARTIAL — model catalog UI (filters/provenance/stale/unknown-price) sh
 
 ## Delivered (part 1)
 
-- `features/models/ModelCatalog.tsx`:
+- `features/modelCatalog/ModelCatalog.tsx` (thư mục đặt tên `modelCatalog` vì `.gitignore` của repo chặn pattern `models` dành cho model AI local):
   - fetches `/api/models` with the server maximum page size (`limit=100`, so ≤100 mounted rows) plus `cursor`, `pricing`, `contextMin`, `benchmarked`, and optional `profileId`/`providerId`;
   - filters UI (price all/free/paid, minimum context, benchmark-only) driving the query; "Tải thêm" appends the next page and disables at the end of the list;
   - honest labelling: pricing class `unknown` renders "Chưa rõ giá" (never "Miễn phí"), availability `unknown` renders "Chưa xác minh", a stale banner (`role="status"`) warns the snapshot may be old, provenance is the provider `sourceUrl` link, and a benchmark badge appears only when `benchmarkRef` exists (no reference => no badge);
@@ -18,6 +18,6 @@ Status: PARTIAL — model catalog UI (filters/provenance/stale/unknown-price) sh
 
 ## Validation (part 1)
 
-- `npx vitest run src/features/models` — 6 passed.
+- `npx vitest run src/features/modelCatalog` — 6 passed (plus 4 settings route tests in the same run set).
 - Full frontend suite: `npm test -- --run` — 59 passed / 18 files; production build `npm run build` PASS.
 - No backend/API change in this part.
