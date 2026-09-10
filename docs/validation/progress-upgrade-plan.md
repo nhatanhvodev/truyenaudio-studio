@@ -7,7 +7,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 
 ## Cổng nghiệm thu hiện tại
 
-- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **641 passed**, 1 warning
+- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **643 passed**, 1 warning
   (SQLAlchemy FK-cycle sort, có sẵn từ baseline), exit 0.
 - Frontend: `npm test -- --run` → **46 passed / 15 files**; `npm run build` (tsc + Vite) → PASS.
 - Ruff các file thay đổi: PASS. Không chạy cloud trả phí/live/model download trong toàn bộ quá trình.
@@ -37,7 +37,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 | J01 Worker/handler/checkpoint | PARTIAL | rounds 1–3: 4b7821b, 310a6ff, 07ea083 — plan seam, batch child plan, real TRANSLATE handler; còn REVIEW/REPAIR/SUMMARIZE handler + process-harness crash coverage |
 | J02 Retry/cancel/breaker persist | DONE | 82ef1da, f4f0265, cfdc065 — persisted breaker + half-open + dispatch gate + HTTP retry classification (429 Retry-After, 401 no loop, billingUnknown no resend); cancel p95 timing thuộc G-PERF (V01) |
 | J03 Projection/feed/diagnostics | DONE | EventLog append-only + cursor SSE + sync dedupe (d577b18, deb91f3); retention purge theo cutoff + rebuild parity (22b136c); emit cùng transaction tại job terminal & approve (round 3); structured log model/latency/cost redacted |
-| J04 Draft streaming resumable | PARTIAL | Round 1: `draft_stream` engine (offset/attempt dedup, gap snapshot, reconnect snapshot, terminal/cancel race, bounded frames/chars, segmentReady, never-approvable) + 7 test; còn: wire provider delta + SSE endpoint |
+| J04 Draft streaming resumable | PARTIAL | R1: `draft_stream` engine + 7 test; R2: `draft_service` rebuild từ segment đã lưu + `/api/jobs/{id}/draft` snapshot (reconnect không chạy lại provider) + 2 test; còn: live provider delta SSE (adapters Phase 1 request/response) |
 | U01 Design system/tokens/primitives | DONE (code) | 84341ae, 5f25a46, 10c0037, 4d4aa90, 53d4377; 24 shared/ui tests; **visual/zoom/screen-reader audit NOT_RUN** (cần browser harness) |
 | U02–U10 Workspace/settings/editor… | NOT_STARTED | — |
 | A01 VieNeu manifest/bridge/catalog | DONE (code) | 89cc0d1 (26 local-tts/speech tests); **live probe/playback NOT_RUN** (chưa cài model/license) |

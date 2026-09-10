@@ -1,6 +1,12 @@
-# Task 23 / J04 report — round 1 (PARTIAL)
+# Task 23 / J04 report — rounds 1–2 (PARTIAL)
 
-Status: PARTIAL — resumable bounded draft stream engine + tests done; provider-delta/SSE wiring remains.
+Status: PARTIAL — stream engine + persisted-draft snapshot endpoint done; live provider-delta SSE remains (Phase 1 adapters are request/response).
+
+## Delivered (round 2)
+
+- `modules/translation/draft_service.py`: `load_draft_stream(session, job_id)` rebuilds the draft stream from the chapter run's stored segments as `segmentReady` frames (ordinal order, finished unless the run is still RUNNING); `draft_snapshot(session, job_id, after_offset)` returns offset/text/`resync`/status/truncated/`approvable=False`.
+- `/api/jobs/{job_id}/draft?afterOffset=N` router (new `api/drafts.py`, registered in the app) returning the reconnect snapshot; unknown job -> 404.
+- Tests (2): snapshot replays stored segments with correct offset/resync/never-approvable; endpoint returns the snapshot and 404s for an unknown job. Combined with round 1: 9 draft tests.
 
 ## Delivered (round 1)
 
@@ -15,11 +21,10 @@ Status: PARTIAL — resumable bounded draft stream engine + tests done; provider
 
 ## Remaining for J04 acceptance (next rounds)
 
-- Wire the stream to the provider delta path and the SSE endpoint (job-scoped draft events with offset/attempt, gap snapshot delivery, terminal flush and cancel propagation) — Phase 1 adapters are request/response (qwen-mt-flash incremental streaming is not implemented in the adapter), so end-to-end streaming evidence is pending that work; partial drafts keep working via `segmentReady`/progress events.
+- Wire live provider deltas to job-scoped SSE (offset/attempt events, gap snapshot delivery, terminal flush and cancel propagation). Phase 1 adapters are request/response (qwen-mt-flash incremental streaming is not implemented in the adapter), so end-to-end delta evidence is pending that work; non-stream drafts already work through `segmentReady` + the snapshot endpoint.
 
-## Validation (round 1)
+## Validation (rounds 1–2)
 
-- `backend/tests/jobs/test_draft_stream.py -q` — 7 passed.
-- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 641 passed, 1 warning (pre-existing SQLAlchemy FK-cycle sort warning), exit 0.
-- Changed-file Ruff passed; no provider/cloud call added.
-- No provider/cloud call added.
+- `backend/tests/jobs/test_draft_stream.py backend/tests/jobs/test_draft_service.py -q` — 9 passed.
+- Full backend suite (repo root): `D:\truyenaudio-studio\.venv\Scripts\python.exe -m pytest backend/tests -q` — 643 passed, 1 warning (pre-existing SQLAlchemy FK-cycle sort warning), exit 0.
+- Changed-file Ruff passed (main.py carries only the repo-wide pre-existing E402 pattern); no provider/cloud call added.
