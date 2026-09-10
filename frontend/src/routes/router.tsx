@@ -1,10 +1,11 @@
-import { createBrowserRouter, Link, Navigate, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { createBrowserRouter, Link, Navigate, Outlet, useLocation, useMatch, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { BatchQueue } from '../features/batch/BatchQueue';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
 import { GlobalNav } from '../features/workspace/GlobalNav';
+import { ProjectNav } from '../features/workspace/ProjectNav';
 import { WorkspaceTabs } from '../features/workspace/WorkspaceTabs';
 import { describeRoute, projectIdForRoute } from '../features/workspace/workspaceRoutes';
 import { ExportGate } from '../features/exports/ExportGate';
@@ -121,6 +122,10 @@ export const router = createBrowserRouter([
 function Shell() {
   const location = useLocation();
   const navigate = useNavigate();
+  // The project id comes from the URL, so deep links and Back always stay inside
+  // the same project (U02); the shell only needs the match, not the child route.
+  const projectMatch = useMatch('/projects/:projectId/*') ?? useMatch('/projects/:projectId');
+  const projectId = projectMatch?.params.projectId ?? null;
   const [visited, setVisited] = useState<string[]>([location.pathname]);
 
   useEffect(() => {
@@ -142,6 +147,7 @@ function Shell() {
           <Link to="/jobs" style={styles.navLink}>Jobs</Link>
           <Link to="/diagnostics" style={styles.navLink}>Diagnostics</Link>
         </nav>
+        {projectId ? <ProjectNav projectId={projectId} /> : null}
         <WorkspaceTabs
           projectId={layoutProjectId}
           openTabs={openTabs}

@@ -4,8 +4,10 @@ import { CharacterManager } from '../characters/CharacterManager';
 import { Diagnostics } from '../diagnostics/Diagnostics';
 import { GlossaryManager } from '../glossary/GlossaryManager';
 import { MemoryManager } from '../memory/MemoryManager';
-import { SettingsGroupPending } from './SettingsRoutes';
 import { StyleManager } from './StyleManager';
+import { StorageSettings } from './StorageSettings';
+import { AppearanceSettings } from './AppearanceSettings';
+import VoiceBrowser from '../voices/VoiceBrowser';
 
 export const PROJECT_SETTINGS_GROUPS = [
   { slug: 'translation', label: 'Translation' },
@@ -70,6 +72,19 @@ function ProjectTranslationPanel() {
   );
 }
 
+function ProjectTtsPanel() {
+  return (
+    <section aria-label="TTS dự án" style={{ display: 'grid', gap: 12 }}>
+      <h2 style={{ margin: 0, fontSize: 15 }}>TTS</h2>
+      <p style={{ margin: 0, color: '#4b5563', fontSize: 13 }}>
+        Catalog giọng đọc cục bộ. Giọng chỉ khả dụng khi model + license đã được cài trên máy; nếu chưa, danh
+        sách hiển thị trạng thái chưa khả dụng và không gọi mạng.
+      </p>
+      <VoiceBrowser />
+    </section>
+  );
+}
+
 export const projectSettingsRoutes: RouteObject[] = [
   {
     path: 'projects/:projectId/settings',
@@ -77,33 +92,9 @@ export const projectSettingsRoutes: RouteObject[] = [
     children: [
       { index: true, element: <Navigate to="translation" replace /> },
       { path: 'translation', element: <ProjectTranslationPanel /> },
-      {
-        path: 'tts',
-        element: (
-          <SettingsGroupPending
-            title="TTS"
-            note="Engine/giọng đọc và preview sẽ nối ở A02 (catalog giọng local đã có)."
-          />
-        ),
-      },
-      {
-        path: 'storage',
-        element: (
-          <SettingsGroupPending
-            title="Storage"
-            note="Dung lượng/backup/restore/retention sẽ nối ở U10 (API /api/storage đã có)."
-          />
-        ),
-      },
-      {
-        path: 'appearance',
-        element: (
-          <SettingsGroupPending
-            title="Appearance"
-            note="Theme/font/mật độ hiển thị sẽ nối ở U10 trên token của U01."
-          />
-        ),
-      },
+      { path: 'tts', element: <ProjectTtsPanel /> },
+      { path: 'storage', element: <StorageSettings /> },
+      { path: 'appearance', element: <AppearanceSettings /> },
       { path: 'advanced', element: <Diagnostics /> },
     ],
   },
