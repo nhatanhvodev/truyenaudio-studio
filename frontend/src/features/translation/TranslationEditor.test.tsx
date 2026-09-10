@@ -105,6 +105,40 @@ describe('TranslationEditor', () => {
     expect(screen.getByLabelText('Ban dich source-1')).toHaveValue('Ban dang sua');
   });
 
+  it('restores the saved draft over the run text when the payload exposes the source revision', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/api/chapters/chapter-1/translation') {
+          return jsonResponse({
+            sourceRevisionId: 'rev-1',
+            run: { id: 'run-1', sha256: 'a'.repeat(64), status: 'REVIEW' },
+            segments: [
+              {
+                id: 'ts-1',
+                sourceSegmentId: 'source-1',
+                sourceText: '林动',
+                targetText: 'Lam Dong',
+              },
+            ],
+            issues: [],
+          });
+        }
+        if (url.startsWith('/api/chapters/chapter-1/draft?')) {
+          return jsonResponse({
+            draft: { revision: 2, content: { 'source-1': 'Nhap da luu' } },
+          });
+        }
+        throw new Error(`unexpected url ${url}`);
+      }),
+    );
+
+    render(<TranslationEditor chapterId="chapter-1" />);
+
+    expect(await screen.findByText('Nháp: bản 2')).toBeVisible();
+    await waitFor(() => expect(screen.getByLabelText('Ban dich source-1')).toHaveValue('Nhap da luu'));
+  });
+
   it('filters issues by severity', async () => {
     vi.stubGlobal(
       'fetch',
@@ -154,9 +188,11 @@ describe('TranslationEditor', () => {
 });
 
 function jsonResponse(body: unknown): Response {
+  const text = JSON.stringify(body);
   return {
     ok: true,
     status: 200,
+    text: async () => text,
     json: async () => body,
   } as Response;
 }

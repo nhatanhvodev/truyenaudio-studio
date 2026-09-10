@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import DraftControls from './DraftControls';
+
 type Run = {
   id: string;
   sha256: string;
@@ -27,6 +29,7 @@ type TranslationPayload = {
   run: Run;
   segments: Segment[];
   issues: Issue[];
+  sourceRevisionId?: string | null;
 };
 
 type Props = {
@@ -132,6 +135,15 @@ export default function TranslationEditor({ chapterId }: Props) {
 
       {message ? <p role="status" style={styles.success}>{message}</p> : null}
       {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+
+      <DraftControls
+        chapterId={chapterId}
+        baseRevisionId={data?.sourceRevisionId ?? null}
+        content={drafts}
+        onRestore={(restored) =>
+          setDrafts((current) => ({ ...current, ...restored }))
+        }
+      />
 
       <div style={styles.layout}>
         <div style={styles.segmentList}>
