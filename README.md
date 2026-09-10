@@ -4,6 +4,60 @@ Local web studio để nhập truyện/tiểu thuyết tiếng Trung, dịch san
 
 Tool này chạy cá nhân trên máy local, mặc định chỉ bind `127.0.0.1:8765`. Không thiết kế để public internet.
 
+> **Trạng thái phát hành Phase 1: `fixture-verified` — KHÔNG phải production-validated.**
+> Toàn bộ đường import → dịch → duyệt → render → export chạy được **offline, không cần cloud**.
+> Mọi tích hợp cloud/model thật **chưa được kiểm định** và đang **bị tắt** (máy tham chiếu không có
+> credential/consent/budget, không có model VieNeu + license, không có FFmpeg chạy được).
+> Xem [trạng thái Phase 1](docs/validation/phase1.md) và [release manifest](docs/validation/release-manifest.md)
+> trước khi tin bất kỳ tính năng cloud/chất lượng nào.
+
+## Bắt đầu nhanh — import → export không cần cloud
+
+Đây là đường đã được kiểm chứng end-to-end (walkthrough thật trên data root tạm).
+
+```powershell
+cd D:\truyenaudio-studio
+
+# 1. Bật fake audio để chạy trọn luồng mà không cần model TTS
+$env:STUDIO_FAKE_AUDIO = "1"
+$env:VITE_STUDIO_FAKE_AUDIO = "1"
+cd frontend; npm run build; cd ..
+
+# 2. Khởi động (preflight → migrate → API + worker → mở browser)
+.\run-studio.bat
+```
+
+Sau đó trong UI:
+
+1. **Dự án** → tạo project (chọn loại nguồn + trạng thái quyền).
+2. **Nhập nội dung** → paste / TXT / EPUB / DOCX / thư mục → xem preview (cảnh báo trùng số chương hiện theo từng file) → xác nhận.
+3. **Dịch & Hiệu đính** → nút dịch **convert nội bộ** (offline, không cloud) → duyệt chuẩn.
+4. **Giọng đọc** → chọn giọng → *Render một giọng*.
+5. **Audio** → nghe thử bằng player → *Phê duyệt audio*.
+6. **Xuất bản** → tạo archive riêng tư hoặc bundle publication → tải zip về.
+7. **Upload file zip đó lên app chính bằng tay** — studio không bao giờ tự upload (C08).
+
+### Kiểm chứng bằng API (không cần UI)
+
+```powershell
+$base = 'http://127.0.0.1:8765'
+$csrf = (Invoke-RestMethod "$base/api/security/bootstrap").csrfToken
+$H = @{ 'X-CSRF-Token' = $csrf; Origin = $base }
+$p = Invoke-RestMethod -Method Post -Uri "$base/api/projects" -Headers $H -ContentType 'application/json' `
+  -Body '{"title":"Walk","slug":"walk-1","source_type":"SELF_AUTHORED","rights_status":"CLEARED"}'
+$imp = Invoke-RestMethod -Method Post -Uri "$base/api/projects/$($p.id)/chapters/import" -Headers $H `
+  -ContentType 'application/json' -Body '{"kind":"PASTE","items":[{"ordinal":1,"title":"Chuong 1","text":"Noi dung"}]}'
+Invoke-RestMethod "$base/api/projects/$($p.id)/chapters?limit=25&q=Chuong"   # lọc chạy ở server
+```
+
+> Yêu cầu bảo mật: `Host` phải là `127.0.0.1:8765` với request thay đổi trạng thái — dùng đúng cổng này.
+
+## Vận hành, backup, rollback, xử lý sự cố
+
+Xem [hướng dẫn vận hành](docs/operations/operations-guide.md): credential/keyring, cloud consent + budget,
+resume/`BILLING_UNKNOWN` (không bao giờ tự gửi lại), backup/restore/retention/rollback, export + upload thủ công,
+và troubleshooting (preflight fail, `MIGRATION_INCOMPLETE`, thiếu FFmpeg, DB cũ hơn head).
+
 ## Tool này làm gì?
 
 - Tạo project truyện và nhập chương trực tiếp từ **Wenku (QQ Reading)** qua URL/ID hoặc Bảng xếp hạng.
