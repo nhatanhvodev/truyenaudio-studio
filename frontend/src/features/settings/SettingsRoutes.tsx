@@ -3,7 +3,9 @@ import { Navigate, type RouteObject } from 'react-router-dom';
 import { Diagnostics } from '../diagnostics/Diagnostics';
 import { ModelCatalog } from '../modelCatalog/ModelCatalog';
 import { ProfileEditor } from '../providers/ProfileEditor';
+import { ProjectScopedPanel } from './ProjectScopedPanel';
 import { SettingsLayout } from './SettingsLayout';
+import { StyleManager } from './StyleManager';
 
 export interface SettingsGroupPageProps {
   title: string;
@@ -27,9 +29,10 @@ function ProvidersSettings() {
 
 function TranslationSettings() {
   return (
-    <SettingsGroupPending
+    <ProjectScopedPanel
       title="Translation"
-      note="Ngôn ngữ, thể loại, style và quality sẽ nối ở U08–U09 (style profile đã có API backend)."
+      note="Style/ngôn ngữ/thể loại là cấu hình theo project; quality và quote nằm ở màn dịch của chương."
+      render={(projectId) => <StyleManager projectId={projectId} />}
     />
   );
 }
