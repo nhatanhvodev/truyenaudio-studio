@@ -60,6 +60,87 @@ describe('App', () => {
     expect(screen.getByRole('button', { name: 'Phê duyệt audio' })).toBeVisible();
   });
 
+  it('phát master bằng URL Range thay vì nạp Blob toàn bộ file (A05)', async () => {
+    window.history.replaceState(null, '', '/chapters/chapter-1/audio');
+    vi.stubGlobal('EventSource', undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/api/chapters/chapter-1/audio/status') {
+          return jsonResponse({
+            chapterId: 'chapter-1',
+            masterArtifactId: 'master-1',
+            masterSha256: 'abc123abc123abc123abc123abc123abc123abc123abc123abc123abc123abcd',
+            approved: false,
+          });
+        }
+        if (url === '/api/jobs/snapshot') {
+          return jsonResponse({ events: [] });
+        }
+        throw new Error(`unexpected url ${url}`);
+      }),
+    );
+    const { default: App } = await import('./App');
+
+    render(<App />);
+
+    const audio = (await screen.findByTestId('master-audio')) as HTMLAudioElement;
+    expect(audio.getAttribute('src')).toBe('/api/chapters/chapter-1/audio/artifacts/master-1/content');
+    expect(audio.getAttribute('src')?.startsWith('blob:')).toBe(false);
+    expect(audio.getAttribute('preload')).toBe('metadata');
+    expect(screen.getByRole('region', { name: 'Nghe master' })).toBeVisible();
+  });
+
+  it('chặn phê duyệt và cảnh báo khi master trên máy chủ khác bản đang nghe (A05)', async () => {
+    // React Router giữ location.state trong khoá "usr" của history.state.
+    window.history.replaceState(
+      {
+        usr: {
+          rendered: {
+            masterArtifactId: 'master-old',
+            masterSha256: 'old'.padEnd(64, '0'),
+            reusedSegmentIds: [],
+            renderedSegmentIds: [],
+          },
+        },
+        key: 'a05-stale',
+        idx: 0,
+      },
+      '',
+      '/chapters/chapter-1/audio',
+    );
+    vi.stubGlobal('EventSource', undefined);
+    const fetchSpy = vi.fn(async (url: string) => {
+      if (url === '/api/chapters/chapter-1/audio/status') {
+        return jsonResponse({
+          chapterId: 'chapter-1',
+          masterArtifactId: 'master-new',
+          masterSha256: 'new'.padEnd(64, '0'),
+          approved: false,
+        });
+      }
+      if (url === '/api/jobs/snapshot') {
+        return jsonResponse({ events: [] });
+      }
+      throw new Error(`unexpected url ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    const { default: App } = await import('./App');
+
+    render(<App />);
+
+    expect(await screen.findByText(/Bản master trên máy chủ đã thay đổi/)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Phê duyệt audio' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nghe bản mới' }));
+
+    expect(screen.getByRole('button', { name: 'Phê duyệt audio' })).toBeEnabled();
+    expect(screen.queryByText(/Bản master trên máy chủ đã thay đổi/)).toBeNull();
+    expect(
+      fetchSpy.mock.calls.filter(([url]) => String(url).includes('/audio/approve')),
+    ).toHaveLength(0);
+  });
+
   it('requires guard IDs before calling the Qwen translation route', async () => {
     window.history.replaceState(null, '', '/chapters/chapter-1/translation');
     vi.stubGlobal('EventSource', undefined);

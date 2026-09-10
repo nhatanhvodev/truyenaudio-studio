@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 import os
+from pathlib import Path
+import re
+from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.contracts import ArtifactKind, ArtifactStatus
 from app.db.base import create_engine_for, session_factory
 from app.db.models import Artifact, Chapter
+from app.modules.artifacts.store import ArtifactStore, UnsafeArtifactPath
 from app.modules.speech.workflow import (
     AudioApprovalBlocked,
     AudioApprovalConflict,
@@ -22,6 +28,21 @@ from app.modules.speech.workflow import (
 )
 from app.providers.fake import FakeMp3AudioProcessor, FakeTts
 from app.settings.config import Settings
+
+
+RANGE_UNIT = "bytes"
+ARTIFACT_CACHE_CONTROL = "private, max-age=31536000, immutable"
+ARTIFACT_CHUNK_BYTES = 1024 * 1024
+SINGLE_RANGE_PATTERN = re.compile(r"^(?P<start>\d*)-(?P<end>\d*)$")
+
+
+@dataclass(frozen=True)
+class _RangeDecision:
+    """Outcome of interpreting a single Range header against the representation size."""
+
+    kind: Literal["full", "partial", "unsatisfiable"]
+    start: int = 0
+    end: int = 0
 
 
 class ConfigureSingleRequest(BaseModel):
@@ -161,11 +182,209 @@ def create_audio_router(settings: Settings | None = None) -> APIRouter:
         finally:
             engine.dispose()
 
+    def artifact_session_dependency() -> Iterator[Session]:
+        engine = create_engine_for(active_settings.data_root / "studio.sqlite3")
+        factory = session_factory(engine)
+        try:
+            with factory() as session:
+                yield session
+        finally:
+            engine.dispose()
+
+    @router.api_route(
+        "/artifacts/{artifact_id}/content",
+        methods=["GET", "HEAD"],
+        name="audio_artifact_content",
+    )
+    def artifact_content(
+        chapter_id: str,
+        artifact_id: str,
+        request: Request,
+        range_header: str | None = Header(default=None, alias="Range"),
+        if_none_match: str | None = Header(default=None, alias="If-None-Match"),
+        if_range: str | None = Header(default=None, alias="If-Range"),
+        session: Session = Depends(artifact_session_dependency),
+    ) -> Response:
+        """Serve the stored bytes of one READY artifact with single-range support.
+
+        Decisions pinned by the A05 contract:
+
+        * The artifact must exist, belong to this chapter, be READY, and its file must exist
+          under the artifact root after confinement. Anything else answers 404, never 500.
+        * A multi-range request (for example bytes=0-1,4-5) is answered with the whole
+          representation and status 200: multipart/byteranges is deliberately not implemented,
+          so a player re-requests a single range instead of parsing a multipart body.
+        * If-None-Match is evaluated before Range for both GET and HEAD, so a matching ETag
+          answers 304 even when a Range header is present.
+        * If-Range that does not match the stored digest makes the server ignore Range and send
+          the whole file; no Last-Modified validator is exposed (the file is immutable).
+        * A malformed, non-bytes, or unsatisfiable Range answers 416 with Content-Range */total.
+        """
+        artifact = session.get(Artifact, artifact_id)
+        if (
+            artifact is None
+            or artifact.chapter_id != chapter_id
+            or artifact.status != ArtifactStatus.READY.value
+        ):
+            raise HTTPException(status_code=404, detail="ARTIFACT_NOT_FOUND")
+
+        store = ArtifactStore(active_settings.data_root / "artifacts")
+        try:
+            artifact_path = store.resolve(artifact.relative_path)
+        except UnsafeArtifactPath as exc:
+            raise HTTPException(status_code=404, detail="ARTIFACT_NOT_FOUND") from exc
+        if not artifact_path.is_file():
+            raise HTTPException(status_code=404, detail="ARTIFACT_NOT_FOUND")
+
+        total = artifact_path.stat().st_size
+        etag = f'"{artifact.sha256}"'
+        base_headers = {
+            "Accept-Ranges": RANGE_UNIT,
+            "Content-Type": artifact.mime_type,
+            "ETag": etag,
+            "Cache-Control": ARTIFACT_CACHE_CONTROL,
+        }
+
+        if _etag_matches(if_none_match, artifact.sha256):
+            return Response(
+                status_code=304,
+                headers={
+                    "Accept-Ranges": RANGE_UNIT,
+                    "ETag": etag,
+                    "Cache-Control": ARTIFACT_CACHE_CONTROL,
+                },
+            )
+
+        effective_range = range_header
+        if range_header is not None and not _if_range_matches(if_range, artifact.sha256):
+            effective_range = None
+        decision = _decide_range(effective_range, total)
+
+        if decision.kind == "unsatisfiable":
+            return Response(
+                status_code=416,
+                headers={
+                    **base_headers,
+                    "Content-Range": f"bytes */{total}",
+                    "Content-Length": "0",
+                },
+            )
+
+        start = 0
+        content_length = total
+        content_range: str | None = None
+        if decision.kind == "partial":
+            start = decision.start
+            content_length = decision.end - decision.start + 1
+            content_range = f"bytes {start}-{decision.end}/{total}"
+        status_code = 206 if decision.kind == "partial" else 200
+
+        headers = {**base_headers, "Content-Length": str(content_length)}
+        if content_range is not None:
+            headers["Content-Range"] = content_range
+        if request.method == "HEAD":
+            return Response(status_code=status_code, headers=headers)
+        return StreamingResponse(
+            _iter_file_slice(artifact_path, start, content_length),
+            status_code=status_code,
+            headers=headers,
+        )
+
     return router
 
 
+def _decide_range(range_header: str | None, total: int) -> _RangeDecision:
+    """Interpret a HTTP Range header for symmetric single-range serving.
+
+    Returns a partial range, a full-representation decision (no Range, or a multi-range
+    request that this server deliberately does not answer with multipart/byteranges), or an
+    unsatisfiable decision that the route maps to 416.
+    """
+    if range_header is None or not range_header.strip():
+        return _RangeDecision("full")
+
+    unit, separator, specification = range_header.strip().partition("=")
+    if not separator or unit.strip().lower() != RANGE_UNIT:
+        return _RangeDecision("unsatisfiable")
+
+    specifications = [part.strip() for part in specification.split(",")]
+    if len(specifications) != 1:
+        return _RangeDecision("full")
+
+    match = SINGLE_RANGE_PATTERN.match(specifications[0])
+    if match is None:
+        return _RangeDecision("unsatisfiable")
+
+    raw_start = match.group("start")
+    raw_end = match.group("end")
+    if not raw_start and not raw_end:
+        return _RangeDecision("unsatisfiable")
+
+    if not raw_start:
+        suffix_length = int(raw_end)
+        if suffix_length == 0 or total == 0:
+            return _RangeDecision("unsatisfiable")
+        return _RangeDecision("partial", max(0, total - suffix_length), total - 1)
+
+    start = int(raw_start)
+    if start >= total:
+        return _RangeDecision("unsatisfiable")
+    end = total - 1 if not raw_end else min(int(raw_end), total - 1)
+    if end < start:
+        return _RangeDecision("unsatisfiable")
+    return _RangeDecision("partial", start, end)
+
+
+def _etag_matches(if_none_match: str | None, sha256: str) -> bool:
+    """Return True when an If-None-Match validator matches the stored digest."""
+    if if_none_match is None:
+        return False
+    for candidate in if_none_match.split(","):
+        value = candidate.strip()
+        if value == "*":
+            return True
+        if _etag_value(value) == sha256:
+            return True
+    return False
+
+
+def _if_range_matches(if_range: str | None, sha256: str) -> bool:
+    """Return True when the If-Range validator still describes the stored bytes."""
+    if if_range is None:
+        return True
+    return _etag_value(if_range) == sha256
+
+
+def _etag_value(validator: str) -> str:
+    """Strip weak marker and quotes so ETag and If-Range/If-None-Match compare on the digest."""
+    value = validator.strip()
+    if value[:2].upper() == "W/":
+        value = value[2:].strip()
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        value = value[1:-1]
+    return value
+
+
+def _iter_file_slice(path: Path, start: int, length: int) -> Iterator[bytes]:
+    """Yield at most length bytes from path starting at start, in bounded chunks."""
+    remaining = length
+    with path.open("rb") as file:
+        file.seek(start)
+        while remaining > 0:
+            chunk = file.read(min(ARTIFACT_CHUNK_BYTES, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
 def _camel_payload(value: object) -> dict[str, object]:
-    return _camelize(_convert(asdict(value)))
+    if not is_dataclass(value) or isinstance(value, type):
+        raise TypeError("payload must be a dataclass instance")
+    camelized = _camelize(_convert(asdict(value)))
+    if not isinstance(camelized, dict):
+        raise TypeError("payload must serialize to an object")
+    return {str(key): item for key, item in camelized.items()}
 
 
 def _convert(value: object) -> object:
