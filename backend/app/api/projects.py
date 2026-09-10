@@ -213,12 +213,32 @@ def create_projects_router(settings: Settings | None = None, *, cursor_secret: s
         project_id: str,
         limit: int = 25,
         cursor: str | None = None,
+        q: str | None = None,
+        status: str | None = None,
+        filter: str | None = None,
         queries: ChapterQueries = Depends(queries_dependency),
     ) -> dict[str, object]:
+        """Chapter page for one project, filtered server-side (V02 task 64).
+
+        `q` searches `source_title`/`translated_title` (the same convention as
+        `GET /api/projects`); `filter` is an accepted alias, with `q` winning when
+        both are sent. `status` keeps a single :class:`ChapterState` value.
+        Both filters run in SQL before paging, so `total` and the cursor describe
+        the **filtered** set. Sending no filter at all keeps the previous
+        response untouched.
+        """
         try:
-            page = queries.list_chapters(project_id, limit=limit, cursor=cursor)
+            page = queries.list_chapters(
+                project_id,
+                limit=limit,
+                cursor=cursor,
+                query=q if q is not None else filter,
+                state=status,
+            )
         except InvalidCursor as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="CHAPTER_STATUS_INVALID") from exc
         return _camelize(_dataclass_dict(page))
 
     @router.post("/chapters/{chapter_id}/transition")
