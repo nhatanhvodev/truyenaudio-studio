@@ -36,7 +36,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 | C06 QA/edit/approve/repair + segment coverage guard | DONE | 7de976e |
 | J01 Worker/handler/checkpoint | PARTIAL | rounds 1–3: 4b7821b, 310a6ff, 07ea083 — plan seam, batch child plan, real TRANSLATE handler; còn REVIEW/REPAIR/SUMMARIZE handler + process-harness crash coverage |
 | J02 Retry/cancel/breaker persist | DONE | 82ef1da, f4f0265, cfdc065 — persisted breaker + half-open + dispatch gate + HTTP retry classification (429 Retry-After, 401 no loop, billingUnknown no resend); cancel p95 timing thuộc G-PERF (V01) |
-| J03 Projection/feed/diagnostics | NOT_STARTED | (nền event_log/events có sẵn từ base; chưa xác minh acceptance) — deps J02 |
+| J03 Projection/feed/diagnostics | PARTIAL | Hạ tầng hiện hữu: EventLog append-only + cursor stream (`/api/events`), `_sync_event_log` backfill dedupe (d577b18, deb91f3), diagnostics redacted; còn thiếu: retention policy/audit purge, projection rebuild parity tests, emit theo transaction tại các writer chính |
 | J04 Draft streaming resumable | NOT_STARTED | deps J03 |
 | U01 Design system/tokens/primitives | DONE (code) | 84341ae, 5f25a46, 10c0037, 4d4aa90, 53d4377; 24 shared/ui tests; **visual/zoom/screen-reader audit NOT_RUN** (cần browser harness) |
 | U02–U10 Workspace/settings/editor… | NOT_STARTED | — |
