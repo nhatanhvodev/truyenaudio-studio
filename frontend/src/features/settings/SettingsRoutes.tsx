@@ -1,7 +1,7 @@
 import { Navigate, type RouteObject } from 'react-router-dom';
 
 import { Diagnostics } from '../diagnostics/Diagnostics';
-import { ModelCatalog } from '../models/ModelCatalog';
+import { ModelCatalog } from '../modelCatalog/ModelCatalog';
 import { SettingsLayout } from './SettingsLayout';
 
 export interface SettingsGroupPageProps {
