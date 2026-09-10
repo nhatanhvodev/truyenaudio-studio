@@ -28,6 +28,8 @@ export type WorkspaceLayoutState = {
   migrated: boolean;
   error: string;
   conflict: boolean;
+  /** Increments whenever a layout is adopted from the server or a reload. */
+  generation: number;
   dispatch: (action: LayoutAction) => LayoutResult;
   save: () => Promise<boolean>;
   reloadServer: () => Promise<void>;
@@ -60,6 +62,7 @@ export function useWorkspaceLayout({
   const [migrated, setMigrated] = useState(false);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState(false);
+  const [generation, setGeneration] = useState(0);
 
   const revisionRef = useRef<number | null>(null);
   revisionRef.current = revision;
@@ -76,6 +79,7 @@ export function useWorkspaceLayout({
     setMigrated(payload.migrated || restored.migrated);
     setDirty(false);
     setConflict(false);
+    setGeneration((current) => current + 1);
     return restored.layout;
   }, [projectId]);
 
@@ -170,6 +174,7 @@ export function useWorkspaceLayout({
     migrated,
     error,
     conflict,
+    generation,
     dispatch,
     save,
     reloadServer,

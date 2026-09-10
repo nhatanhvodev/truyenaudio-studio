@@ -5,6 +5,8 @@ import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
 import { GlobalNav } from '../features/workspace/GlobalNav';
+import { WorkspaceTabs } from '../features/workspace/WorkspaceTabs';
+import { describeRoute, projectIdForRoute } from '../features/workspace/workspaceRoutes';
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
@@ -112,6 +114,20 @@ export const router = createBrowserRouter([
 ]);
 
 function Shell() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [visited, setVisited] = useState<string[]>([location.pathname]);
+
+  useEffect(() => {
+    setVisited((current) =>
+      current.includes(location.pathname) ? current : [...current, location.pathname],
+    );
+  }, [location.pathname]);
+
+  const openTabs = visited.map(describeRoute);
+  const currentTabId = openTabs.some((tab) => tab.id === location.pathname) ? location.pathname : null;
+  const layoutProjectId = projectIdForRoute(location.pathname) ?? 'local';
+
   return (
     <WenkuCrawlProvider>
       <main style={styles.shell}>
@@ -121,6 +137,12 @@ function Shell() {
           <Link to="/jobs" style={styles.navLink}>Jobs</Link>
           <Link to="/diagnostics" style={styles.navLink}>Diagnostics</Link>
         </nav>
+        <WorkspaceTabs
+          projectId={layoutProjectId}
+          openTabs={openTabs}
+          currentTabId={currentTabId}
+          onNavigate={(to) => navigate(to)}
+        />
         <Outlet />
         <JobProgress />
       </main>

@@ -178,6 +178,39 @@ describe('workspace layout reducer (U05)', () => {
     expect(mixed.error).toBe('PROJECT_MISMATCH');
   });
 
+  it('syncs route tabs: opens only the missing ones and activates the current route', () => {
+    let layout = openMany(2);
+    layout = reduce(layout, { type: 'markDirty', projectId: PROJECT, tabId: 't0' }).layout;
+
+    const synced = reduce(layout, {
+      type: 'sync',
+      projectId: PROJECT,
+      tabs: [tab('t0'), tab('t1'), tab('route')],
+      activeTabId: 'route',
+    });
+
+    // Known tabs are untouched (dirty state preserved), only the new one is added.
+    expect(synced.layout.panes.primary.tabs.map((item) => item.id)).toEqual(['t0', 't1', 'route']);
+    expect(findTab(synced.layout, 't0')?.tab.dirty).toBe(true);
+    expect(synced.layout.panes.primary.activeTabId).toBe('route');
+    expect(synced.error).toBeUndefined();
+  });
+
+  it('sync ignores foreign tabs and does not reorder or close anything', () => {
+    const layout = openMany(3);
+
+    const synced = reduce(layout, {
+      type: 'sync',
+      projectId: PROJECT,
+      tabs: [tab('t1'), tab('foreign', { projectId: 'project-2' }), tab('t0')],
+      activeTabId: 't1',
+    });
+
+    expect(synced.error).toBe('PROJECT_MISMATCH');
+    expect(synced.layout.panes.primary.tabs.map((item) => item.id)).toEqual(['t0', 't1', 't2']);
+    expect(synced.layout.panes.primary.activeTabId).toBe('t1');
+  });
+
   it('resets to the default layout for the project', () => {
     const layout = openMany(4);
 

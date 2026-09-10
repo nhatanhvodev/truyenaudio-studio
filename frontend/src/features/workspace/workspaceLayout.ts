@@ -59,6 +59,7 @@ export type LayoutAction =
   | { type: 'undock'; projectId: string }
   | { type: 'markClean'; projectId: string; tabId: string }
   | { type: 'markDirty'; projectId: string; tabId: string }
+  | { type: 'sync'; projectId: string; tabs: WorkspaceTab[]; activeTabId: string | null }
   | { type: 'reset'; projectId: string };
 
 export type LayoutResult = {
@@ -107,6 +108,8 @@ export function applyLayoutAction(layout: WorkspaceLayout, action: LayoutAction)
       return setDirty(layout, action.tabId, false);
     case 'markDirty':
       return setDirty(layout, action.tabId, true);
+    case 'sync':
+      return syncTabs(layout, action.tabs, action.activeTabId);
     case 'reset':
       return { layout: defaultLayout(layout.projectId) };
     default:
@@ -295,8 +298,47 @@ function undock(layout: WorkspaceLayout): LayoutResult {
   return { layout: { ...layout, panes, docked: false, focus: 'primary' } };
 }
 
-function setDirty(layout: WorkspaceLayout, tabId: string, dirty: boolean): LayoutResult {
-  const found = findTab(layout, tabId);
+/**
+ * Open every tab that is not open yet (in visit order) and activate the given
+ * tab. Closing is never implied: a tab the user closed stays closed until the
+ * route is visited again, which is why this is an explicit action instead of an
+ * effect that re-dispatches `open` on every render.
+ */
+function syncTabs(
+  layout: WorkspaceLayout,
+  tabs: WorkspaceTab[],
+  activeTabId: string | null,
+): LayoutResult {
+  let next = layout;
+  let error: string | undefined;
+  for (const tab of tabs) {
+    if (tab.projectId !== layout.projectId) {
+      error = 'PROJECT_MISMATCH';
+      continue;
+    }
+    if (findTab(next, tab.id)) {
+      continue;
+    }
+    const opened = openTab(next, tab, 'primary');
+    next = opened.layout;
+    if (opened.error) {
+      error = opened.error;
+    }
+  }
+  if (activeTabId !== null) {
+    const found = findTab(next, activeTabId);
+    if (found && next.panes[found.pane].activeTabId !== activeTabId) {
+      const activated = activateTab(next, found.pane, activeTabId);
+      next = activated.layout;
+    }
+  }
+  if (next === layout) {
+    return { layout };
+  }
+  return error ? { layout: next, error } : { layout: next };
+}
+
+function setDirty(layout: WorkspaceLayout, tabId: string, dirty: boolean): LayoutResult {  const found = findTab(layout, tabId);
   if (!found) {
     return { layout, error: 'TAB_NOT_FOUND' };
   }
