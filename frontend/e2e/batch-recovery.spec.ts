@@ -62,12 +62,14 @@ test('50 chapter batch list stays paged and fake recovery path exports clean dia
   await expect(page.getByText(fixtureSecret)).not.toBeVisible();
 
   await page.goto(`/chapters/${firstChapterId}/translation`);
-  await page.getByRole('button', { name: 'Dịch bằng fake' }).click();
-  await expect(page.getByText('Chờ duyệt bản dịch')).toBeVisible();
-  await page.getByRole('button', { name: 'Phê duyệt bản dịch' }).click();
+  await page.getByRole('button', { name: 'Dịch convert nội bộ' }).click();
+  await expect(page.getByText('Đã dịch hoàn tất')).toBeVisible();
+  await page.getByRole('button', { name: /Phê duyệt chuẩn/ }).click();
+  await expect(page.getByRole('heading', { name: 'Giọng đọc' })).toBeVisible();
   await page.getByRole('button', { name: 'Render một giọng' }).click();
+  await expect(page.getByRole('heading', { name: 'Audio' })).toBeVisible();
   await page.getByRole('button', { name: 'Phê duyệt audio' }).click();
-  await expect(page.getByText('Tạo bundle publication')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
   await page.getByRole('button', { name: 'Tao archive rieng tu' }).click();
   await expect(page.getByText('Đã tạo archive riêng tư')).toBeVisible();
   await page.getByRole('button', { name: 'Tạo bundle publication' }).click();

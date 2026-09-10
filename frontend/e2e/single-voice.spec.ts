@@ -1,23 +1,72 @@
 import { expect, test } from '@playwright/test';
 
-test('fake single narrator reaches verified publication bundle', async ({ page }) => {
-  await page.goto('/projects/new');
-  await page.getByLabel('Tên truyện').fill('Kiếm hiệp mẫu');
-  await page.getByLabel('Loại nguồn').selectOption('SELF_AUTHORED');
-  await page.getByLabel('Trạng thái quyền').selectOption('CLEARED');
-  await page.getByLabel('Bằng chứng quyền').setInputFiles('e2e/fixtures/author-permission.txt');
+const origin = 'http://127.0.0.1:8765';
+
+test('fake single narrator reaches verified publication bundle', async ({
+  page,
+  request,
+}) => {
+  const tokenResponse = await request.get('/api/security/bootstrap');
+  const token = (await tokenResponse.json()) as { csrfToken: string };
+  const headers = { Origin: origin, 'X-CSRF-Token': token.csrfToken };
+
+  const projectResponse = await request.post('/api/projects', {
+    headers,
+    data: {
+      title: 'Kiếm hiệp mẫu',
+      slug: `kiem-hiep-mau-e2e-${Date.now()}`,
+      source_type: 'SELF_AUTHORED',
+      rights_status: 'CLEARED',
+    },
+  });
+  expect(projectResponse.ok()).toBeTruthy();
+  const project = (await projectResponse.json()) as { id: string };
+
   for (const scope of ['TRANSLATE_VI', 'CREATE_AUDIO', 'PUBLIC_STREAM']) {
-    await page.getByLabel(scope).check();
+    const grantResponse = await request.post(`/api/projects/${project.id}/rights/grants`, {
+      headers,
+      data: {
+        scope,
+        territory: 'VN',
+        allows_ai_processing: true,
+        allows_third_party_cloud: false,
+        valid_from: new Date(Date.now() - 60_000).toISOString(),
+        evidence_id: null,
+      },
+    });
+    expect(grantResponse.ok()).toBeTruthy();
   }
-  await page.getByRole('button', { name: 'Tạo dự án' }).click();
-  await page.getByRole('link', { name: 'Nhập nội dung' }).click();
-  await page.getByLabel('Văn bản Trung').fill('第一章\n林动说：“你好。”');
-  await page.getByRole('button', { name: 'Xác nhận snapshot' }).click();
-  await page.getByRole('button', { name: 'Dịch bằng fake' }).click();
-  await expect(page.getByText('Chờ duyệt bản dịch')).toBeVisible();
-  await page.getByRole('button', { name: 'Phê duyệt bản dịch' }).click();
+
+  const importResponse = await request.post(`/api/projects/${project.id}/chapters/import`, {
+    headers,
+    data: {
+      kind: 'PASTE',
+      items: [
+        { ordinal: 1, title: '第一章', text: '第一章\n林动说：“你好。”' },
+      ],
+    },
+  });
+  expect(importResponse.ok()).toBeTruthy();
+  const imported = (await importResponse.json()) as { chapters: { id: string }[] };
+  const chapterId = imported.chapters[0].id;
+
+  await page.goto(`/chapters/${chapterId}/translation`);
+  await expect(page.getByRole('heading', { name: 'Dịch & Hiệu đính' })).toBeVisible();
+
+  // Fake (local, offline) translation then approval.
+  await page.getByRole('button', { name: 'Dịch convert nội bộ' }).click();
+  await expect(page.getByText('Đã dịch hoàn tất')).toBeVisible();
+  await page.getByRole('button', { name: /Phê duyệt chuẩn/ }).click();
+
+  // One voice render, then approve the master audio.
+  await expect(page.getByRole('heading', { name: 'Giọng đọc' })).toBeVisible();
   await page.getByRole('button', { name: 'Render một giọng' }).click();
+  await expect(page.getByRole('heading', { name: 'Audio' })).toBeVisible();
+  await expect(page.getByText(/sẵn sàng duyệt/)).toBeVisible();
   await page.getByRole('button', { name: 'Phê duyệt audio' }).click();
+
+  // Publication export is allowed after rights and audio approval.
+  await expect(page.getByRole('heading', { name: 'Export' })).toBeVisible();
   await page.getByRole('button', { name: 'Tạo bundle publication' }).click();
   await expect(page.getByText('Đã verify checksum')).toBeVisible();
 });
