@@ -2,6 +2,7 @@ import { createBrowserRouter, Link, Navigate, Outlet, useLocation, useNavigate, 
 import { useEffect, useState } from 'react';
 import { BatchQueue } from '../features/batch/BatchQueue';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
+import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
@@ -97,6 +98,7 @@ export const router = createBrowserRouter([
       { path: 'chapters/:chapterId/export', element: <ExportScreen /> },
       { path: 'jobs', element: <JobsScreen /> },
       { path: 'diagnostics', element: <Diagnostics /> },
+      ...settingsGroupRoutes,
       {
         path: 'multivoice-cloud-demo',
         element: <MultiVoiceCloudDemo />,
