@@ -721,8 +721,8 @@ class SpeechWorkflow:
         input_hash = _part_input_hash(
             run, plan, segments, audio_paths, tts_artifact_ids
         )
-        cached = self._ready_artifact(
-            ArtifactKind.MASTER_MP3, input_hash, settings_hash
+        cached = self._ready_chapter_artifact(
+            chapter.id, ArtifactKind.MASTER_MP3, input_hash, settings_hash
         )
         if cached is not None:
             metadata = cached.metadata_json or {}
@@ -796,8 +796,12 @@ class SpeechWorkflow:
                 "part_inputs": ordered_input_hashes,
             }
         )
-        cached = None if force_final else self._ready_artifact(
-            ArtifactKind.MASTER_MP3, input_hash, settings_hash
+        cached = (
+            None
+            if force_final
+            else self._ready_chapter_artifact(
+                chapter.id, ArtifactKind.MASTER_MP3, input_hash, settings_hash
+            )
         )
         if cached is not None:
             return _MasterWrite(
@@ -1006,18 +1010,23 @@ class SpeechWorkflow:
     ) -> Artifact:
         input_hash = _canonical_sha256(
             {
+                # The run id keeps two chapters with byte-identical content from
+                # sharing one subtitle artifact.
+                "translation_run": chapter.approved_translation_run_id,
                 "master": master.sha256,
                 "segments": [segment.narration_sha256 for segment in segments],
                 "part_boundaries": [
                     part.segment_count for part in parts
                 ],
-                "version": "srt-v2-parts",
+                "version": "srt-v3-parts",
             }
         )
         settings_hash = _canonical_sha256(
             {"format": "srt", "max_end_ms": master.duration_ms}
         )
-        cached = self._ready_artifact(ArtifactKind.SRT, input_hash, settings_hash)
+        cached = self._ready_chapter_artifact(
+            chapter.id, ArtifactKind.SRT, input_hash, settings_hash
+        )
         if cached is not None:
             self._supersede_ready_srts(chapter.id, keep_id=cached.id)
             return cached
@@ -1166,6 +1175,28 @@ class SpeechWorkflow:
         return ArtifactCache(self.session, self.artifact_root).lookup(
             kind, input_hash, settings_hash
         )
+
+    def _ready_chapter_artifact(
+        self,
+        chapter_id: str,
+        kind: ArtifactKind,
+        input_hash: str,
+        settings_hash: str,
+    ) -> Artifact | None:
+        """Chapter-scoped cache lookup.
+
+        ``ArtifactCache`` keys on (kind, input_hash, settings_hash) only, so two
+        chapters whose content hashes collide (identical narration text and an
+        identical master - easy with the deterministic fake processor) would
+        otherwise share one artifact row. Reusing a foreign chapter's artifact
+        leaves THIS chapter without its own READY row, which is exactly how the
+        export gate started failing with SRT_REQUIRED. Cached artifacts are only
+        reused when they belong to the chapter being rendered.
+        """
+        cached = self._ready_artifact(kind, input_hash, settings_hash)
+        if cached is None or cached.chapter_id != chapter_id:
+            return None
+        return cached
 
     def _supersede_ready_artifacts(
         self,

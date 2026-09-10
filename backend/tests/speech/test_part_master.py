@@ -14,7 +14,7 @@ import hashlib
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 
 from app.contracts import (
     ArtifactKind,
@@ -281,6 +281,13 @@ def _workflow(db_session, tmp_path: Path, tts, audio_processor=None) -> SpeechWo
         artifact_root=tmp_path / "artifacts",
         allow_fake_tts=True,
     )
+
+
+def _render(db_session, tmp_path: Path, chapter_id: str, preset_id: str, segments: int):
+    """Configure the single narrator for `chapter_id` and render it once."""
+    workflow = _workflow(db_session, tmp_path, FakeTts())
+    workflow.configure_single(chapter_id, preset_id)
+    return workflow.enqueue_render(chapter_id)
 
 
 def _masters(db_session, chapter_id: str, *, ready_only: bool) -> list[Artifact]:
@@ -846,3 +853,140 @@ def test_part_artifact_is_not_approvable(db_session, tmp_path: Path) -> None:
 def test_part_limits_are_pinned() -> None:
     assert PART_MAX_SEGMENTS == 50
     assert PART_MAX_DURATION_MS == 600_000
+
+
+def _second_project_chapter(db_session, *, chapter_id: str, run_id: str, prefix: str) -> None:
+    """A second chapter whose text is byte-identical to the first one."""
+    from app.db.models import Project as _Project
+
+    project_id = f"018f0000-0000-7002-8000-{prefix}000000a001"
+    project = _Project(
+        id=project_id,
+        title="Partmaster 2",
+        slug=f"part-master-{prefix}",
+        source_type=SourceType.USER_SUPPLIED_PRIVATE.value,
+        rights_status=RightsStatus.PRIVATE_ONLY.value,
+    )
+    chapter = Chapter(
+        id=chapter_id,
+        project_id=project_id,
+        ordinal=1,
+        source_title="Phan",
+        state=ChapterState.TRANSLATION_APPROVED.value,
+    )
+    revision_id = f"018f0000-0000-7002-8000-{prefix}000000a002"
+    revision = SourceRevision(
+        id=revision_id,
+        chapter_id=chapter_id,
+        revision_no=1,
+        import_kind=ImportKind.PASTE.value,
+        normalized_text="source",
+        normalized_sha256=_sha("source"),
+        han_char_count=0,
+        total_char_count=6,
+        normalizer_version="nfc-v1",
+    )
+    db_session.add(project)
+    db_session.flush()
+    db_session.add_all((chapter, revision))
+    db_session.flush()
+    chapter.active_source_revision_id = revision_id
+    run = TranslationRun(
+        id=run_id,
+        chapter_id=chapter_id,
+        source_revision_id=revision_id,
+        prompt_version="translation-v1",
+        status=RunStatus.APPROVED.value,
+        translation_text_sha256="a" * 64,
+        estimated_cost_vnd=0,
+        actual_cost_vnd=0,
+    )
+    db_session.add(run)
+    db_session.flush()
+    for index in range(4):
+        source_id = f"018f0000-0000-7002-8000-{prefix}b{index:011x}"
+        source = SourceSegment(
+            id=source_id,
+            source_revision_id=revision_id,
+            segment_index=index,
+            paragraph_start=index,
+            paragraph_end=index,
+            source_text=f"source {index}",
+            source_sha256=_sha(f"source {index}"),
+            segment_kind="SOURCE",
+        )
+        target_text = f"Cau {index}: " + " ".join(["tu"] * 10)
+        segment = TranslationSegment(
+            id=f"018f0000-0000-7002-8000-{prefix}c{index:011x}",
+            translation_run_id=run_id,
+            source_segment_id=source_id,
+            target_text=target_text,
+            target_sha256=_sha(target_text),
+            was_cache_hit=False,
+            manually_edited=False,
+        )
+        db_session.add_all((source, segment))
+    chapter.approved_translation_run_id = run_id
+    db_session.commit()
+
+
+def test_two_chapters_with_identical_content_never_share_an_artifact(
+    db_session, tmp_path: Path,
+) -> None:
+    """Regression: the artifact cache is not chapter-scoped.
+
+    ``ArtifactCache.lookup`` keys on (kind, input_hash, settings_hash) only, so two
+    chapters with byte-identical narration and an identical fake master produce the
+    same content hashes. Reusing the first chapter's subtitle row left the SECOND
+    chapter without any READY SRT and the export gate then failed with SRT_REQUIRED.
+    A cached artifact may only be reused by the chapter that owns it.
+    """
+    second_chapter_id = "018f0000-0000-7002-8000-200000000201"
+    second_run_id = "018f0000-0000-7002-8000-200000000202"
+
+    _chapter_with_segments(db_session, segment_count=4)
+    _second_project_chapter(
+        db_session, chapter_id=second_chapter_id, run_id=second_run_id, prefix="2"
+    )
+    preset = _voice_preset(db_session)
+
+    # configure_single materialises the speech segments, so render both chapters
+    # first and only then assert the premise (identical narration hashes).
+    first_render = _render(db_session, tmp_path, CHAPTER_ID, preset.id, 4)
+    second_render = _render(db_session, tmp_path, second_chapter_id, preset.id, 4)
+
+    first_hashes = [
+        segment.narration_sha256
+        for segment in db_session.scalars(
+            select(SpeechSegment).where(SpeechSegment.chapter_id == CHAPTER_ID)
+        )
+    ]
+    second_hashes = [
+        segment.narration_sha256
+        for segment in db_session.scalars(
+            select(SpeechSegment).where(SpeechSegment.chapter_id == second_chapter_id)
+        )
+    ]
+    assert first_hashes and second_hashes
+    assert first_hashes == second_hashes
+
+    assert second_render.master_artifact_id != first_render.master_artifact_id
+    assert second_render.srt_artifact_id != first_render.srt_artifact_id
+
+    for chapter_id, render in (
+        (CHAPTER_ID, first_render),
+        (second_chapter_id, second_render),
+    ):
+        owned = db_session.scalars(
+            select(Artifact).where(
+                Artifact.chapter_id == chapter_id,
+                Artifact.kind == ArtifactKind.SRT.value,
+                Artifact.status == ArtifactStatus.READY.value,
+            )
+        ).all()
+        assert len(owned) == 1, chapter_id
+        assert owned[0].id == render.srt_artifact_id
+        master = db_session.get(Artifact, render.master_artifact_id)
+        assert master is not None and master.chapter_id == chapter_id
+        srt = db_session.get(Artifact, render.srt_artifact_id)
+        assert srt is not None and srt.chapter_id == chapter_id
