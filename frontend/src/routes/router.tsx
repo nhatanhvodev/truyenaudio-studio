@@ -130,8 +130,15 @@ function Shell() {
   const navigate = useNavigate();
   // The project id comes from the URL, so deep links and Back always stay inside
   // the same project (U02); the shell only needs the match, not the child route.
-  const projectMatch = useMatch('/projects/:projectId/*') ?? useMatch('/projects/:projectId');
-  const projectId = projectMatch?.params.projectId ?? null;
+  //
+  // Both hooks must be called on EVERY render: `useMatch(a) ?? useMatch(b)`
+  // short-circuits, so navigating from a project route to a chapter route changed
+  // the hook count mid-app and crashed React ("Cannot read properties of undefined
+  // (reading 'length')" inside areHookInputsEqual). Found by the U03 browser E2E.
+  const projectWildcardMatch = useMatch('/projects/:projectId/*');
+  const projectExactMatch = useMatch('/projects/:projectId');
+  const projectId =
+    projectWildcardMatch?.params.projectId ?? projectExactMatch?.params.projectId ?? null;
   const [visited, setVisited] = useState<string[]>([location.pathname]);
 
   useEffect(() => {
