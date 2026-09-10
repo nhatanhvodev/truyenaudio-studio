@@ -9,6 +9,7 @@ import { ProfileEditor } from '../providers/ProfileEditor';
 import { ProjectScopedPanel } from './ProjectScopedPanel';
 import { SettingsLayout } from './SettingsLayout';
 import { StyleManager } from './StyleManager';
+import { AppearanceSettings } from './AppearanceSettings';
 
 export interface SettingsGroupPageProps {
   title: string;
@@ -65,13 +66,8 @@ function StorageSettings() {
   );
 }
 
-function AppearanceSettings() {
-  return (
-    <SettingsGroupPending
-      title="Appearance"
-      note="Theme/font/mật độ hiển thị sẽ nối ở U10 trên token của U01."
-    />
-  );
+function AppearanceSettingsPage() {
+  return <AppearanceSettings />;
 }
 
 export const settingsGroupRoutes: RouteObject[] = [
@@ -85,7 +81,7 @@ export const settingsGroupRoutes: RouteObject[] = [
       { path: 'translation', element: <TranslationSettings /> },
       { path: 'tts', element: <TtsSettings /> },
       { path: 'storage', element: <StorageSettings /> },
-      { path: 'appearance', element: <AppearanceSettings /> },
+      { path: 'appearance', element: <AppearanceSettingsPage /> },
       { path: 'advanced', element: <Diagnostics /> },
     ],
   },

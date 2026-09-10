@@ -9,7 +9,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.base import create_engine_for, session_factory
 from app.modules.artifacts.store import ArtifactStore
-from app.modules.storage.backup import BackupService, BackupVerificationError, RestoreLockRequired
+from app.modules.storage.backup import (
+    BackupError,
+    BackupService,
+    BackupVerificationError,
+    RestoreConfirmationRequired,
+    RestoreLockRequired,
+    RetentionCountInvalid,
+)
 from app.modules.storage.cleanup import CleanupPlan, CleanupPlanStale, CleanupService
 from app.modules.storage.disk import DiskGuard
 from app.settings.config import Settings
@@ -21,6 +28,17 @@ class CleanupExecuteRequest(BaseModel):
 
     plan_id: str = Field(alias="planId")
     snapshot_hash: str = Field(alias="snapshotHash")
+
+
+class RetentionRequest(BaseModel):
+    count: int
+
+
+class RestoreCopyRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    target_data_root: str = Field(alias="targetDataRoot")
+    confirm_target: str | None = Field(default=None, alias="confirmTarget")
 
 
 def create_storage_router(settings: Settings | None = None) -> APIRouter:
@@ -59,6 +77,10 @@ def create_storage_router(settings: Settings | None = None) -> APIRouter:
         except BackupVerificationError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    @router.get("/backups")
+    def list_backups(service: BackupService = Depends(backup_service)) -> dict[str, object]:
+        return {"backups": _camel_payload(list(service.list_backups()))}
+
     @router.post("/backups/{backup_id}/restore")
     def restore_backup(backup_id: str, service: BackupService = Depends(backup_service)) -> dict[str, object]:
         try:
@@ -68,6 +90,53 @@ def create_storage_router(settings: Settings | None = None) -> APIRouter:
             raise HTTPException(status_code=409, detail="RESTORE_REQUIRES_STOPPED_API_AND_WORKER") from exc
         except BackupVerificationError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.post("/backups/{backup_id}/restore-copy")
+    def restore_backup_copy(
+        backup_id: str,
+        request: RestoreCopyRequest,
+        service: BackupService = Depends(backup_service),
+    ) -> dict[str, object]:
+        """Restore a verified backup into a new isolated data root (never in place)."""
+        try:
+            with service.acquire_restore_locks() as token:
+                return _camel_payload(
+                    service.restore_copy(
+                        backup_id,
+                        request.target_data_root,
+                        confirm_target=request.confirm_target,
+                        lock_token=token,
+                    )
+                )
+        except RestoreConfirmationRequired as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except (AlreadyRunning, RestoreLockRequired) as exc:
+            raise HTTPException(status_code=409, detail="RESTORE_REQUIRES_STOPPED_API_AND_WORKER") from exc
+        except BackupVerificationError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except BackupError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @router.get("/retention")
+    def read_retention(
+        count: int = Query(alias="count"),
+        service: BackupService = Depends(backup_service),
+    ) -> dict[str, object]:
+        try:
+            return _camel_payload(service.retention_plan(count))
+        except RetentionCountInvalid as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.put("/retention")
+    def write_retention(
+        request: RetentionRequest,
+        service: BackupService = Depends(backup_service),
+    ) -> dict[str, object]:
+        """Validate a retention change and return its plan — **nothing is deleted here**."""
+        try:
+            return _camel_payload(service.retention_plan(request.count))
+        except RetentionCountInvalid as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get("/cleanup/preview")
     def cleanup_preview(service: CleanupService = Depends(cleanup_service)) -> dict[str, object]:

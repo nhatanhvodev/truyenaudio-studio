@@ -32,6 +32,14 @@ class RestoreLockRequired(BackupError):
     pass
 
 
+class RestoreConfirmationRequired(BackupError):
+    """A destructive restore/copy target must be confirmed verbatim (U10)."""
+
+
+class RetentionCountInvalid(BackupError):
+    pass
+
+
 @dataclass(frozen=True)
 class BackupView:
     id: str
@@ -80,6 +88,28 @@ class RestoreLockToken:
         self.active = False
         self.worker_lock.release()
         self.api_lock.release()
+
+
+@dataclass(frozen=True)
+class BackupSummary:
+    id: str
+    sha256: str
+    byte_size: int
+    verified: bool
+    verification_error: str | None
+
+
+@dataclass(frozen=True)
+class RetentionPlan:
+    """Preview of a retention change: **nothing is deleted** by this plan (U10)."""
+
+    requested_count: int
+    current_count: int
+    kept: tuple[str, ...]
+    deletable: tuple[str, ...]
+    applied: bool
+    requires_confirmation: bool
+    prune_on_create: bool
 
 
 class BackupService:
@@ -157,7 +187,11 @@ class BackupService:
         if not backup_path.is_file():
             raise BackupVerificationError(f"backup file is missing: {backup_id}")
         sha256, byte_size = _sha256_file(backup_path)
-        integrity_check = _integrity_check(backup_path)
+        try:
+            integrity_check = _integrity_check(backup_path)
+        except sqlite3.DatabaseError as exc:
+            # A truncated/replaced backup file is a verification failure, never a crash.
+            raise BackupVerificationError(f"backup file is not a readable database: {backup_id}") from exc
         artifact_count = self._verify_artifact_pointers(backup_path, artifact_root=self._artifact_snapshot_path(backup_id))
         ok = (
             sha256 == manifest["sha256"]
@@ -171,6 +205,61 @@ class BackupService:
 
     def acquire_restore_locks(self) -> RestoreLockToken:
         return RestoreLockToken(StartupLock(self.api_lock_path), StartupLock(self.worker_lock_path))
+
+    def list_backups(self) -> tuple[BackupSummary, ...]:
+        """Newest-first backups with their verification result (checksum + integrity)."""
+        summaries: list[BackupSummary] = []
+        for manifest_path in self._manifest_paths():
+            backup_id = manifest_path.name.removesuffix(".manifest.json")
+            try:
+                verification = self.verify(backup_id)
+            except BackupVerificationError as exc:
+                summaries.append(BackupSummary(backup_id, "", 0, False, str(exc)))
+                continue
+            summaries.append(
+                BackupSummary(backup_id, verification.sha256, verification.byte_size, True, None)
+            )
+        return tuple(summaries)
+
+    def retention_plan(self, requested_count: int) -> RetentionPlan:
+        """Preview what a retention setting would keep/delete — without deleting anything.
+
+        ``create()`` still prunes on every backup (bounded backup directory), which is
+        reported as ``prune_on_create`` so the UI can explain the difference instead of
+        silently shrinking the window when the number changes.
+        """
+        if isinstance(requested_count, bool) or not isinstance(requested_count, int) or requested_count < 1:
+            raise RetentionCountInvalid("RETENTION_COUNT_INVALID")
+        ids = [path.name.removesuffix(".manifest.json") for path in self._manifest_paths()]
+        kept = tuple(ids[:requested_count])
+        deletable = tuple(ids[requested_count:])
+        return RetentionPlan(
+            requested_count=requested_count,
+            current_count=len(ids),
+            kept=kept,
+            deletable=deletable,
+            applied=False,
+            requires_confirmation=bool(deletable),
+            prune_on_create=True,
+        )
+
+    def restore_copy(
+        self,
+        backup_id: str,
+        target_data_root: Path | str,
+        *,
+        confirm_target: str | None,
+        lock_token: RestoreLockToken | None = None,
+    ) -> RestoreView:
+        """Restore a verified backup into a **new isolated copy** (U10).
+
+        The caller must repeat the exact target path in ``confirm_target``: a copy
+        restore creates a whole data root, so the destination is never guessed.
+        """
+        target = Path(target_data_root)
+        if confirm_target is None or confirm_target.strip() != str(target):
+            raise RestoreConfirmationRequired("RESTORE_TARGET_CONFIRMATION_REQUIRED")
+        return self.restore_to_data_root(backup_id, target, lock_token=lock_token)
 
     def restore_to(
         self,
@@ -304,8 +393,15 @@ class BackupService:
             return (primary,)
         return (primary, secondary)
 
+    def _manifest_paths(self) -> list[Path]:
+        return sorted(
+            self.backup_root.glob("*.manifest.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+
     def _prune_backups(self) -> None:
-        manifests = sorted(self.backup_root.glob("*.manifest.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+        manifests = self._manifest_paths()
         for manifest_path in manifests[self.retention_count :]:
             backup_id = manifest_path.name.removesuffix(".manifest.json")
             self._backup_path(backup_id).unlink(missing_ok=True)

@@ -30,6 +30,7 @@ from app.api.projects import create_projects_router
 from app.api.review import create_review_router
 from app.api.rights import create_rights_router
 from app.api.styles import create_styles_router
+from app.api.settings import create_settings_router
 from app.api.translation import create_translation_router
 from app.api.voice_plans import create_voice_plans_router
 from app.api.voices import create_voices_router
@@ -79,6 +80,7 @@ def create_app(
     app.include_router(create_memory_router(active_settings))
     app.include_router(create_drafts_router(active_settings))
     app.include_router(create_workspace_router(active_settings))
+    app.include_router(create_settings_router())
     app.include_router(create_translation_router(active_settings))
     app.include_router(create_review_router(active_settings))
     app.include_router(create_rights_router(active_settings))
