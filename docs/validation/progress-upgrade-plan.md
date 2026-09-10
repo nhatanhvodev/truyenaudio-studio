@@ -126,12 +126,12 @@ browser E2E **12 passed / 8 spec** trên Chrome hệ thống. Mỗi lát cắt c
 và commit riêng: `bf92ea8`, `8444c1b`, `2a77367`, `4e94fdd`, `18ccc80`, `74dc4b7`, `e471327`, `7ac92d0`,
 `171d2d6`, `6070955`.
 
-Số liệu xác minh toàn cây (commit `300ac00`): backend **890 passed** (1 warning FK-cycle có sẵn),
+Số liệu xác minh toàn cây (commit `300ac00`): backend **900 passed** (1 warning FK-cycle có sẵn),
 frontend **267 passed / 45 file**, `npm run build` PASS, ruff sạch trên mọi file đã chạm,
 browser E2E **13 passed / 9 spec** trên Chrome hệ thống. Mỗi lát cắt có report riêng trong `.superpowers/sdd/`
 và commit riêng (phiên 10/09): `bf92ea8`, `8444c1b`, `2a77367`, `4e94fdd`, `18ccc80`, `74dc4b7`, `e471327`,
 `7ac92d0`, `171d2d6`, `6070955`, `8611203`, `b7c0f2c`, `8f75eda`, `fecfe76`, `d1ee513`, `78b85ac`, `fe664dd`,
-`00148a7`, `e20e3e5`, `4bbdfb7`, `416a39d`.
+`00148a7`, `e20e3e5`, `4bbdfb7`, `416a39d`, `3c9f085`, `476f1ff`.
 
 **Hai bug thật do chính các bước kiểm chứng phát hiện và đã sửa** (không phải refactor hình thức):
 1. `Shell` gọi `useMatch(a) ?? useMatch(b)` nên số lượng hook đổi khi đi từ route project sang route chapter
