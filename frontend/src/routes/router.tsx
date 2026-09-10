@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { BatchQueue } from '../features/batch/BatchQueue';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
+import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
 import { GlobalNav } from '../features/workspace/GlobalNav';
 import { ExportGate } from '../features/exports/ExportGate';
 import { JobProgress } from '../features/jobs/JobProgress';
@@ -100,6 +101,7 @@ export const router = createBrowserRouter([
       { path: 'jobs', element: <JobsScreen /> },
       { path: 'diagnostics', element: <Diagnostics /> },
       ...settingsGroupRoutes,
+      ...projectSettingsRoutes,
       {
         path: 'multivoice-cloud-demo',
         element: <MultiVoiceCloudDemo />,
