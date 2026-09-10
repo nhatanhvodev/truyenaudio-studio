@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "fixture": "S1",
+  "fixtureTitle": "Trang đầu 25 chương, DB lạnh (cold)",
+  "seed": 20260908,
+  "fixtureHash": "0e0ccbd4c024b2c02aac37e68f47c3d9b0df22ca9773f511467498dd041c22ff",
+  "fixtureConfig": {
+    "projects": 1,
+    "chapters": 40,
+    "pageSize": 25,
+    "coldDb": true,
+    "sourceRevisions": 0,
+    "dataProfile": "metadata-only"
+  },
+  "generatedAt": "2026-09-10T07:46:04.878016Z",
+  "startedAt": "2026-09-10T07:46:02.489350Z",
+  "finishedAt": "2026-09-10T07:46:04.878016Z",
+  "durationSeconds": 2.389,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.1",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1319.8,
+    "ramUsedMb": 6091.8,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T07:46:04.948343Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "GET /api/projects/{id}/chapters?limit=25 trên DB tạm vừa dựng (cold: engine mới mỗi request)."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "chapterPage25.total": {
+      "p50": 26.249,
+      "p95": 29.351,
+      "p99": 29.438,
+      "unit": "ms",
+      "samples": 20,
+      "min": 24.669,
+      "max": 29.46,
+      "mean": 26.813,
+      "note": "Mỗi request tạo engine mới rồi dispose (đúng code route) => đo trạng thái cold DB."
+    },
+    "chapterPage25.db": {
+      "p50": 1.69,
+      "p95": 1.903,
+      "p99": 1.97,
+      "unit": "ms",
+      "samples": 20,
+      "min": 1.579,
+      "max": 1.987,
+      "mean": 1.72,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "chapterPage25.other": {
+      "p50": 24.554,
+      "p95": 27.515,
+      "p99": 27.681,
+      "unit": "ms",
+      "samples": 20,
+      "min": 23.069,
+      "max": 27.723,
+      "mean": 25.093,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "chapterPage25.statements": {
+      "p50": 77.0,
+      "p95": 77.0,
+      "p99": 77.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 77.0,
+      "max": 77.0,
+      "mean": 77.0
+    },
+    "chapterPage25.responseBytes": {
+      "p50": 8620.0,
+      "p95": 8620.0,
+      "p99": 8620.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 8620.0,
+      "max": 8620.0,
+      "mean": 8620.0
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "chapterPage25.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "S1 không đi qua worker queue (đọc metadata trực tiếp)."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "chapterPage25": {
+        "p50": 77.0,
+        "p95": 77.0,
+        "p99": 77.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 77.0,
+        "max": 77.0,
+        "mean": 77.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 2554,
+      "seconds": 0.683,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "chapterPage25": {
+        "p50": 8620.0,
+        "p95": 8620.0,
+        "p99": 8620.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 8620.0,
+        "max": 8620.0,
+        "mean": 8620.0
+      }
+    },
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 84.37,
+    "peak": 95.04,
+    "delta": 10.67,
+    "marks": {
+      "baseline": 84.37,
+      "final": 95.04
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 495616,
+    "files": {
+      "studio.sqlite3": 495616,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "Trang đầu 25 chương cold DB",
+      "target": 150,
+      "targetLabel": "p95 ≤ 150 ms",
+      "measured": 29.351,
+      "unit": "ms",
+      "status": "PASS",
+      "note": "G-PERF (plan §7): p95 của cả request HTTP in-process, đã tách phần DB."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 1,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {},
+  "notes": []
+}

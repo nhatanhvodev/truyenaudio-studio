@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "fixture": "C500",
+  "fixtureTitle": "Metadata 500 chương và RSS cùng tiến trình",
+  "seed": 20260908,
+  "fixtureHash": "fe3fde4497817897d6a1daee68a20b20f59ce317df33eeba72a91a10c96dcb4f",
+  "fixtureConfig": {
+    "projects": 1,
+    "chapters": 500,
+    "pageSize": 20,
+    "dataProfile": "metadata-only"
+  },
+  "generatedAt": "2026-09-10T07:46:21.704707Z",
+  "startedAt": "2026-09-10T07:46:18.410319Z",
+  "finishedAt": "2026-09-10T07:46:21.704707Z",
+  "durationSeconds": 3.294,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.1",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1188.7,
+    "ramUsedMb": 6222.9,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T07:46:21.775730Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "GET /api/projects?limit=20 cho project 500 chương; RSS đo cùng tiến trình so với baseline trước khi dựng fixture."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "libraryMetadata500.total": {
+      "p50": 13.492,
+      "p95": 14.789,
+      "p99": 15.037,
+      "unit": "ms",
+      "samples": 20,
+      "min": 12.314,
+      "max": 15.099,
+      "mean": 13.528,
+      "note": "GET /api/projects?limit=20 trên project 500 chương; RSS lấy mẫu sau mỗi lượt."
+    },
+    "libraryMetadata500.db": {
+      "p50": 1.105,
+      "p95": 1.314,
+      "p99": 1.468,
+      "unit": "ms",
+      "samples": 20,
+      "min": 0.999,
+      "max": 1.506,
+      "mean": 1.141,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "libraryMetadata500.other": {
+      "p50": 12.39,
+      "p95": 13.293,
+      "p99": 13.709,
+      "unit": "ms",
+      "samples": 20,
+      "min": 11.303,
+      "max": 13.813,
+      "mean": 12.387,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "libraryMetadata500.statements": {
+      "p50": 5.0,
+      "p95": 5.0,
+      "p99": 5.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 5.0,
+      "max": 5.0,
+      "mean": 5.0
+    },
+    "libraryMetadata500.responseBytes": {
+      "p50": 3704.0,
+      "p95": 3704.0,
+      "p99": 3704.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 3704.0,
+      "max": 3704.0,
+      "mean": 3704.0
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "libraryMetadata500.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "C500 không đi qua worker queue."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "libraryMetadata500": {
+        "p50": 5.0,
+        "p95": 5.0,
+        "p99": 5.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 5.0,
+        "max": 5.0,
+        "mean": 5.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 1214,
+      "seconds": 0.807,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "libraryMetadata500": {
+        "p50": 3704.0,
+        "p95": 3704.0,
+        "p99": 3704.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 3704.0,
+        "max": 3704.0,
+        "mean": 3704.0
+      }
+    },
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 84.35,
+    "peak": 93.89,
+    "delta": 9.54,
+    "marks": {
+      "baseline": 84.35,
+      "afterSeed": 93.06,
+      "afterMeasurement": 93.8,
+      "final": 93.77
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 663552,
+    "files": {
+      "studio.sqlite3": 663552,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "C500 metadata RSS",
+      "target": 256,
+      "targetLabel": "tăng ≤ 256 MiB so với baseline cùng process",
+      "measured": 9.54,
+      "unit": "MiB",
+      "status": "PASS",
+      "note": "RSS peak trong tiến trình CLI trừ baseline đo trước khi dựng fixture (baseline 84.35 MiB, peak 93.89 MiB)."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 1,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {},
+  "notes": []
+}

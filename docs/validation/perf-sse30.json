@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "fixture": "SSE30",
+  "fixtureTitle": "Replay 1k event sau cursor",
+  "seed": 20260908,
+  "fixtureHash": "ffb80d405b20e7b60b6a09135ece3684330ab124d28389476770e395a5c5f4e7",
+  "fixtureConfig": {
+    "projects": 1,
+    "events": 1200,
+    "cursor": 200,
+    "replayEvents": 1000,
+    "dataProfile": "events"
+  },
+  "generatedAt": "2026-09-10T07:46:49.824180Z",
+  "startedAt": "2026-09-10T07:46:30.302867Z",
+  "finishedAt": "2026-09-10T07:46:49.824180Z",
+  "durationSeconds": 19.521,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.1",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 2274.5,
+    "ramUsedMb": 5137.1,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T07:46:49.949518Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "Replay 1000 event sau cursor 200 (backfill 1200 job vào event_log rồi đọc lại)."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "sse.replay1000.total": {
+      "p50": 470.181,
+      "p95": 1306.031,
+      "p99": 1864.095,
+      "unit": "ms",
+      "samples": 20,
+      "min": 396.076,
+      "max": 2003.611,
+      "mean": 646.426,
+      "note": "Đọc event sau cursor + serialize JSON từng event (như route SSE)."
+    },
+    "sse.replay1000.db": {
+      "p50": 38.005,
+      "p95": 107.828,
+      "p99": 166.503,
+      "unit": "ms",
+      "samples": 20,
+      "min": 31.755,
+      "max": 181.172,
+      "mean": 52.951,
+      "note": "Thời gian trong SQLite cho lượt replay (kể cả bước backfill event_log)."
+    },
+    "sse.replay1000.other": {
+      "p50": 433.206,
+      "p95": 1198.203,
+      "p99": 1697.592,
+      "unit": "ms",
+      "samples": 20,
+      "min": 361.604,
+      "max": 1822.439,
+      "mean": 593.475,
+      "note": "Phần Python/ORM còn lại — đây là chỗ phình của replay hiện tại: _events() nạp toàn bộ event_log rồi session.get() từng dòng và lọc cursor bằng Python thay vì WHERE sequence_id > cursor."
+    },
+    "sse.replay1000.events": {
+      "p50": 1000.0,
+      "p95": 1000.0,
+      "p99": 1000.0,
+      "unit": "events",
+      "samples": 20,
+      "min": 1000.0,
+      "max": 1000.0,
+      "mean": 1000.0
+    },
+    "sse.replay1000.payloadBytesMax": {
+      "p50": 136.0,
+      "p95": 136.0,
+      "p99": 136.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 136.0,
+      "max": 136.0,
+      "mean": 136.0,
+      "note": "Payload lớn nhất của một event trong lượt replay."
+    },
+    "sse.replay1000.payloadBytesTotal": {
+      "p50": 135201.0,
+      "p95": 135201.0,
+      "p99": 135201.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 135201.0,
+      "max": 135201.0,
+      "mean": 135201.0
+    },
+    "sse.replay1000.statements": {
+      "p50": 1205.0,
+      "p95": 1205.0,
+      "p99": 1205.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 1205.0,
+      "max": 1205.0,
+      "mean": 1205.0
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "sse.replay1000.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "SSE30 chỉ đo replay log, không đo hàng đợi job."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "sse.replay1000": {
+        "p50": 1205.0,
+        "p95": 1205.0,
+        "p99": 1205.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 1205.0,
+        "max": 1205.0,
+        "mean": 1205.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 37919,
+      "seconds": 1.892,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "sse.replay1000.payloadBytesMax": {
+        "p50": 136.0,
+        "p95": 136.0,
+        "p99": 136.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 136.0,
+        "max": 136.0,
+        "mean": 136.0
+      }
+    },
+    "note": "Payload tính bằng UTF-8 bytes của json.dumps(event, separators=(',', ':')) — đúng cách route SSE dựng frame."
+  },
+  "rssMb": {
+    "baseline": 84.25,
+    "peak": 84.25,
+    "delta": 0.0,
+    "marks": {
+      "baseline": 84.25,
+      "final": 68.04
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 1048576,
+    "files": {
+      "studio.sqlite3": 1048576,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "Replay 1k event sau cursor",
+      "target": 300,
+      "targetLabel": "p95 ≤ 300 ms",
+      "measured": 1306.031,
+      "unit": "ms",
+      "status": "FAIL",
+      "note": "G-PERF (plan §7)."
+    },
+    {
+      "case": "Replay 1k event sau cursor — số event",
+      "target": 1000,
+      "targetLabel": "= 1000 event",
+      "measured": 1000,
+      "unit": "events",
+      "status": "PASS",
+      "note": "Đọc sau cursor 200 từ 1200 event đã backfill."
+    },
+    {
+      "case": "Payload event",
+      "target": 16384,
+      "targetLabel": "≤ 16 KiB",
+      "measured": 136.0,
+      "unit": "bytes",
+      "status": "PASS",
+      "note": "Payload lớn nhất trong mọi lượt đo, tính bằng UTF-8 bytes sau json.dumps như route SSE."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 2,
+    "FAIL": 1,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "FAIL",
+  "extras": {
+    "sse": {
+      "seededEvents": 1200,
+      "cursor": 200,
+      "replayedEvents": 1000,
+      "maxEventPayloadBytes": 136,
+      "backfilledEvents": 1200
+    }
+  },
+  "notes": []
+}

@@ -1,0 +1,318 @@
+{
+  "schemaVersion": 1,
+  "fixture": "C2K",
+  "fixtureTitle": "Metadata thư viện cho project 1k/10k chương",
+  "seed": 20260908,
+  "fixtureHash": "e023e32dc66aaf87ed7c1603f9bc49e108cf5c4726ba1cb100a40d4c6555e818",
+  "fixtureConfig": {
+    "projects": 1,
+    "pageSize": 20,
+    "chapterCounts": [
+      1000,
+      10000
+    ],
+    "dataProfile": "metadata-only"
+  },
+  "generatedAt": "2026-09-10T07:46:16.392837Z",
+  "startedAt": "2026-09-10T07:46:12.270742Z",
+  "finishedAt": "2026-09-10T07:46:16.392837Z",
+  "durationSeconds": 4.122,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.1",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1269.4,
+    "ramUsedMb": 6142.2,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T07:46:16.701398Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "GET /api/projects?limit=20 (metadata thư viện: đếm chương + 30 chương mount/project) ở 1k và 10k chương."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "libraryMetadata1000.total": {
+      "p50": 13.891,
+      "p95": 16.901,
+      "p99": 16.938,
+      "unit": "ms",
+      "samples": 20,
+      "min": 12.95,
+      "max": 16.947,
+      "mean": 14.187,
+      "note": "GET /api/projects?limit=20 trên project 1000 chương (DB riêng cho từng kích thước, cùng schema migrate head)."
+    },
+    "libraryMetadata1000.db": {
+      "p50": 1.686,
+      "p95": 1.843,
+      "p99": 1.858,
+      "unit": "ms",
+      "samples": 20,
+      "min": 1.58,
+      "max": 1.861,
+      "mean": 1.703,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "libraryMetadata1000.other": {
+      "p50": 12.174,
+      "p95": 15.223,
+      "p99": 15.339,
+      "unit": "ms",
+      "samples": 20,
+      "min": 11.261,
+      "max": 15.367,
+      "mean": 12.484,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "libraryMetadata1000.statements": {
+      "p50": 5.0,
+      "p95": 5.0,
+      "p99": 5.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 5.0,
+      "max": 5.0,
+      "mean": 5.0
+    },
+    "libraryMetadata1000.responseBytes": {
+      "p50": 3709.0,
+      "p95": 3709.0,
+      "p99": 3709.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 3709.0,
+      "max": 3709.0,
+      "mean": 3709.0
+    },
+    "libraryMetadata10000.total": {
+      "p50": 35.901,
+      "p95": 39.58,
+      "p99": 40.838,
+      "unit": "ms",
+      "samples": 20,
+      "min": 33.941,
+      "max": 41.152,
+      "mean": 36.339,
+      "note": "GET /api/projects?limit=20 trên project 10000 chương (DB riêng cho từng kích thước, cùng schema migrate head)."
+    },
+    "libraryMetadata10000.db": {
+      "p50": 13.434,
+      "p95": 13.947,
+      "p99": 13.979,
+      "unit": "ms",
+      "samples": 20,
+      "min": 12.719,
+      "max": 13.988,
+      "mean": 13.432,
+      "note": "Thời gian trong SQLite, quy kết bằng chênh lệch bộ đếm toàn tiến trình (process-global-delta) vì TestClient chạy ASGI app ở thread khác; fixture chạy tuần tự một thao tác một lượt nên chênh lệch này chính là thao tác."
+    },
+    "libraryMetadata10000.other": {
+      "p50": 22.402,
+      "p95": 26.213,
+      "p99": 26.974,
+      "unit": "ms",
+      "samples": 20,
+      "min": 21.222,
+      "max": 27.164,
+      "mean": 22.907,
+      "note": "Phần còn lại: FastAPI/ORM/serialize — không gồm provider/FFmpeg."
+    },
+    "libraryMetadata10000.statements": {
+      "p50": 5.0,
+      "p95": 5.0,
+      "p99": 5.0,
+      "unit": "statements",
+      "samples": 20,
+      "min": 5.0,
+      "max": 5.0,
+      "mean": 5.0
+    },
+    "libraryMetadata10000.responseBytes": {
+      "p50": 3711.0,
+      "p95": 3711.0,
+      "p99": 3711.0,
+      "unit": "bytes",
+      "samples": 20,
+      "min": 3711.0,
+      "max": 3711.0,
+      "mean": 3711.0
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "libraryMetadata1000.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "C2K không đi qua worker queue."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "libraryMetadata1000": {
+        "p50": 5.0,
+        "p95": 5.0,
+        "p99": 5.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 5.0,
+        "max": 5.0,
+        "mean": 5.0
+      },
+      "libraryMetadata10000": {
+        "p50": 5.0,
+        "p95": 5.0,
+        "p99": 5.0,
+        "unit": "statements",
+        "samples": 20,
+        "min": 5.0,
+        "max": 5.0,
+        "mean": 5.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 12428,
+      "seconds": 1.559,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "libraryMetadata1000": {
+        "p50": 3709.0,
+        "p95": 3709.0,
+        "p99": 3709.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 3709.0,
+        "max": 3709.0,
+        "mean": 3709.0
+      },
+      "libraryMetadata10000": {
+        "p50": 3711.0,
+        "p95": 3711.0,
+        "p99": 3711.0,
+        "unit": "bytes",
+        "samples": 20,
+        "min": 3711.0,
+        "max": 3711.0,
+        "mean": 3711.0
+      }
+    },
+    "note": "Bytes của response/ payload mỗi thao tác."
+  },
+  "rssMb": {
+    "baseline": 84.45,
+    "peak": 102.53,
+    "delta": 18.08,
+    "marks": {
+      "baseline": 84.45,
+      "final": 102.53
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 0,
+    "files": {
+      "studio.sqlite3": 0,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL).",
+    "subDatabases": {
+      "metadata-1000": {
+        "wal": 0,
+        "shm": 0,
+        "database": 831488,
+        "files": {
+          "studio.sqlite3": 831488,
+          "studio.sqlite3-wal": 0,
+          "studio.sqlite3-shm": 0
+        },
+        "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+      },
+      "metadata-10000": {
+        "wal": 0,
+        "shm": 0,
+        "database": 4034560,
+        "files": {
+          "studio.sqlite3": 4034560,
+          "studio.sqlite3-wal": 0,
+          "studio.sqlite3-shm": 0
+        },
+        "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+      }
+    }
+  },
+  "thresholds": [
+    {
+      "case": "Project metadata 1k chương",
+      "target": 300,
+      "targetLabel": "p95 ≤ 300 ms",
+      "measured": 16.901,
+      "unit": "ms",
+      "status": "PASS",
+      "note": "G-PERF (plan §7)."
+    },
+    {
+      "case": "Project metadata 10k chương",
+      "target": 400,
+      "targetLabel": "p95 ≤ 400 ms",
+      "measured": 39.58,
+      "unit": "ms",
+      "status": "PASS",
+      "note": "G-PERF (plan §7)."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 2,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {},
+  "notes": []
+}

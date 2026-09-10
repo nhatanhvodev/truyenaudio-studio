@@ -1,0 +1,381 @@
+{
+  "schemaVersion": 1,
+  "fixture": "AUDIO500",
+  "fixtureTitle": "500 segment audio (fake adapter) — duplicate/resume/Range",
+  "seed": 20260908,
+  "fixtureHash": "9d89bdab65e134687b5db905f0b308522086f74849cc8def61bd3cea31c1aa94",
+  "fixtureConfig": {
+    "projects": 1,
+    "segments": 500,
+    "payloadBytes": 1024,
+    "kind": "TTS_SEGMENT",
+    "fakeAdapter": true,
+    "rangeProbes": 10,
+    "dataProfile": "audio-fake"
+  },
+  "generatedAt": "2026-09-10T07:47:10.313249Z",
+  "startedAt": "2026-09-10T07:46:54.653959Z",
+  "finishedAt": "2026-09-10T07:47:10.313249Z",
+  "durationSeconds": 15.659,
+  "tool": {
+    "name": "scripts/benchmarks/run.py",
+    "harnessVersion": "v01.1",
+    "fakeProviders": true,
+    "cloudCalls": 0,
+    "note": "Harness offline: fixture dựng trên data root tạm, mọi adapter/provider đều fake; không gọi cloud trả phí, không tải model."
+  },
+  "network": {
+    "mode": "offline-guard",
+    "blockedAttempts": 0,
+    "targets": [],
+    "note": "Chặn socket.connect/connect_ex/create_connection/getaddrinfo ngoài loopback."
+  },
+  "environment": {
+    "os": "Windows 11 (10.0.26200)",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "cpuCount": 12,
+    "cpuCountPhysical": 6,
+    "machine": "AMD64",
+    "ramTotalMb": 7411.5,
+    "ramAvailableMb": 1807.7,
+    "ramUsedMb": 5603.9,
+    "pythonVersion": "3.12.13",
+    "pythonImplementation": "CPython",
+    "nodeVersion": "v24.11.1",
+    "capturedAt": "2026-09-10T07:47:10.396679Z"
+  },
+  "iterations": 20,
+  "warmup": 5,
+  "dataRoot": {
+    "mode": "temp",
+    "temporary": true,
+    "tempDirRemoved": true,
+    "note": "Data root tạm dưới tempdir của hệ điều hành; không mở data root thật của studio."
+  },
+  "measurement": {
+    "operation": "Ghi checkpoint cho 500 segment (payload tổng hợp 1024 B/segment, RecoveryArtifactWriter thật + ArtifactStore thật), rồi chạy lại toàn bộ để kiểm tra resume."
+  },
+  "faultMode": "none",
+  "fakeLatencyMs": 0,
+  "metrics": {
+    "audio.rangeSeek.total": {
+      "p50": 10.868,
+      "p95": 98.768,
+      "p99": 154.622,
+      "unit": "ms",
+      "samples": 10,
+      "min": 9.728,
+      "max": 168.585,
+      "mean": 26.779,
+      "note": "Một lượt seek: HTTP GET có header Range qua route A05 (206 + slice đúng)."
+    },
+    "audio.checkpoint.total": {
+      "p50": 15.18,
+      "p95": 41.575,
+      "p99": 123.581,
+      "unit": "ms",
+      "samples": 500,
+      "min": 10.466,
+      "max": 249.942,
+      "mean": 21.224,
+      "note": "Một segment: cache lookup + ghi artifact + ghi DB."
+    },
+    "audio.checkpoint.db": {
+      "p50": 0.287,
+      "p95": 0.443,
+      "p99": 0.541,
+      "unit": "ms",
+      "samples": 500,
+      "min": 0.195,
+      "max": 0.797,
+      "mean": 0.303
+    },
+    "audio.checkpoint.statements": {
+      "p50": 2.0,
+      "p95": 2.0,
+      "p99": 2.0,
+      "unit": "statements",
+      "samples": 500,
+      "min": 2.0,
+      "max": 2.0,
+      "mean": 2.0
+    }
+  },
+  "phases": {
+    "db": {
+      "status": "MEASURED",
+      "metric": "audio.checkpoint.db"
+    },
+    "queue": {
+      "status": "NOT_RUN",
+      "note": "AUDIO500 gọi trực tiếp checkpoint của worker, không mô phỏng hàng đợi job."
+    },
+    "provider": {
+      "status": "NOT_RUN",
+      "note": "Fixture chạy offline: không gọi provider/cloud nào (không có số đo provider thật)."
+    },
+    "ffmpeg": {
+      "status": "NOT_RUN",
+      "note": "Không chạy FFmpeg: payload tổng hợp, không cài model/FFmpeg trong fixture."
+    }
+  },
+  "queries": {
+    "perOperation": {
+      "audio.checkpoint": {
+        "p50": 2.0,
+        "p95": 2.0,
+        "p99": 2.0,
+        "unit": "statements",
+        "samples": 500,
+        "min": 2.0,
+        "max": 2.0,
+        "mean": 2.0
+      }
+    },
+    "note": "Số câu SQL mỗi thao tác (SQLAlchemy before/after_cursor_execute).",
+    "totals": {
+      "statements": 2603,
+      "seconds": 0.776,
+      "note": "Tổng theo cả tiến trình; số câu SQL mỗi thao tác nằm trong metrics/<label>.statements.",
+      "attribution": "thread-local khi SQL chạy trên thread gọi thao tác; process-global-delta khi TestClient chạy app ở thread khác (fixture tuần tự nên chênh lệch = thao tác)."
+    }
+  },
+  "responseBytes": {
+    "perOperation": {
+      "audio.payloadBytes": {
+        "p50": 1024.0,
+        "p95": 1024.0,
+        "p99": 1024.0,
+        "unit": "bytes",
+        "samples": 500,
+        "min": 1024.0,
+        "max": 1024.0,
+        "mean": 1024.0
+      }
+    },
+    "note": "Kích thước payload tổng hợp mỗi segment do fixture sinh (--fixture AUDIO500), không phải response HTTP."
+  },
+  "rssMb": {
+    "baseline": 84.36,
+    "peak": 96.39,
+    "delta": 12.03,
+    "marks": {
+      "baseline": 84.36,
+      "final": 96.39
+    },
+    "unit": "MiB",
+    "source": "psutil.Process().memory_info().rss — cùng tiến trình CLI"
+  },
+  "walBytes": {
+    "wal": 0,
+    "shm": 0,
+    "database": 978944,
+    "files": {
+      "studio.sqlite3": 978944,
+      "studio.sqlite3-wal": 0,
+      "studio.sqlite3-shm": 0
+    },
+    "note": "Kích thước file sau khi đo xong (WAL của chế độ journal_mode=WAL)."
+  },
+  "thresholds": [
+    {
+      "case": "Audio 500 segment — duplicate READY",
+      "target": 0,
+      "targetLabel": "0 duplicate READY",
+      "measured": 0,
+      "unit": "duplicate",
+      "status": "PASS",
+      "note": "500 artifact READY trong DB sau lượt ghi; kiểm tra theo (kind, input_hash, settings_hash)."
+    },
+    {
+      "case": "Audio 500 segment — checkpoint/part-master resume",
+      "target": 500,
+      "targetLabel": "hồi phục đủ 500 segment rồi resume 0 artifact mới",
+      "measured": {
+        "firstPassCreated": 500,
+        "injectedFaults": 0,
+        "recoveryCreated": 0,
+        "recoveryCacheHits": 500,
+        "resumeCacheHits": 500,
+        "resumeCreated": 0,
+        "segments": 500
+      },
+      "unit": "segment",
+      "status": "PASS",
+      "note": "Lượt hồi phục (không tiêm lỗi) phải tạo đúng phần còn thiếu để đủ 500 segment; lượt resume sau đó phải trúng cache toàn bộ (sha256 + byte_size khớp file trên đĩa) và tạo 0 artifact mới. Index unique READY từ chối bản trùng: True."
+    },
+    {
+      "case": "Audio 500 segment — seek Range",
+      "target": 10,
+      "targetLabel": "seek Range thành công (206 + slice đúng)",
+      "measured": {
+        "probes": 10,
+        "status206": 10,
+        "bytesExact": 10
+      },
+      "unit": "http",
+      "status": "PASS",
+      "note": "Probe HTTP thật qua route A05: GET /api/chapters/{chapterId}/audio/artifacts/{artifactId}/content với header Range, kiểm tra status 206, Content-Range, Accept-Ranges và byte trả về khớp payload gốc."
+    }
+  ],
+  "statusSummary": {
+    "PASS": 3,
+    "FAIL": 0,
+    "NOT_RUN": 0,
+    "BLOCKED": 0
+  },
+  "overallStatus": "PASS",
+  "extras": {
+    "audio": {
+      "segments": 500,
+      "payloadBytesPerSegment": 1024,
+      "artifactKind": "TTS_SEGMENT",
+      "measuredSegments": 500,
+      "passes": {
+        "firstPassWithFaultInjection": {
+          "created": 500,
+          "injectedFaults": 0,
+          "cacheHits": 0
+        },
+        "recoveryPass": {
+          "cacheHits": 500,
+          "created": 0
+        },
+        "resumePass": {
+          "cacheHits": 500,
+          "created": 0
+        }
+      },
+      "readyArtifacts": 500,
+      "duplicateReadyArtifacts": 0,
+      "duplicateReadyRejectedByIndex": true,
+      "injectedFaults": 0,
+      "createdFirstPass": 500,
+      "persistedAfterRecovery": 500,
+      "fakeAdapter": true,
+      "rangeRouteAvailable": true,
+      "rangeRouteEvidence": "D:\\truyenaudio-studio\\backend\\app\\api\\audio.py",
+      "rangeProbe": {
+        "ok": true,
+        "probes": [
+          {
+            "artifactId": "01a08a48-b5ba-7de8-9ef0-2b9e6cdce344",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 0,
+            "bytesExact": true,
+            "latencyMs": 168.585,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b5dc-721e-80d3-73c66a38d59b",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 1,
+            "bytesExact": true,
+            "latencyMs": 11.453,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b5ee-7e2e-8ba4-4f3a4fd8696e",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 2,
+            "bytesExact": true,
+            "latencyMs": 11.51,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b607-7f3c-a441-29a4a72b7d6f",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 3,
+            "bytesExact": true,
+            "latencyMs": 10.042,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b616-7268-8a87-64c859a5f255",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 4,
+            "bytesExact": true,
+            "latencyMs": 9.728,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b64f-7a4b-aafe-6945d693e5db",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 5,
+            "bytesExact": true,
+            "latencyMs": 10.814,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b659-7d12-9833-7d1f40e7711d",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 6,
+            "bytesExact": true,
+            "latencyMs": 10.871,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b693-7a56-9ce9-77a35e01c383",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 7,
+            "bytesExact": true,
+            "latencyMs": 13.435,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b6a4-7689-b59c-38ad17f238e0",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 8,
+            "bytesExact": true,
+            "latencyMs": 10.865,
+            "ok": true
+          },
+          {
+            "artifactId": "01a08a48-b6ac-7d3e-a13f-1119c768e416",
+            "range": "bytes=256-511",
+            "status": 206,
+            "contentRange": "bytes 256-511/1024",
+            "bytesReturned": 256,
+            "segmentIndex": 9,
+            "bytesExact": true,
+            "latencyMs": 10.482,
+            "ok": true
+          }
+        ],
+        "route": "GET /api/chapters/{chapterId}/audio/artifacts/{artifactId}/content",
+        "source": "backend/app/api/audio.py"
+      }
+    }
+  },
+  "notes": [
+    "AUDIO500 dùng payload TỔNG HỢP (fake) — chỉ chứng minh plumbing/duplicate/resume; KHÔNG phải audio VieNeu thật và không claim chất lượng/TTS live."
+  ]
+}
