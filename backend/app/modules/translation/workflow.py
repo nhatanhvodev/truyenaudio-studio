@@ -26,6 +26,7 @@ from app.db.base import utc_now
 from app.db.models import (
     AuditEvent,
     Chapter,
+    EventLog,
     Project,
     ProviderProfile,
     QaIssue,
@@ -360,9 +361,10 @@ class TranslationWorkflow:
             chapter.state = next_state(
                 chapter.state, ChapterState.TRANSLATION_APPROVED
             ).value
+        audit_id = self.id_factory()
         self.session.add(
             AuditEvent(
-                id=self.id_factory(),
+                id=audit_id,
                 actor="LOCAL_OWNER",
                 action="APPROVE_TRANSLATION",
                 entity_type="TranslationRun",
@@ -375,6 +377,9 @@ class TranslationWorkflow:
                     separators=(",", ":"),
                 ),
             )
+        )
+        self.session.add(
+            EventLog(entity_type="audit", entity_id=audit_id, created_at=utc_now())
         )
         record_approved_run(self.session, run.id, id_factory=self.id_factory)
         self.session.commit()

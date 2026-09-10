@@ -348,6 +348,7 @@ class JobRunner:
                 now,
                 result_artifact_id=result_artifact_id,
             )
+            _emit_job_event(connection, job_id, now)
         return _job_view(row)
 
     def fail(
@@ -385,6 +386,7 @@ class JobRunner:
                     error_code="BILLING_UNKNOWN",
                     error_summary=error.summary,
                 )
+                _emit_job_event(connection, job_id, now)
                 return _job_view(row)
 
             decision = classify_retry(
@@ -408,6 +410,7 @@ class JobRunner:
                 error_code=error.code,
                 error_summary=error.summary,
             )
+            _emit_job_event(connection, job_id, now)
         return _job_view(row)
 
     def defer(self, job_id: str, next_run_at: datetime) -> JobView:
@@ -944,6 +947,27 @@ def _job_view(row: RowMapping) -> JobView:
         error_code=row["error_code"],
         error_summary=row["error_summary"],
         plan=_parse_plan(row.get("plan_json")),
+    )
+
+
+def _emit_job_event(connection, job_id: str, now: datetime) -> None:
+    """Append the job to the event feed in the same transaction (J03).
+
+    The feed is append-only and stores references; insertion is guarded so a
+    terminal transition can never add the same (entity_type, entity_id) twice.
+    """
+    connection.execute(
+        text(
+            """
+            INSERT INTO event_log (entity_type, entity_id, created_at)
+            SELECT 'job', :job_id, :now
+            WHERE NOT EXISTS (
+                SELECT 1 FROM event_log
+                WHERE entity_type = 'job' AND entity_id = :job_id
+            )
+            """
+        ),
+        {"job_id": job_id, "now": now.isoformat()},
     )
 
 
