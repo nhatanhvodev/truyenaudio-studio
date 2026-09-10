@@ -196,12 +196,20 @@ def build_default_handlers(settings: Settings | None = None) -> dict[JobKind, Ha
         # handler needs no arguments; without this registration the audio
         # render-jobs route would enqueue jobs the worker cannot execute.
         from app.modules.jobs.execution_handlers import (
+            build_review_handler,
+            build_summarize_handler,
             build_synthesize_handler,
             build_translate_handler,
         )
 
         handlers[JobKind.TRANSLATE] = build_translate_handler(settings)
         handlers[JobKind.SYNTHESIZE] = build_synthesize_handler()
+        # J01 final slice: REVIEW and SUMMARIZE keep the TRANSLATE skeleton -
+        # plan/chapter/revision/profile validation, then an explicit fake vs
+        # cloud branch. The fake branch runs offline; the cloud branch fails
+        # with a precise, non-retryable code instead of pretending.
+        handlers[JobKind.REVIEW] = build_review_handler(settings)
+        handlers[JobKind.SUMMARIZE] = build_summarize_handler(settings)
     return handlers
 
 

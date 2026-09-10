@@ -89,6 +89,7 @@ class JobKind(StrEnum):
     MASTER = "MASTER"
     AUDIO_QA = "AUDIO_QA"
     EXPORT = "EXPORT"
+    SUMMARIZE = "SUMMARIZE"
 
 
 class JobStatus(StrEnum):

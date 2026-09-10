@@ -99,6 +99,9 @@ EXPECTED_ENUMS = {
         "MASTER",
         "AUDIO_QA",
         "EXPORT",
+        # J01 final slice: migration 0018 appends SUMMARIZE to the frozen
+        # jobs.kind check constraint so the worker can claim story-memory jobs.
+        "SUMMARIZE",
     },
     JobStatus: {
         "QUEUED",

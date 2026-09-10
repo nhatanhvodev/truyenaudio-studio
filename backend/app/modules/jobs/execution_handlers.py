@@ -13,6 +13,24 @@ so an interrupted attempt resumes from the synthesis cache instead of paying
 for the same segment twice. It runs on the recovery session (not a private
 engine) precisely because that session is the one the checkpoints commit; the
 worker owns both the database and the artifact root.
+
+REVIEW and SUMMARIZE (task J01, final slice) follow the TRANSLATE skeleton -
+require_plan, chapter/revision/profile validation, then an explicit fake vs
+cloud branch - and each branch is honest about what it can do offline:
+
+* REVIEW runs the frozen deterministic rule set over the chapter's current
+  REVIEW run and records the issues it finds. The local ("fake") profile
+  adapter is the only adapter wired to that path today; a cloud reviewer
+  (qwen/gemini) is refused with REVIEW_CLOUD_PROVIDER_NOT_WIRED rather than
+  silently downgraded to the local rules.
+* SUMMARIZE writes one story-memory CANDIDATE recap per chapter from the
+  chapter's newest translation run (falling back to the normalized source)
+  with no model call. A cloud summarizer is refused with
+  SUMMARIZE_REQUIRES_CLOUD_PROVIDER.
+
+Both handlers are idempotent: replaying a job never duplicates a QA issue or
+re-proposes a story-memory recap that was already recorded or decided, so an
+interrupted or retried job converges on the same database state.
 """
 
 from __future__ import annotations
@@ -20,10 +38,30 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 
-from app.contracts import AudioProcessor, JobKind, TtsAdapter
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.contracts import AudioProcessor, JobKind, QaStatus, RunStatus, TtsAdapter, new_id
 from app.db.base import create_engine_for, session_factory
-from app.db.models import Chapter, ProviderProfile
+from app.db.models import (
+    Chapter,
+    ProviderProfile,
+    QaIssue,
+    SourceRevision,
+    SourceSegment,
+    StoryMemoryEntry as StoryMemoryRow,
+    TranslationRun,
+    TranslationSegment,
+)
 from app.modules.jobs.handlers import PlanRequiredError, require_plan
+from app.modules.translation.glossary import locked_rules_for_chapter
+from app.modules.translation.qa import run_deterministic_qa
+from app.modules.translation.story_memory import (
+    STATUS_APPROVED,
+    STATUS_CANDIDATE,
+    STATUS_REJECTED,
+    StoryMemoryService,
+)
 from app.modules.jobs.recovery import RecoveryJobContext
 from app.modules.speech.workflow import (
     SpeechWorkflow,
@@ -293,3 +331,345 @@ def _run_guarded_translate(
             )
     finally:
         engine.dispose()
+
+
+# Provider routing shared by the REVIEW and SUMMARIZE handlers. A profile whose
+# adapter is not listed here is refused before any work happens, so an unknown
+# adapter can never be mistaken for the offline one.
+FAKE_PROVIDER = "fake"
+CLOUD_PROVIDER = "cloud"
+UNSUPPORTED_PROVIDER = "unsupported"
+LOCAL_SUMMARY_CHAR_LIMIT = 280
+
+
+class ReviewReject(HandlerUnavailable):
+    """A REVIEW job refused before any QA issue is written."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(JobKind.REVIEW)
+        self.code = code
+
+
+def build_review_handler(
+    settings: Settings, *, db_path: object | None = None
+) -> Callable[..., Awaitable[str | None]]:
+    async def handler(lease, recovery: RecoveryJobContext) -> str | None:
+        await asyncio.to_thread(_execute_review, settings, db_path, recovery, lease)
+        return None
+
+    return handler
+
+
+def _execute_review(
+    settings: Settings, db_path: object | None, recovery: RecoveryJobContext, lease: object
+) -> None:
+    job = recovery.runner.get(lease.job_id)
+    try:
+        plan = require_plan(JobKind.REVIEW, job.plan)
+    except PlanRequiredError as exc:
+        raise ReviewReject(exc.code) from exc
+    chapter_id = job.chapter_id
+    if not chapter_id:
+        raise ReviewReject("REVIEW_CHAPTER_REQUIRED")
+    profile_id = str(plan["profileId"])
+    database_path = _database_path(settings, db_path)
+
+    engine = create_engine_for(database_path)
+    try:
+        with session_factory(engine)() as session:
+            adapter_name = _validate_chapter_profile(
+                session,
+                chapter_id=chapter_id,
+                profile_id=profile_id,
+                plan=plan,
+                reject=ReviewReject,
+                prefix="REVIEW",
+            )
+    finally:
+        engine.dispose()
+
+    route = _provider_route(adapter_name)
+    if route == FAKE_PROVIDER:
+        recovery.raise_if_cancel_requested()
+        _run_fake_review(database_path, chapter_id)
+        return
+    if route == CLOUD_PROVIDER:
+        # A cloud reviewer is not wired to the worker yet: dispatching the local
+        # rule set instead would report a model review that never happened.
+        raise ReviewReject("REVIEW_CLOUD_PROVIDER_NOT_WIRED")
+    raise ReviewReject(f"REVIEW_PROVIDER_UNSUPPORTED:{adapter_name}")
+
+
+def _run_fake_review(database_path: object, chapter_id: str) -> None:
+    """Record the issues the frozen rule set finds in the current REVIEW run.
+
+    The local path is deterministic and offline: no provider is called and no
+    translation text is written. Issues are keyed by (source segment, rule), so
+    replaying a REVIEW job never duplicates an issue and never resurrects one the
+    editor already dismissed or accepted as risk.
+    """
+    engine = create_engine_for(database_path)
+    try:
+        with session_factory(engine)() as session:
+            chapter = session.get(Chapter, chapter_id)
+            if chapter is None:
+                raise ReviewReject("REVIEW_CHAPTER_NOT_FOUND")
+            run = _current_review_run(session, chapter_id)
+            if run is None:
+                raise ReviewReject("REVIEW_RUN_NOT_FOUND")
+            rules = locked_rules_for_chapter(session, chapter.project_id, chapter.ordinal)
+            locked_terms = tuple((rule.source_term, rule.target_term) for rule in rules)
+            forbidden_forms = tuple(
+                (rule.source_term, rule.forbidden_forms)
+                for rule in rules
+                if rule.forbidden_forms
+            )
+            recorded = {
+                (row[0], row[1])
+                for row in session.execute(
+                    select(QaIssue.source_segment_id, QaIssue.rule_or_model).where(
+                        QaIssue.translation_run_id == run.id
+                    )
+                )
+            }
+            for segment in _run_segments(session, run.id):
+                source = session.get(SourceSegment, segment.source_segment_id)
+                if source is None:
+                    raise ReviewReject("REVIEW_SOURCE_SEGMENT_NOT_FOUND")
+                drafts = run_deterministic_qa(
+                    source.source_text,
+                    segment.target_text,
+                    locked_terms,
+                    forbidden_forms,
+                )
+                for draft in drafts:
+                    if (segment.source_segment_id, draft.rule_or_model) in recorded:
+                        continue
+                    session.add(
+                        QaIssue(
+                            id=new_id(),
+                            chapter_id=run.chapter_id,
+                            translation_run_id=run.id,
+                            category=draft.category.value,
+                            severity=draft.severity.value,
+                            status=QaStatus.OPEN.value,
+                            source_segment_id=segment.source_segment_id,
+                            evidence=draft.evidence,
+                            suggestion=draft.suggestion,
+                            rule_or_model=draft.rule_or_model,
+                        )
+                    )
+            session.commit()
+    finally:
+        engine.dispose()
+
+
+class SummarizeReject(HandlerUnavailable):
+    """A SUMMARIZE job refused before any story-memory candidate is written."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(JobKind.SUMMARIZE)
+        self.code = code
+
+
+def build_summarize_handler(
+    settings: Settings, *, db_path: object | None = None
+) -> Callable[..., Awaitable[str | None]]:
+    async def handler(lease, recovery: RecoveryJobContext) -> str | None:
+        await asyncio.to_thread(_execute_summarize, settings, db_path, recovery, lease)
+        return None
+
+    return handler
+
+
+def _execute_summarize(
+    settings: Settings, db_path: object | None, recovery: RecoveryJobContext, lease: object
+) -> None:
+    job = recovery.runner.get(lease.job_id)
+    try:
+        plan = require_plan(JobKind.SUMMARIZE, job.plan)
+    except PlanRequiredError as exc:
+        raise SummarizeReject(exc.code) from exc
+    chapter_id = job.chapter_id
+    if not chapter_id:
+        raise SummarizeReject("SUMMARIZE_CHAPTER_REQUIRED")
+    profile_id = str(plan["profileId"])
+    database_path = _database_path(settings, db_path)
+
+    engine = create_engine_for(database_path)
+    try:
+        with session_factory(engine)() as session:
+            adapter_name = _validate_chapter_profile(
+                session,
+                chapter_id=chapter_id,
+                profile_id=profile_id,
+                plan=plan,
+                reject=SummarizeReject,
+                prefix="SUMMARIZE",
+            )
+    finally:
+        engine.dispose()
+
+    route = _provider_route(adapter_name)
+    if route == FAKE_PROVIDER:
+        recovery.raise_if_cancel_requested()
+        _run_fake_summarize(database_path, chapter_id)
+        return
+    if route == CLOUD_PROVIDER:
+        raise SummarizeReject("SUMMARIZE_REQUIRES_CLOUD_PROVIDER")
+    raise SummarizeReject(f"SUMMARIZE_PROVIDER_UNSUPPORTED:{adapter_name}")
+
+
+def _run_fake_summarize(database_path: object, chapter_id: str) -> None:
+    """Write one deterministic story-memory CANDIDATE recap, offline.
+
+    The recap is extracted from the chapter text with no model call, and it is
+    always a CANDIDATE: only StoryMemoryService.approve, which demands an
+    APPROVED run plus evidence segments, can put it into translation context. A
+    recap that was already recorded or decided is never re-proposed, so a retried
+    job converges instead of piling up revisions.
+    """
+    engine = create_engine_for(database_path)
+    try:
+        with session_factory(engine)() as session:
+            chapter = session.get(Chapter, chapter_id)
+            if chapter is None:
+                raise SummarizeReject("SUMMARIZE_CHAPTER_NOT_FOUND")
+            revision = (
+                session.get(SourceRevision, chapter.active_source_revision_id)
+                if chapter.active_source_revision_id
+                else None
+            )
+            summary = _local_summary(_summary_source(session, chapter, revision))
+            if not summary:
+                raise SummarizeReject("SUMMARIZE_SOURCE_TEXT_REQUIRED")
+            entity_key = f"chapter:{chapter.ordinal}"
+            if _memory_entry_exists(session, chapter.project_id, entity_key, summary):
+                return
+            StoryMemoryService(session).create_candidate(
+                chapter.project_id,
+                entity_key=entity_key,
+                entity_type="CHAPTER",
+                summary=summary,
+                valid_from_ordinal=chapter.ordinal,
+            )
+    finally:
+        engine.dispose()
+
+
+def _summary_source(
+    session: Session, chapter: Chapter, revision: SourceRevision | None
+) -> str:
+    """Prefer the newest translated text, fall back to the normalized source."""
+    run = session.scalar(
+        select(TranslationRun)
+        .where(
+            TranslationRun.chapter_id == chapter.id,
+            TranslationRun.status.in_(
+                (RunStatus.REVIEW.value, RunStatus.APPROVED.value)
+            ),
+        )
+        .order_by(TranslationRun.created_at.desc(), TranslationRun.id.desc())
+    )
+    if run is not None:
+        targets = [
+            segment.target_text.strip()
+            for segment in _run_segments(session, run.id)
+            if segment.target_text.strip()
+        ]
+        if targets:
+            return "\n".join(targets)
+    if revision is None:
+        return ""
+    return revision.normalized_text or ""
+
+
+def _local_summary(text: str) -> str:
+    """Collapse whitespace and clip the recap to a deterministic length."""
+    return " ".join(text.split())[:LOCAL_SUMMARY_CHAR_LIMIT]
+
+
+def _memory_entry_exists(
+    session: Session, project_id: str, entity_key: str, summary: str
+) -> bool:
+    """True when this exact recap was already proposed or decided for the entity."""
+    return (
+        session.scalar(
+            select(StoryMemoryRow.id)
+            .where(
+                StoryMemoryRow.project_id == project_id,
+                StoryMemoryRow.entity_key == entity_key,
+                StoryMemoryRow.summary == summary,
+                StoryMemoryRow.status.in_(
+                    (STATUS_CANDIDATE, STATUS_APPROVED, STATUS_REJECTED)
+                ),
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _current_review_run(session: Session, chapter_id: str) -> TranslationRun | None:
+    """The newest REVIEW run of the chapter, or None when the chapter has none."""
+    return session.scalar(
+        select(TranslationRun)
+        .where(
+            TranslationRun.chapter_id == chapter_id,
+            TranslationRun.status == RunStatus.REVIEW.value,
+        )
+        .order_by(TranslationRun.created_at.desc(), TranslationRun.id.desc())
+    )
+
+
+def _run_segments(session: Session, run_id: str) -> tuple[TranslationSegment, ...]:
+    return tuple(
+        session.scalars(
+            select(TranslationSegment)
+            .where(TranslationSegment.translation_run_id == run_id)
+            .join(SourceSegment, SourceSegment.id == TranslationSegment.source_segment_id)
+            .order_by(SourceSegment.segment_index, TranslationSegment.id)
+        ).all()
+    )
+
+
+def _validate_chapter_profile(
+    session: Session,
+    *,
+    chapter_id: str,
+    profile_id: str,
+    plan: Mapping[str, object],
+    reject: Callable[[str], HandlerUnavailable],
+    prefix: str,
+) -> str:
+    """Fail closed before any dispatch; returns the profile adapter name.
+
+    The plan is written once at enqueue and never mutated, so a source revision
+    that moved after enqueue is a stale plan and the job is refused instead of
+    reviewing or summarizing something the operator never approved.
+    """
+    chapter = session.get(Chapter, chapter_id)
+    if chapter is None:
+        raise reject(f"{prefix}_CHAPTER_NOT_FOUND")
+    plan_revision = plan.get("revisionId")
+    if plan_revision is not None and str(chapter.active_source_revision_id or "") != str(
+        plan_revision
+    ):
+        raise reject(f"{prefix}_REVISION_STALE")
+    profile = session.get(ProviderProfile, profile_id)
+    if profile is None:
+        raise reject(f"{prefix}_PROFILE_NOT_FOUND")
+    if not profile.enabled:
+        raise reject(f"{prefix}_PROFILE_DISABLED")
+    return str(profile.adapter_name or "")
+
+
+def _provider_route(adapter_name: str) -> str:
+    """Classify a profile adapter into the fake, cloud or unsupported branch."""
+    if adapter_name.startswith("fake"):
+        return FAKE_PROVIDER
+    if adapter_name == "qwen-mt" or adapter_name.startswith("qwen"):
+        return CLOUD_PROVIDER
+    if adapter_name.startswith("gemini"):
+        return CLOUD_PROVIDER
+    return UNSUPPORTED_PROVIDER

@@ -22,6 +22,7 @@ PLAN_REQUIRED_KINDS = frozenset(
         JobKind.REPAIR_TRANSLATION,
         JobKind.PREVIEW_TTS,
         JobKind.SYNTHESIZE,
+        JobKind.SUMMARIZE,
         JobKind.MASTER,
         JobKind.AUDIO_QA,
         JobKind.EXPORT,
