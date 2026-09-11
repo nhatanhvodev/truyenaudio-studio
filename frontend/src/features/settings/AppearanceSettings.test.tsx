@@ -58,7 +58,7 @@ describe('AppearanceSettings (U10)', () => {
 
   it('resets to defaults and clears the stored document', async () => {
     render(<AppearanceSettings />);
-    fireEvent.change(screen.getByLabelText('Theme'), { target: { value: 'dark' } });
+    fireEvent.change(screen.getByLabelText('Theme'), { target: { value: 'light' } });
     fireEvent.click(screen.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }));
     expect(window.localStorage.getItem(STORAGE_KEY)).not.toBeNull();
 
