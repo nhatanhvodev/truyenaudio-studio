@@ -639,27 +639,27 @@ export function subscribePreferences(listener: (preferences: UiPreferences) => v
 Seeds from the attribute the boot script already wrote, so the theme is never re-resolved and there is no second source of truth:
 
 ```tsx
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 import { applyPreferences, readStoredPreferences, subscribePreferences } from './themeRuntime';
 
 /**
- * Owns every later theme change. The initial value is read from the DOM
- * attribute the boot script in index.html already wrote, so the provider never
- * re-resolves the theme and cannot disagree with first paint.
+ * Owns every LATER change. The boot script in index.html already resolved
+ * data-theme before this bundle ran, so the provider never resolves a second
+ * time — it re-applies the stored document and then reacts to changes.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [ready, setReady] = useState(false);
-
   useEffect(() => {
+    // Idempotent at startup: the boot script wrote these from the raw
+    // localStorage value. parsePreferences sanitizes that value, so this is
+    // also what repairs a malformed or tampered stored document.
     applyPreferences(readStoredPreferences());
-    setReady(true);
     return subscribePreferences((preferences) => {
       applyPreferences(preferences);
     });
   }, []);
 
-  // System theme changes while the preference is "system".
+  // System colour-scheme changes while the preference is "system".
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return;
     const query = window.matchMedia('(prefers-color-scheme: dark)');
@@ -668,11 +668,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => query.removeEventListener('change', onChange);
   }, []);
 
-  return ready ? <>{children}</> : null;
+  return <>{children}</>;
 }
 ```
 
-`ready` is false for one render so children never mount with the wrong theme. The boot script already painted the right colours, so this is not a visible gap.
+No `ready` gate and no theme state: the boot script has already written theme, density and root font size before React mounts, so children render correct on their first paint. Withholding the first render would blank the app for a frame and buy nothing.
 
 - [ ] **Step 5: Add the boot script to `frontend/index.html`**
 
@@ -680,19 +680,33 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 <div id="root"></div>
 <script>
   (function () {
+    var SIZES = { small: '87.5%', medium: '100%', large: '112.5%' };
+    var root = document.documentElement;
+    var prefs = {};
     try {
       var raw = window.localStorage.getItem('studio.ui-preferences');
-      var theme = raw ? JSON.parse(raw).theme : 'dark';
-      if (theme !== 'light' && theme !== 'dark') {
-        theme =
-          window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? 'dark'
-            : 'light';
-      }
-      document.documentElement.dataset.theme = theme;
+      if (raw) prefs = JSON.parse(raw) || {};
     } catch (error) {
-      document.documentElement.dataset.theme = 'dark';
+      prefs = {};
     }
+
+    var theme = prefs.theme;
+    // No usable stored choice means the default preference, which is dark.
+    // Only an explicit "system" follows the OS — otherwise a new user on a
+    // light-mode OS would flash light and then snap to dark.
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'system') {
+      theme = 'dark';
+    }
+    if (theme === 'system') {
+      theme =
+        window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light';
+    }
+    root.dataset.theme = theme;
+
+    root.dataset.density = prefs.density === 'compact' ? 'compact' : 'comfortable';
+    root.style.fontSize = SIZES[prefs.fontScale] || '100%';
   })();
 </script>
 <script type="module" src="/src/main.tsx"></script>
@@ -708,31 +722,71 @@ import { fileURLToPath } from 'node:url';
 
 describe('boot script parity with resolveTheme', () => {
   const html = readFileSync(fileURLToPath(new URL('../../../index.html', import.meta.url)), 'utf8');
+  const body = /<script>\s*([\s\S]*?)<\/script>/.exec(html)?.[1];
 
-  function runBootScript(storedTheme: string | null, systemDark: boolean): string {
-    const body = /<script>\s*([\s\S]*?)<\/script>/.exec(html)?.[1];
-    if (!body) throw new Error('boot script not found in index.html');
-    const root = { dataset: {} as Record<string, string> };
-    const window = {
-      localStorage: { getItem: () => storedTheme },
-      matchMedia: () => ({ matches: systemDark }),
-    };
-    const document = { documentElement: root };
-    new Function('window', 'document', body)(window, document);
-    return root.dataset.theme;
+  interface BootResult {
+    theme: string;
+    density: string;
+    fontSize: string;
   }
 
+  function runBootScript(storedRaw: string | null, systemDark: boolean): BootResult {
+    if (!body) throw new Error('boot script not found in index.html');
+    const root = { dataset: {} as Record<string, string>, style: { fontSize: '' } };
+    const window = {
+      localStorage: { getItem: () => storedRaw },
+      matchMedia: () => ({ matches: systemDark }),
+    };
+    new Function('window', 'document', body)(window, { documentElement: root });
+    return { theme: root.dataset.theme, density: root.dataset.density, fontSize: root.style.fontSize };
+  }
+
+  function stored(theme: string | null, extra: Record<string, string> = {}): string | null {
+    return theme === null ? null : JSON.stringify({ version: 1, theme, ...extra });
+  }
+
+  // No stored preference resolves to 'dark' on BOTH system settings, because
+  // dark is what defaultPreferences() returns. Only an explicit 'system'
+  // follows the OS. This is the exact drift this test exists to catch.
   it.each([
     ['light', true, 'light'],
     ['dark', false, 'dark'],
     ['system', true, 'dark'],
     ['system', false, 'light'],
     [null, true, 'dark'],
-    [null, false, 'light'],
-  ])('stored=%s systemDark=%s -> %s', (stored, systemDark, expected) => {
-    expect(runBootScript(stored as string | null, systemDark as boolean)).toBe(expected);
-    const theme = (stored ?? 'system') as 'light' | 'dark' | 'system';
-    expect(resolveTheme(theme, systemDark as boolean)).toBe(expected);
+    [null, false, 'dark'],
+    ['garbage', true, 'dark'],
+  ])('stored=%s systemDark=%s -> %s', (theme, systemDark, expected) => {
+    expect(runBootScript(stored(theme as string | null), systemDark as boolean).theme).toBe(expected);
+    const resolved = resolveTheme((theme ?? 'dark') as 'light' | 'dark' | 'system', systemDark as boolean);
+    expect(resolved).toBe(expected);
+  });
+
+  it('writes density and root font size, defaulting when absent or invalid', () => {
+    expect(runBootScript(null, true)).toMatchObject({ density: 'comfortable', fontSize: '100%' });
+    expect(runBootScript(stored('dark', { density: 'compact', fontScale: 'large' }), true)).toMatchObject({
+      density: 'compact',
+      fontSize: '112.5%',
+    });
+    expect(runBootScript(stored('dark', { density: 'bogus', fontScale: 'bogus' }), true)).toMatchObject({
+      density: 'comfortable',
+      fontSize: '100%',
+    });
+  });
+
+  it('keeps the dark default when localStorage throws', () => {
+    if (!body) throw new Error('boot script not found in index.html');
+    const root = { dataset: {} as Record<string, string>, style: { fontSize: '' } };
+    const window = {
+      localStorage: {
+        getItem: () => {
+          throw new Error('storage blocked');
+        },
+      },
+      matchMedia: () => ({ matches: false }),
+    };
+    new Function('window', 'document', body)(window, { documentElement: root });
+    expect(root.dataset.theme).toBe('dark');
   });
 });
 ```
@@ -1680,7 +1734,7 @@ Every hit must be inside the `styles` object definition itself. Any hit inside a
 
 Remove the entire `styles` object. This also removes the last hardcoded palette in the app, including the `linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)` button fill.
 
-If some screen still references `styles.<key>`, that screen is not yet on CSS Modules. Give it a `.module.css` in G5 and move it now only if the reference blocks deletion; otherwise leave the class assignment for G5 and replace the value with the literal it needs, marked with a `/* G5 */` comment. Prefer moving it now.
+If some screen still references `styles.<key>`, that screen was not fully moved. Do not leave a hex literal behind and do not delete the object: go back to that screen's G4 task, finish moving it into its own module, then continue here. A leftover hex literal would pass Step 2 and fail Step 3's grep, so leaving one must be impossible.
 
 - [ ] **Step 3: Verify**
 
@@ -2247,15 +2301,6 @@ test('the primary flow is keyboard completable', async ({ page }) => {
   expect(outline.style).not.toBe('none');
 });
 
-test('Vietnamese and CJK prose stay intact and are never uppercased', async ({ page }) => {
-  await page.goto('/');
-  const sample = page.locator('.reading, [data-testid="source-segment"]').first();
-  if ((await sample.count()) > 0) {
-    const transform = await sample.evaluate((el) => window.getComputedStyle(el).textTransform);
-    expect(transform).toBe('none');
-  }
-});
-
 test('reduced motion removes transitions', async ({ browser }) => {
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
@@ -2267,6 +2312,41 @@ test('reduced motion removes transitions', async ({ browser }) => {
   expect(['0s', '0.01ms', '0.00001s']).toContain(duration);
   await context.close();
 });
+```
+
+Then add the prose-integrity check to `e2e/single-voice.spec.ts` — that test already seeds the CJK fixture `第一章\n林动说：“你好。”` (line 45) and reaches the translation route at line 53, so it is the one place where real CJK prose is on screen. Insert immediately after the `Dịch & Hiệu đính` heading assertion (currently line 54), before translation runs:
+
+```ts
+  // Uppercase is a no-op on CJK, so a rule that uppercases prose is invisible in
+  // the rendered text and can only be caught by computed style. Prove the fixture
+  // is actually rendered first, or the assertion below could pass on an empty set.
+  const cjkElementCount = await page.evaluate(() => {
+    let count = 0;
+    document.querySelectorAll<HTMLElement>('body *').forEach((el) => {
+      const ownText = Array.from(el.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? '')
+        .join('');
+      if (/[㐀-鿿]/.test(ownText)) count += 1;
+    });
+    return count;
+  });
+  expect(cjkElementCount, 'the CJK fixture must be on screen before this check means anything').toBeGreaterThan(0);
+
+  const uppercasedProse = await page.evaluate(() => {
+    const bad: string[] = [];
+    document.querySelectorAll<HTMLElement>('body *').forEach((el) => {
+      const ownText = Array.from(el.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? '')
+        .join('');
+      if (!/[㐀-鿿]/.test(ownText)) return;
+      const transform = window.getComputedStyle(el).textTransform;
+      if (transform !== 'none') bad.push(`${el.tagName}:"${ownText.trim().slice(0, 20)}" [${transform}]`);
+    });
+    return bad;
+  });
+  expect(uppercasedProse, `uppercased CJK prose: ${uppercasedProse.join(' | ')}`).toEqual([]);
 ```
 
 - [ ] **Step 2: Run**

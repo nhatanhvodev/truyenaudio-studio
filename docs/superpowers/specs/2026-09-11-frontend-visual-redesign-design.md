@@ -232,7 +232,7 @@ Làm trước G5 vì ngược lại là restyle code sắp phải di chuyển.
 | G4 làm mất guard âm thầm | Không test nào bắt được nếu chỉ đổi cấu trúc | Chạy E2E lấy baseline **trước** G4, so lại sau |
 | `uppercase` giết chữ CJK | Brutalist dùng chữ hoa nhiều; `text-transform: uppercase` vô nghĩa với Hán tự và hỏng dấu tiếng Việt | Luật cứng: **không bao giờ uppercase nội dung nguồn/đích**, chỉ uppercase nhãn giao diện |
 | Nháy theme khi tải | JS chạy sau first paint | Boot script inline ở §3.2 |
-| Boot script và `ThemeProvider` lệch nhau | Boot script đọc `localStorage` thô, provider parse qua `uiPreferences`; hai bên phân giải khác nhau thì đổi theme sẽ giật | Boot script chỉ **đọc một khoá** và ghi `data-theme`; provider ghi lại ngay sau mount. Cả hai gọi **cùng** một hàm phân giải, không chép logic |
+| Boot script và `ThemeProvider` lệch nhau | Boot script chạy trước bundle nên **không import được TypeScript**; nếu cả hai cùng phân giải thì logic bị chép đôi và lệch lúc nào không biết | Boot script là nơi **duy nhất** phân giải lúc khởi động và ghi `data-theme`; `ThemeProvider` **đọc lại `documentElement.dataset.theme`** làm giá trị khởi tạo thay vì phân giải lần hai. Test parity chạy chính thân script lấy từ `index.html` đối chiếu `resolveTheme` qua 6 ca, nên hai bên không lệch âm thầm được |
 | Zoom 200% phá lưới cứng | Lưới pixel cố định không giãn | `rem` cho type và spacing; test ở 1280 và 1024 |
 | Primitive và screen lệch nhau | Sau G2 primitive đổi nhưng screen chưa dùng | G5 bắt buộc dùng primitive, cấm hex trực tiếp trong `screens/*.module.css` |
 
