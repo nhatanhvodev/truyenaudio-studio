@@ -13,6 +13,7 @@ import { ExportWorkflow } from '../features/exports/ExportWorkflow';
 import { JobProgress } from '../features/jobs/JobProgress';
 import JobDraftPanel from '../features/jobs/JobDraftPanel';
 import JobsList from '../features/jobs/JobsList';
+import { defaultJobEventStore, type JobEvent } from '../features/jobs/jobStore';
 import BilingualEditor from '../features/translation/BilingualEditor';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { WenkuImport } from '../features/import/WenkuImport';
@@ -310,10 +311,13 @@ function ImportScreen() {
 
 function BatchScreen() {
   const { projectId } = useParams();
+  // Hooks run before the early return: the action handlers must be created on
+  // every render, even while the route has no project yet (U07 batch retry).
+  const { onCancel, onRetry } = useJobActions();
   if (!projectId) {
     return <Navigate to="/" replace />;
   }
-  return <BatchQueue projectId={projectId} />;
+  return <BatchQueue projectId={projectId} onRetry={onRetry} onCancel={onCancel} />;
 }
 
 function TranslationScreen() {
@@ -1178,11 +1182,32 @@ function ExportScreen() {
   );
 }
 
+/**
+ * U07: cancel/retry actions shared by the jobs list and the batch queue.
+ *
+ * Both actions are real API calls; the durable snapshot is re-read afterwards on
+ * success *and* failure, so the UI never displays a status the backend did not
+ * confirm. A refused action (409/404) is therefore not an error dialog: the job
+ * simply shows its real state again.
+ */
+function useJobActions(store = defaultJobEventStore) {
+  const act = (suffix: 'cancel' | 'retry') => async (event: JobEvent) => {
+    try {
+      await apiJson(`/api/jobs/${encodeURIComponent(event.jobId)}/${suffix}`, { method: 'POST' });
+    } catch {
+      // Refused (e.g. JOB_RETRY_NOT_RETRYABLE) — refresh() below reconciles.
+    }
+    await store.refresh();
+  };
+  return { onCancel: act('cancel'), onRetry: act('retry') };
+}
+
 function JobsScreen() {
+  const { onCancel, onRetry } = useJobActions();
   return (
     <section style={styles.panel}>
       <h1 style={styles.title}>Jobs</h1>
-      <JobsList />
+      <JobsList onRetry={onRetry} onCancel={onCancel} />
       <JobProgress />
     </section>
   );

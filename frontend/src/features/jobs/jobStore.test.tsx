@@ -163,6 +163,23 @@ describe('JobEventStore (U07 round 2)', () => {
     expect(store.snapshot()).toEqual({ events: [], state: 'offline', truncated: false, cursor: null });
   });
 
+  it('re-reads the durable snapshot so an action can reconcile a changed job (U07)', async () => {
+    // The feed keeps one marker per job, so a cancel/retry is not guaranteed to
+    // arrive as a new event: the screen asks for the authoritative snapshot.
+    const events = [event(1, 'job-1', 'FAILED')];
+    const { store } = makeStore({ events });
+    const unsubscribe = store.subscribe(() => undefined);
+    await waitFor(() => expect(StubStream.instances).toHaveLength(1));
+
+    events.push(event(2, 'job-1', 'QUEUED'));
+    await act(async () => {
+      await store.refresh();
+    });
+
+    expect(store.snapshot().events.map((item) => item.status)).toEqual(['FAILED', 'QUEUED']);
+    unsubscribe();
+  });
+
   it('bounds the buffer at 1000 events and reports truncation', async () => {
     const { store } = makeStore({ events: [] });
     store.subscribe(() => undefined);

@@ -32,6 +32,47 @@ describe('App', () => {
     expect(screen.getByText('Chưa có job đang chạy')).toBeVisible();
   });
 
+  it('gửi hủy/thử lại lên API job thật rồi đọc lại trạng thái backend xác nhận (U07)', async () => {
+    window.history.replaceState(null, '', '/jobs');
+    vi.stubGlobal('EventSource', undefined);
+    const calls: string[] = [];
+    const statuses: Record<string, string> = { 'job-failed': 'FAILED', 'job-queued': 'QUEUED' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/api/security/bootstrap')) {
+          return jsonResponse({ csrfToken: 'test-token' });
+        }
+        if (url === '/api/jobs/snapshot') {
+          return jsonResponse({
+            events: [
+              { sequenceId: 1, jobId: 'job-queued', status: statuses['job-queued'], current: 0, total: 2, errorCode: null },
+              { sequenceId: 2, jobId: 'job-failed', status: statuses['job-failed'], current: 1, total: 2, errorCode: 'PROVIDER_5XX' },
+            ],
+          });
+        }
+        if (url === '/api/jobs/job-queued/cancel' || url === '/api/jobs/job-failed/retry') {
+          calls.push(`${init?.method} ${url}`);
+          statuses[url.endsWith('/cancel') ? 'job-queued' : 'job-failed'] = url.endsWith('/cancel') ? 'CANCELED' : 'QUEUED';
+          return jsonResponse({ jobId: 'job-queued', status: statuses['job-queued'], current: 0, total: 2, errorCode: null });
+        }
+        throw new Error(`unexpected url ${url}`);
+      }),
+    );
+    const { default: App } = await import('./App');
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Hủy job' }));
+    await waitFor(() => expect(calls).toContain('POST /api/jobs/job-queued/cancel'));
+    // The cancel is reflected from the backend answer, not from local optimism.
+    expect((await screen.findAllByText('Đã hủy')).length).toBeGreaterThan(0);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Thử lại' }));
+    await waitFor(() => expect(calls).toContain('POST /api/jobs/job-failed/retry'));
+    await waitFor(() => expect(screen.getAllByText('Đang chờ').length).toBeGreaterThan(0));
+  });
+
   it('loads rendered audio approval state on direct navigation', async () => {
     window.history.replaceState(null, '', '/chapters/chapter-1/audio');
     vi.stubGlobal('EventSource', undefined);

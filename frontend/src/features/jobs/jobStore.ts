@@ -131,6 +131,24 @@ export class JobEventStore {
     return this.listeners.size;
   }
 
+  /**
+   * Re-read the durable job state (U07).
+   *
+   * A cancel/retry action changes a job through the API, and the feed keeps one
+   * marker per job, so live stream consumers cannot rely on a new event arriving:
+   * the screen asks for the authoritative snapshot instead of guessing the new
+   * status locally.
+   */
+  async refresh(): Promise<void> {
+    // The feed carries the CURRENT projection and a job keeps its marker row, so
+    // a state change can arrive under a sequence the buffer already holds.
+    // Re-reading is therefore a replace, not an append with replay dedupe.
+    this.events = [];
+    this.cursor = null;
+    this.truncated = false;
+    await this.refreshSnapshot();
+  }
+
   async start(): Promise<void> {
     await this.refreshSnapshot();
     this.openStream();

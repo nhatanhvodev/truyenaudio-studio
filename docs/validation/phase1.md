@@ -62,9 +62,9 @@ Yêu cầu tối thiểu: Python 3.12, Node 24.x (xem `README.md`).
 | U04 Draft API + optimistic | ✅ | ✅ | — | CAS 409, editor conflict |
 | U05 Tabs/dock/layout | ✅ | ✅ | — | browser E2E `workspace-tabs.spec.ts` |
 | U06 Editor song ngữ/QA/inspector | ✅ *(acceptance còn nợ)* | ✅ | ❌ | repair proposal preview/apply **fake**; **virtualize chưa làm** — xem `progress-upgrade-plan.md` (PARTIAL) |
-| U07 Job UI + draft stream | ✅ *(acceptance còn nợ)* | ✅ | ❌ | batch partial-failure đã có; **BLOCKED: backend chưa có `POST /api/jobs/{id}/retry|cancel`** — xem `progress-upgrade-plan.md` (PARTIAL) |
+| U07 Job UI + draft stream | ✅ | ✅ | ❌ | batch partial-failure + **route thật `POST /api/jobs/{id}/cancel|retry`** (wrapper `request_cancel`/`retry_failed`, mã lỗi có tên, chống gửi lại BILLING_UNKNOWN, idempotent) và UI đã nối; còn **E2E SSE trên browser NOT_RUN** — xem `progress-upgrade-plan.md` |
 | U08 Provider/model settings | ✅ | ✅ | ❌ | E2E credential rotate/mask; quote ceiling cần budget live |
-| U09 Style/glossary/character/memory | ✅ *(acceptance còn nợ)* | ✅ | — | 4 manager + scope preview; **nested project routes chưa làm** — xem `progress-upgrade-plan.md` (PARTIAL) |
+| U09 Style/glossary/character/memory | ✅ | ✅ | — | 4 manager + scope preview; nested project route **đã có thật** (`ProjectSettingsRoutes.tsx`, mount `router.tsx:118`, 3 test `ProjectNav.test.tsx`) — còn E2E downstream-stale NOT_RUN |
 | U10 Storage/Appearance/Advanced | ✅ | ✅ | — | retention/restore-copy, flag fail-closed |
 | A01 VieNeu manifest/bridge | ✅ | ✅ | ❌ | catalog/probe; **model chưa cài** |
 | A02 Preview job/chọn giọng | ✅ | ✅ | ❌ | 22 backend + 14 UI test; nghe thật **NOT_RUN** |
@@ -120,8 +120,9 @@ Chi tiết từng fixture (p50/p95/p99, SQL, RSS, WAL) nằm trong `docs/validat
 
 - **Draft delta sống giữa job**: SQLite một-writer nên draft commit cùng transaction của run;
   UI thấy nháp sau khi job ghi xong (U07/J04).
-- **Job retry/cancel qua UI**: backend **chưa có** `POST /api/jobs/{id}/retry|cancel` (chỉ có cho voice preview).
-  Component đã có props `onRetry/onCancel` để nối khi route tồn tại.
+- **Job retry/cancel qua UI**: **đã nối xong** — `POST /api/jobs/{id}/cancel` và `/retry` là wrapper mỏng trên
+  `JobRunner.request_cancel`/`retry_failed`; `useJobActions` trong `router.tsx` truyền vào `JobsList` và `BatchQueue`,
+  sau hành động UI đọc lại snapshot (thay thế buffer) nên không hiện trạng thái giả. Chỉ **E2E SSE trên browser** còn NOT_RUN.
 - **REVIEW/REPAIR/SUMMARIZE qua cloud**: handler đã nối nhưng nhánh cloud **fail rõ ràng**
   (`REVIEW_CLOUD_PROVIDER_NOT_WIRED`, `SUMMARIZE_REQUIRES_CLOUD_PROVIDER`) thay vì giả thành công.
 - **Backup incremental chỉ cho artifact**: file DB vẫn là bản sao đầy đủ qua SQLite Online Backup API.

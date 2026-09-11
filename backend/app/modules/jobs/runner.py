@@ -317,6 +317,58 @@ class JobRunner:
             )
             if result.rowcount != 1:
                 return None
+            # A cancel that only changed the row would stay invisible to live
+            # stream consumers, because a job keeps its feed marker (U07).
+            _replace_job_event(connection, job_id, now)
+            row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
+        return _job_view(row)
+
+    def view_job(self, job_id: str) -> JobView | None:
+        """Read-only snapshot of one job for API eligibility checks (U07)."""
+        with self.engine.connect() as connection:
+            row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one_or_none()
+        return None if row is None else _job_view(row)
+
+    def retry_failed(self, job_id: str, now: datetime) -> JobView | None:
+        """Re-enqueue a FAILED job for one fresh manual attempt (U07).
+
+        Returns None unless the row was still FAILED at transition time, so the
+        caller can map the outcome to a precise error code. The SAME row is
+        reused (idempotency key untouched, so a duplicate enqueue is impossible
+        and committed outputs/ledger of prior attempts stay intact), the stale
+        error is cleared, and the feed marker is replaced so live consumers see
+        the QUEUED transition. Prior attempts remain in job_attempts; the next
+        claim simply creates attempt_no = max + 1.
+        """
+        _require_aware(now)
+        with self.engine.begin() as connection:
+            result = connection.execute(
+                text(
+                    """
+                    UPDATE jobs
+                    SET status = :queued,
+                        lease_owner = NULL,
+                        lease_expires_at = NULL,
+                        next_run_at = :now,
+                        cancel_requested_at = NULL,
+                        progress_current = 0,
+                        error_code = NULL,
+                        error_summary = NULL,
+                        updated_at = :now
+                    WHERE id = :job_id
+                      AND status = :failed
+                    """
+                ),
+                {
+                    "queued": JobStatus.QUEUED.value,
+                    "failed": JobStatus.FAILED.value,
+                    "now": now.isoformat(),
+                    "job_id": job_id,
+                },
+            )
+            if result.rowcount != 1:
+                return None
+            _replace_job_event(connection, job_id, now)
             row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one()
         return _job_view(row)
 
@@ -968,6 +1020,42 @@ def _emit_job_event(connection, job_id: str, now: datetime) -> None:
             """
         ),
         {"job_id": job_id, "now": now.isoformat()},
+    )
+
+
+def _replace_job_event(connection, job_id: str, now: datetime) -> None:
+    """Publish a newer feed marker for a job (U07).
+
+    The J03 feed keeps one marker row per entity, so a transition that live
+    stream consumers must observe (a manual retry) is published as a NEW row:
+    inserting before removing the old one is what makes the sequence strictly
+    greater than any cursor a client already holds (SQLite reuses max(rowid)+1,
+    so deleting first could hand the replacement the cursor's own value).
+    Migration 0006 dropped uq_event_log_entity, so an entity may briefly own two
+    rows; the older rows are removed in the same transaction.
+    """
+    connection.execute(
+        text(
+            """
+            INSERT INTO event_log (entity_type, entity_id, created_at)
+            VALUES ('job', :job_id, :now)
+            """
+        ),
+        {"job_id": job_id, "now": now.isoformat()},
+    )
+    connection.execute(
+        text(
+            """
+            DELETE FROM event_log
+            WHERE entity_type = 'job'
+              AND entity_id = :job_id
+              AND sequence_id < (
+                  SELECT MAX(sequence_id) FROM event_log
+                  WHERE entity_type = 'job' AND entity_id = :job_id
+              )
+            """
+        ),
+        {"job_id": job_id},
     )
 
 
