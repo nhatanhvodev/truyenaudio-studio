@@ -1,0 +1,54 @@
+/*
+ * Single source of colour truth (ADR-0002).
+ * :root carries the DARK set — that is the default, and it stays correct even
+ * if the boot script never runs. [data-theme='light'] carries the light set.
+ * The contrast gate parses this file, so changing a value here is gated.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0B0C0E;
+  --surface: #101216;
+  --surface-raised: #16191E;
+  --border-subtle: #262A31;
+  --border-control: #616A78;
+
+  --text: #E8EAED;
+  --text-muted: #9AA1AB;
+  --text-subtle: #7A828D;
+
+  --primary: #FF6B2C;
+  --primary-hover: #FF8551;
+  --on-primary: #0B0C0E;
+
+  --danger: #FF5A3C;
+  --danger-hover: #FF7A61;
+  --success: #4ADE80;
+  --warning: #FBBF24;
+  --focus: #7DD3FC;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #F7F8FA;
+  --surface: #FFFFFF;
+  --surface-raised: #F1F3F7;
+  --border-subtle: #D1D5DB;
+  --border-control: #6B7280;
+
+  --text: #172033;
+  --text-muted: #4B5563;
+  --text-subtle: #5C6675;
+
+  --primary: #1D4ED8;
+  --primary-hover: #1E40AF;
+  --on-primary: #FFFFFF;
+
+  --danger: #B91C1C;
+  --danger-hover: #991B1B;
+  --success: #166534;
+  --warning: #92400E;
+  --focus: #1D4ED8;
+}
