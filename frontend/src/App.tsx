@@ -1,5 +1,7 @@
 import { RouterProvider } from 'react-router-dom';
 import { useEffect } from 'react';
+
+import { ThemeProvider } from './features/settings/ThemeProvider';
 import { router } from './routes/router';
 
 export default function App() {
@@ -8,5 +10,9 @@ export default function App() {
     window.localStorage.removeItem('gemini_api_key');
   }, []);
 
-  return <RouterProvider router={router} />;
+  return (
+    <ThemeProvider>
+      <RouterProvider router={router} />
+    </ThemeProvider>
+  );
 }

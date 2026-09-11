@@ -1,2 +1,33 @@
 <div id="root"></div>
+<script>
+  (function () {
+    var SIZES = { small: '87.5%', medium: '100%', large: '112.5%' };
+    var root = document.documentElement;
+    var prefs = {};
+    try {
+      var raw = window.localStorage.getItem('studio.ui-preferences');
+      if (raw) prefs = JSON.parse(raw) || {};
+    } catch (error) {
+      prefs = {};
+    }
+
+    var theme = prefs.theme;
+    // No usable stored choice means the default preference, which is dark.
+    // Only an explicit "system" follows the OS — otherwise a new user on a
+    // light-mode OS would flash light and then snap to dark.
+    if (theme !== 'light' && theme !== 'dark' && theme !== 'system') {
+      theme = 'dark';
+    }
+    if (theme === 'system') {
+      theme =
+        window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light';
+    }
+    root.dataset.theme = theme;
+
+    root.dataset.density = prefs.density === 'compact' ? 'compact' : 'comfortable';
+    root.style.fontSize = SIZES[prefs.fontScale] || '100%';
+  })();
+</script>
 <script type="module" src="/src/main.tsx"></script>
