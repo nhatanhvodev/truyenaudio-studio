@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 
-import { colors, font, radius, spacing, type UiTheme } from './tokens';
+import styles from './Combobox.module.css';
 
 export interface ComboboxOption {
   value: string;
@@ -12,7 +12,6 @@ export interface ComboboxProps {
   options: readonly ComboboxOption[];
   value: string;
   onChange: (value: string) => void;
-  theme?: UiTheme;
   placeholder?: string;
 }
 
@@ -21,13 +20,11 @@ export function Combobox({
   options,
   value,
   onChange,
-  theme = 'light',
   placeholder,
 }: ComboboxProps) {
   const baseId = useId();
   const inputId = `${baseId}-input`;
   const listboxId = `${baseId}-listbox`;
-  const c = colors[theme];
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [highlight, setHighlight] = useState(0);
@@ -82,88 +79,59 @@ export function Combobox({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
-      <label htmlFor={inputId} style={{ color: c.text, fontSize: font.sizeSm, fontWeight: 500 }}>
+    <>
+      <label htmlFor={inputId} className={styles.label}>
         {label}
       </label>
-      <input
-        ref={inputRef}
-        id={inputId}
-        role="combobox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        aria-autocomplete="list"
-        aria-activedescendant={
-          open && filtered[highlight] ? `${listboxId}-${filtered[highlight].value}` : undefined
-        }
-        value={open ? query : selected?.label ?? ''}
-        placeholder={placeholder}
-        onChange={(event) => {
-          setQuery(event.target.value);
-          setOpen(true);
-          setHighlight(0);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={onInputKeyDown}
-        onBlur={() => window.setTimeout(() => setOpen(false), 100)}
-        style={{
-          background: c.surface,
-          color: c.text,
-          border: `1px solid ${c.border}`,
-          borderRadius: radius.sm,
-          padding: `${spacing.sm}px ${spacing.md}px`,
-          fontSize: font.sizeMd,
-          fontFamily: 'inherit',
-          outline: 'none',
-        }}
-      />
-      {open ? (
-        <ul
-          id={listboxId}
-          role="listbox"
-          aria-label={label}
-          style={{
-            listStyle: 'none',
-            margin: 0,
-            padding: 0,
-            background: c.surfaceRaised,
-            border: `1px solid ${c.border}`,
-            borderRadius: radius.sm,
-            maxHeight: 220,
-            overflowY: 'auto',
+      <div className={styles.wrapper}>
+        <input
+          ref={inputRef}
+          id={inputId}
+          role="combobox"
+          aria-expanded={open}
+          aria-controls={listboxId}
+          aria-autocomplete="list"
+          aria-activedescendant={
+            open && filtered[highlight] ? `${listboxId}-${filtered[highlight].value}` : undefined
+          }
+          value={open ? query : selected?.label ?? ''}
+          placeholder={placeholder}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setOpen(true);
+            setHighlight(0);
           }}
-        >
-          {filtered.length === 0 ? (
-            <li style={{ padding: spacing.sm, color: c.textMuted, fontSize: font.sizeSm }}>
-              Không có lựa chọn phù hợp.
-            </li>
-          ) : (
-            filtered.map((option, index) => (
-              <li
-                key={option.value}
-                role="option"
-                id={`${listboxId}-${option.value}`}
-                aria-selected={option.value === value}
-                data-highlighted={index === highlight ? 'true' : 'false'}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  choose(option);
-                }}
-                onMouseEnter={() => setHighlight(index)}
-                style={{
-                  padding: `${spacing.sm}px ${spacing.md}px`,
-                  cursor: 'pointer',
-                  background: index === highlight ? c.primary : 'transparent',
-                  color: index === highlight ? c.textOnPrimary : c.text,
-                  fontSize: font.sizeMd,
-                }}
-              >
-                {option.label}
-              </li>
-            ))
-          )}
-        </ul>
-      ) : null}
-    </div>
+          onFocus={() => setOpen(true)}
+          onKeyDown={onInputKeyDown}
+          onBlur={() => window.setTimeout(() => setOpen(false), 100)}
+          className={styles.input}
+        />
+        {open ? (
+          <ul id={listboxId} role="listbox" aria-label={label} className={styles.list}>
+            {filtered.length === 0 ? (
+              <li className={styles.empty}>Không có lựa chọn phù hợp.</li>
+            ) : (
+              filtered.map((option, index) => (
+                <li
+                  key={option.value}
+                  role="option"
+                  id={`${listboxId}-${option.value}`}
+                  aria-selected={option.value === value}
+                  data-highlighted={index === highlight ? 'true' : 'false'}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    choose(option);
+                  }}
+                  onMouseEnter={() => setHighlight(index)}
+                  className={styles.option}
+                >
+                  {option.label}
+                </li>
+              ))
+            )}
+          </ul>
+        ) : null}
+      </div>
+    </>
   );
 }

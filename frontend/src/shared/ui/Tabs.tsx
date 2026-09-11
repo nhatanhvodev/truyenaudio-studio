@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from 'react';
 
-import { colors, font, spacing, type UiTheme } from './tokens';
+import styles from './Tabs.module.css';
 
 export interface Tab {
   id: string;
@@ -12,13 +12,11 @@ export interface TabsProps {
   tabs: readonly Tab[];
   activeId: string;
   onChange: (id: string) => void;
-  theme?: UiTheme;
   label: string;
 }
 
-export function Tabs({ tabs, activeId, onChange, theme = 'light', label }: TabsProps) {
+export function Tabs({ tabs, activeId, onChange, label }: TabsProps) {
   const baseId = useId();
-  const c = colors[theme];
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[0];
 
   function activate(index: number) {
@@ -45,12 +43,8 @@ export function Tabs({ tabs, activeId, onChange, theme = 'light', label }: TabsP
   }
 
   return (
-    <div>
-      <div
-        role="tablist"
-        aria-label={label}
-        style={{ display: 'flex', gap: spacing.xs, borderBottom: `1px solid ${c.border}` }}
-      >
+    <>
+      <div role="tablist" aria-label={label} className={styles.tablist}>
         {tabs.map((tab, index) => {
           const selected = tab.id === active?.id;
           return (
@@ -63,18 +57,7 @@ export function Tabs({ tabs, activeId, onChange, theme = 'light', label }: TabsP
               tabIndex={selected ? 0 : -1}
               onClick={() => onChange(tab.id)}
               onKeyDown={(event) => onKeyDown(event, index)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: selected ? c.primary : c.textMuted,
-                fontWeight: selected ? font.weightSemibold : font.weightNormal,
-                padding: `${spacing.sm}px ${spacing.md}px`,
-                borderBottom: selected ? `2px solid ${c.primary}` : 'none',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                fontSize: font.sizeMd,
-                outline: 'none',
-              }}
+              className={styles.tab}
             >
               {tab.label}
             </button>
@@ -86,10 +69,10 @@ export function Tabs({ tabs, activeId, onChange, theme = 'light', label }: TabsP
         role="tabpanel"
         id={`${baseId}-panel-${active?.id}`}
         aria-labelledby={`${baseId}-tab-${active?.id}`}
-        style={{ paddingTop: spacing.lg }}
+        className={styles.panel}
       >
         {active?.content}
       </div>
-    </div>
+    </>
   );
 }
