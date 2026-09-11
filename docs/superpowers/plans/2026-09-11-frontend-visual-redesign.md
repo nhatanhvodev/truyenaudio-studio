@@ -6,7 +6,7 @@
 
 **Architecture:** CSS custom properties in `frontend/src/styles/` are the single source of colour truth; `tokens.css` is parsed by the contrast gate so the CSS and the gate can never drift. A boot script in `index.html` resolves the theme before first paint and writes `documentElement.dataset.theme`; `ThemeProvider` seeds from that attribute and owns all later changes. The 12 existing primitives keep their public API and ARIA contract but read `var(--…)` instead of inline `style={{}}`. `router.tsx` splits into `routes/screens/*.tsx` with co-located `.module.css`.
 
-**Tech Stack:** React 19.1.1, Vite 7.1.2, TypeScript 5.8.3, vitest 3.2.4, @playwright/test, CSS Modules (Vite built-in). **Zero new dependencies.**
+**Tech Stack:** React 19.1.1, Vite 7.1.2, TypeScript 5.8.3, vitest 3.2.4, @playwright/test, CSS Modules (Vite built-in). **Zero new runtime dependencies** — the only addition is `@types/node` as a devDependency, needed by the three gates that read source files from disk.
 
 **Spec:** [docs/superpowers/specs/2026-09-11-frontend-visual-redesign-design.md](../specs/2026-09-11-frontend-visual-redesign-design.md)
 **ADR:** [docs/architecture/adr/0002-dark-palette-and-border-tokens.md](../../architecture/adr/0002-dark-palette-and-border-tokens.md)
@@ -17,7 +17,8 @@ Copied verbatim from the spec. Every task's requirements implicitly include this
 
 - **Copy người dùng đóng băng.** `App.test.tsx` asserts on visible copy and accessible names. Do not reword, translate, re-case, or re-punctuate any of these. Full list in spec §6.
 - **Không chạm** API call, state, routing behavior, guard, backend.
-- **Không thêm dependency. Không download font.** System font stack only.
+- **Không thêm dependency runtime.** Không thư viện UI, CSS-in-JS, design system, hay bất cứ thứ gì vào bundle. Ngoại lệ duy nhất được chốt: `@types/node` là **devDependency type-only** — cần cho ba gate đọc file nguồn từ đĩa (`node:fs`/`node:url`), không vào bundle, không có mặt lúc chạy. Không thêm gì khác mà không hỏi trước.
+- **Không download font.** System font stack only.
 - **IA khóa:** navigator 240px · inspector 320px · split clamp 25–75% · tối đa 8 tab tài liệu (ADR-0001 D4) · dưới 1024px inspector thành drawer, source/translation thành tab.
 - **Không có màu nào là tín hiệu duy nhất** — trạng thái phải kèm chữ hoặc hình.
 - **Radius = 0.** No border-radius anywhere except where a native control forces it.
@@ -145,7 +146,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const CSS_PATH = fileURLToPath(new URL('../../styles/tokens.css', import.meta.url));
+// Bind the base first. Vite rewrites `new URL('<literal>', import.meta.url)`
+// into a dev-server asset URL, and fileURLToPath then throws "The URL must be
+// of scheme file". Binding import.meta.url to a variable first keeps the
+// protocol at file: so the path resolves against the real filesystem.
+const here = import.meta.url;
+const CSS_PATH = fileURLToPath(new URL('../../styles/tokens.css', here));
 
 /** Pull `--name: #value;` declarations out of one selector block. */
 function readBlock(css: string, selector: string): Record<string, string> {
@@ -317,7 +323,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const css = readFileSync(fileURLToPath(new URL('./base.css', import.meta.url)), 'utf8');
+// Bind the base first — see the note in tokens-contrast.test.ts. The literal
+// form gets rewritten by Vite into an http:// asset URL and fileURLToPath
+// rejects it.
+const here = import.meta.url;
+const css = readFileSync(fileURLToPath(new URL('./base.css', here)), 'utf8');
 
 const REQUIRED = [
   '--font-ui', '--font-mono', '--font-read',
@@ -721,7 +731,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 describe('boot script parity with resolveTheme', () => {
-  const html = readFileSync(fileURLToPath(new URL('../../../index.html', import.meta.url)), 'utf8');
+  // Bind the base first — see the note in tokens-contrast.test.ts.
+  const here = import.meta.url;
+  const html = readFileSync(fileURLToPath(new URL('../../../index.html', here)), 'utf8');
   const body = /<script>\s*([\s\S]*?)<\/script>/.exec(html)?.[1];
 
   interface BootResult {
