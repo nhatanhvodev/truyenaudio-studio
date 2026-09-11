@@ -1259,7 +1259,14 @@ git commit -m "refactor(ui): move Combobox and Tabs onto CSS Modules"
 - [ ] **Step 1: Run the existing tests**
 
 Run: `cd frontend && npx vitest run src/shared/ui/modal-tabs.test.tsx src/shared/ui/feedback-table.test.tsx src/shared/ui/combobox-drawer.test.tsx`
-Expected: PASS. Note the Modal focus-trap and focus-return assertions, the Drawer `role="dialog"` assertions, and the Toast `role="alert"` assertions.
+Expected: PASS. Note the Modal focus-trap and focus-return assertions, and the Drawer `role="dialog"` assertions.
+
+**Correction to earlier plan text: the Toast is `role="status"` with `aria-live="polite"`, not
+`role="alert"`.** `Toast.tsx:20` reads `role="status"`, `aria-live="polite"` — polite, because a toast
+must not interrupt what the screen reader is already saying. Some earlier plan text called it
+`role="alert"`; that was wrong. **Keep `role="status"` and `aria-live="polite"` exactly as they are.**
+Do not "restore" `role="alert"` — that would be a real ARIA change, and it is the opposite of the
+intent.
 
 - [ ] **Step 2: Create the four modules**
 
@@ -1337,16 +1344,38 @@ Expected: PASS. Note the Modal focus-trap and focus-return assertions, the Drawe
   font-size: var(--fs-md);
   min-width: 0;
 }
-.success { border-left-color: var(--success); }
-.warning { border-left-color: var(--warning); }
-.danger { border-left-color: var(--danger); }
+.toneSuccess { border-left-color: var(--success); color: var(--success); }
+.toneDanger { border-left-color: var(--danger); color: var(--danger); }
 ```
 
-Note the Toast variants differ by **border colour and an accompanying label**, never by colour alone (Global Constraints).
+Two deliberate changes to the listing above, both to preserve behaviour the current component has:
+
+- **The tone classes set `color` as well as `border-left-color`.** `Toast.tsx:9-13` maps each tone to a
+  distinct text colour through `TONE_TEXT` (`success` → `successText`, `danger` → `danger`), and the
+  component renders `color: textColor`. Keeping only the border colour would silently drop that
+  distinction. Two classes rather than three, because `ToastProps['tone']` is `'info' | 'success' |
+  'danger'` — there is no `warning` tone, so a `.warning` rule would be dead CSS. `info` keeps the base
+  `.toast` colour.
+
+- **The `boxShadow` the current component sets inline is intentionally dropped**, along with
+  `borderRadius: 6`. Radius is 0 across this redesign and the brutalist direction has no elevation
+  shadows. This is the one visual property the task removes on purpose; do not add a shadow back.
+
+Note: the tone is currently conveyed by colour alone (the border, plus the text colour above), which the
+Global Constraints say a variant must not rely on. That is **pre-existing behaviour, not something this
+task introduces** — do not invent a new user-visible label to fix it, because copy is frozen. Preserve
+the current behaviour exactly and flag it in your report; it goes to the final review as its own finding.
 
 - [ ] **Step 3: Rewrite the four components**
 
-Swap inline styles for module classes. Keep the Modal's focus trap, Escape handling and focus return; the Drawer's `role="dialog"` and label wiring; the Tooltip's `aria-describedby` wiring; the Toast's `role="alert"`. Remove the `ColorTokens` import from `Toast.tsx`.
+Swap inline styles for module classes. Keep the Modal's focus trap, Escape handling and focus return; the Drawer's `role="dialog"` and label wiring; the Tooltip's `aria-describedby` wiring; the Toast's `role="status"` and `aria-live="polite"`.
+
+Remove the `ColorTokens` import from `Toast.tsx`. That import is used for the `TONE_TEXT` record's type
+(`Record<NonNullable<ToastProps['tone']>, keyof ColorTokens>` at `Toast.tsx:9`), which nothing else in the
+file needs once the colours come from CSS. **Replace the type with the literal tone union —
+`Record<NonNullable<ToastProps['tone']>, string>` — or delete `TONE_TEXT` outright** if the class map
+makes it redundant. Do not leave a dangling reference to `ColorTokens`: `tokens.ts` is deleted in Task 8,
+so a leftover reference there turns `tsc -b` red one task later, where it will look like Task 8's fault.
 
 - [ ] **Step 4: Run tests**
 
