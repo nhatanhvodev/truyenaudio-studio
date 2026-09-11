@@ -476,6 +476,12 @@ git commit -m "feat(ui): add reset and base stylesheets with scale tokens, wire 
 
 ## Task 3: Theme runtime and the no-flash boot script
 
+> **Run order:** Task 4 runs **before** this task. This task's boot script defaults the theme to
+> `dark`, and until Task 4 lands `defaultPreferences().theme` is still `'system'` — so the boot
+> script and the app would disagree and the parity test below would be asserting agreement that
+> does not exist. Task 4 is a one-line change to an existing file and depends on nothing here.
+
+
 **Files:**
 - Create: `frontend/src/features/settings/themeRuntime.ts`, `frontend/src/features/settings/themeRuntime.test.ts`
 - Create: `frontend/src/features/settings/ThemeProvider.tsx`
@@ -507,7 +513,7 @@ import {
   resolveTheme,
   subscribePreferences,
 } from './themeRuntime';
-import { defaultPreferences } from './uiPreferences';
+import { defaultPreferences, parsePreferences } from './uiPreferences';
 
 describe('resolveTheme', () => {
   it('returns the pinned theme unchanged', () => {
@@ -686,6 +692,11 @@ No `ready` gate and no theme state: the boot script has already written theme, d
 
 - [ ] **Step 5: Add the boot script to `frontend/index.html`**
 
+`index.html` today is exactly two lines — `<div id="root"></div>` and the module script. **Replace
+its whole contents with the block below.** Do not append: the snippet repeats `<div id="root">`,
+and a second root element would make `document.getElementById('root')` ambiguous.
+
+
 ```html
 <div id="root"></div>
 <script>
@@ -758,8 +769,11 @@ describe('boot script parity with resolveTheme', () => {
   }
 
   // No stored preference resolves to 'dark' on BOTH system settings, because
-  // dark is what defaultPreferences() returns. Only an explicit 'system'
-  // follows the OS. This is the exact drift this test exists to catch.
+  // dark is what defaultPreferences() returns — Task 4 made that true, and it
+  // runs before this task. Only an explicit 'system' follows the OS. This is the
+  // exact drift this test exists to catch: the boot script carries its own copy
+  // of the normalise-then-resolve logic, and the day the two copies disagree,
+  // the app paints one theme and snaps to the other the moment React mounts.
   it.each([
     ['light', true, 'light'],
     ['dark', false, 'dark'],
@@ -768,10 +782,20 @@ describe('boot script parity with resolveTheme', () => {
     [null, true, 'dark'],
     [null, false, 'dark'],
     ['garbage', true, 'dark'],
+    ['garbage', false, 'dark'],
   ])('stored=%s systemDark=%s -> %s', (theme, systemDark, expected) => {
     expect(runBootScript(stored(theme as string | null), systemDark as boolean).theme).toBe(expected);
-    const resolved = resolveTheme((theme ?? 'dark') as 'light' | 'dark' | 'system', systemDark as boolean);
-    expect(resolved).toBe(expected);
+
+    // The app-side path, fed the SAME inputs. Parse the stored document the way
+    // the app does, then resolve. Do NOT shortcut this to
+    // `resolveTheme(theme ?? 'dark', …)`: that hands resolveTheme a value the
+    // app never produces, so the assertion would pass even while the two
+    // implementations disagreed — which is the one thing this test exists to
+    // prevent. parsePreferences is also what turns a stored 'garbage' theme
+    // into the dark default, and what makes the null case match the boot
+    // script rather than following the OS.
+    const parsed = parsePreferences(stored(theme as string | null)).preferences;
+    expect(resolveTheme(parsed.theme, systemDark as boolean)).toBe(expected);
   });
 
   it('writes density and root font size, defaulting when absent or invalid', () => {
@@ -829,7 +853,9 @@ export default function App() {
 - [ ] **Step 8: Run tests**
 
 Run: `cd frontend && npx vitest run src/features/settings src/shared/ui && npm run build`
-Expected: themeRuntime tests PASS (including the 6 parity cases). `App.test.tsx` and the rest still PASS — `ThemeProvider` renders children after one tick, and every existing test uses `findBy*`/`await` already. If a test uses a bare synchronous `getBy*` immediately after render and now fails, that is a real finding: report it rather than adding a retry.
+Expected: themeRuntime tests PASS, including all **8** parity cases. `App.test.tsx` and the rest still PASS.
+
+`ThemeProvider` renders its children on the **first** paint — it has no `ready` gate and holds no state, because the boot script has already written theme, density and root font size before the bundle runs. So wrapping `App` in it must not delay any existing assertion, and no test should need a retry or a longer timeout. If a test fails here, it is a real finding: report it. Do not add a retry, a `waitFor`, or a `ready` gate to make it pass.
 
 - [ ] **Step 9: Commit**
 
@@ -842,21 +868,27 @@ git commit -m "feat(ui): add theme runtime and a no-flash boot script, mounted a
 
 ## Task 4: Make dark the actual default preference
 
+> **Run order:** this task runs **before** Task 3. It is a one-line change to an existing file and
+> depends on nothing in Task 3. Task 3's boot script already defaults to `dark`, so until this
+> lands the boot script and `defaultPreferences()` disagree — a fresh profile on a light-mode OS
+> paints dark, then snaps to light when React mounts. Doing this first removes that window, and it
+> is what lets Task 3's parity test assert real agreement. This task's test therefore goes in
+> `uiPreferences.test.ts` (which exists today), not in `themeRuntime.test.ts` (Task 3's artifact).
+
 **Files:**
 - Modify: `frontend/src/features/settings/uiPreferences.ts:51`
-- Test: `frontend/src/features/settings/themeRuntime.test.ts` (append)
+- Modify: `frontend/src/features/settings/AppearanceSettings.test.tsx`
+- Test: `frontend/src/features/settings/uiPreferences.test.ts` (append)
 
 **Interfaces:**
 - Consumes: `defaultPreferences` (existing).
-- Produces: `defaultPreferences().theme === 'dark'`.
+- Produces: `defaultPreferences().theme === 'dark'`. Task 3's parity test depends on this exact value.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `themeRuntime.test.ts`:
+Append to `frontend/src/features/settings/uiPreferences.test.ts`:
 
 ```ts
-import { THEMES } from './uiPreferences';
-
 describe('dark is the default preference', () => {
   it('defaults to dark, not system', () => {
     expect(defaultPreferences().theme).toBe('dark');
@@ -866,31 +898,57 @@ describe('dark is the default preference', () => {
     expect(THEMES).toContain('system');
     expect(THEMES).toHaveLength(3);
   });
+
+  it('falls back to dark when the stored theme is not a known value', () => {
+    expect(parsePreferences(JSON.stringify({ version: 1, theme: 'neon' })).preferences.theme).toBe(
+      'dark',
+    );
+  });
 });
 ```
 
+Add `THEMES` and `parsePreferences` to that file's existing import from `./uiPreferences` if they
+are not already imported. Do not add a second import statement for the same module.
+
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd frontend && npx vitest run src/features/settings/themeRuntime.test.ts -t "dark is the default"`
-Expected: FAIL — received `'system'`.
+Run: `cd frontend && npx vitest run src/features/settings/uiPreferences.test.ts -t "dark is the default"`
+Expected: FAIL — `defaultPreferences().theme` is `'system'`, received `'system'` want `'dark'`.
 
 - [ ] **Step 3: Change the one line in `uiPreferences.ts`**
 
-At line 51, inside `defaultPreferences()`:
+At line 51, inside `defaultPreferences()`, change `theme: 'system'` to:
 
 ```ts
     theme: 'dark',
 ```
 
+Leave the doc comment above `defaultPreferences()` accurate. `THEMES` still lists all three values —
+`'system'` stays a valid *explicit* choice, it is simply no longer the default.
+
 - [ ] **Step 4: Run the full frontend suite**
 
 Run: `cd frontend && npx vitest run`
-Expected: PASS. `uiPreferences.test.ts` contains no `'system'` literal — it compares against `defaultPreferences()` itself (lines 56, 61, 62) — so this change breaks nothing. If a test does fail, it is a real assertion on the old default; fix the assertion, not the default.
+
+Expected: PASS **after** fixing two now-stale expectations in
+`frontend/src/features/settings/AppearanceSettings.test.tsx`. An earlier draft of this task claimed
+that file was unaffected; it is not — both of these assert the old default, not behaviour:
+
+- around line 51 — the corrupt-document save test asserts the rewritten document equals
+  `{ version: 1, theme: 'system', … }`. The component seeds its state from `defaultPreferences()`,
+  so the saved theme is now `'dark'`. Change that one value; leave every other key.
+- around line 68 — the reset-to-defaults test asserts `getByLabelText('Theme')` has value
+  `'system'`. Change it to `'dark'`.
+
+Both keep their meaning with `'dark'`: the corrupt-doc test's point is that the rewritten document
+is *valid and minimal*, and the reset test's point is that the control shows *the default*. If any
+**other** test fails, stop and report it — do not edit the default to make it pass, and do not
+weaken a genuine assertion.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/features/settings/uiPreferences.ts frontend/src/features/settings/themeRuntime.test.ts
+git add frontend/src/features/settings/uiPreferences.ts frontend/src/features/settings/uiPreferences.test.ts frontend/src/features/settings/AppearanceSettings.test.tsx
 git commit -m "feat(ui): default the theme preference to dark, keeping system as an explicit option"
 ```
 
