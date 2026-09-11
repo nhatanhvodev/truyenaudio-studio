@@ -46,7 +46,6 @@ from app.modules.storage.backup import (
     BackupVerificationError,
 )
 from tests.fixtures.legacy_data_root import (
-    LEGACY_HEAD,
     LEGACY_REVISION,
     PROJECT_ID,
     build_legacy_data_root,
@@ -147,17 +146,20 @@ def test_backup_then_upgrade_then_restore_rolls_back_to_the_verified_backup(tmp_
     assert row_counts(restored_db) == pre_upgrade_counts
 
     # the rollback target really is the pre-upgrade revision...
-    from app.db.migration_status import read_database_revision
+    from app.db.migration_status import head_revision, read_database_revision
 
     assert read_database_revision(restored_db) == LEGACY_REVISION
     assert migration_status(restored_db).detail == MIGRATION_INCOMPLETE
 
     # ...and the post-upgrade rows are gone, proving this is not a partial copy. The
-    # 0017/0018 tables do not merely sit empty in the rollback target: they do not
-    # exist, which is exactly the pre-upgrade schema.
+    # additive tables (0017 voice preview jobs, 0019 memory_indexes) do not merely sit
+    # empty in the rollback target: they do not exist, which is exactly the
+    # pre-upgrade schema.
     restored_tables = table_names(restored_db)
     assert "voice_preview_jobs" not in restored_tables
+    assert "memory_indexes" not in restored_tables
     assert "voice_preview_jobs" in table_names(seed.db_path)
+    assert "memory_indexes" in table_names(seed.db_path)
     restored_engine = create_engine_for(restored_db)
     try:
         with session_factory(restored_engine)() as session:
@@ -178,16 +180,17 @@ def test_backup_then_upgrade_then_restore_rolls_back_to_the_verified_backup(tmp_
     assert sha256_bytes(restored_artifact.read_bytes()) == pre_upgrade_artifact_sha
     assert seed.artifact_file.read_bytes() == seed.artifact_bytes  # live root untouched
 
-    # the restored (older-schema) root can be upgraded again, back to head.
+    # the restored (older-schema) root can be upgraded again, back to head - which is
+    # whatever the chain head is now, not the frozen legacy anchor.
     upgrade(restored_db, "head")
-    assert migration_status(restored_db).database_revision == LEGACY_HEAD
+    assert migration_status(restored_db).database_revision == head_revision()
     assert row_counts(restored_db) == pre_upgrade_counts
 
     print(
         f"EVIDENCE backup-rollback backup={backup.id} sha256={verification.sha256[:16]}... "
         f"byte_size={verification.byte_size} integrity={verification.integrity_check} "
         f"content_digest_match=True rows_before={pre_upgrade_counts} "
-        f"restored_revision={LEGACY_REVISION} then_reupgraded={LEGACY_HEAD} "
+        f"restored_revision={LEGACY_REVISION} then_reupgraded={head_revision()} "
         f"artifact_sha256_match=True phases={seen}"
     )
 

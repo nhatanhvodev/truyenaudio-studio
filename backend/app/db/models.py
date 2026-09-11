@@ -821,5 +821,63 @@ class VoicePreviewJob(MutableMixin, Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     reason: Mapped[str | None] = mapped_column(String(64))
     relative_path: Mapped[str | None] = mapped_column(Text)
+
     audio_sha256: Mapped[str | None] = mapped_column(String(64))
     duration_ms: Mapped[int | None] = mapped_column(BigInteger)
+
+
+class MemoryIndexStatus(StrEnum):
+    """Lifecycle of one project's optional user-supplied vector index (X06)."""
+
+    READY = "READY"
+    STALE = "STALE"
+    FAILED = "FAILED"
+
+
+class MemoryIndexDataSource(StrEnum):
+    """Where an index came from.
+
+    X06 only ever stores USER_SUPPLIED data: the studio never calls a cloud or a
+    local model to produce an embedding, it stores and re-validates what the
+    owner imported.
+    """
+
+    USER_SUPPLIED = "USER_SUPPLIED"
+
+
+class MemoryIndex(MutableMixin, Base):
+    """One optional vector index per project, over user-supplied embeddings (X06).
+
+    The row is metadata plus the canonical artifact the user imported, so a
+    rebuild re-derives the index from that artifact instead of embedding
+    anything. source_hash binds the index to the memory snapshot the vectors were
+    built from; when the project's current APPROVED snapshot no longer matches,
+    the index is stale and retrieval is skipped (structured fallback).
+    """
+
+    __tablename__ = "memory_indexes"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_memory_indexes_project_id"),
+        enum_constraint("status", MemoryIndexStatus),
+        enum_constraint("data_source", MemoryIndexDataSource),
+        hash_constraint("source_hash"),
+        hash_constraint("index_hash"),
+        Index("ix_memory_indexes_status_updated_at", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID, primary_key=True)
+    project_id: Mapped[str] = mapped_column(UUID, ForeignKey("projects.id"), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    embedding_model_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    embedding_model_revision: Mapped[str | None] = mapped_column(String(255))
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    license: Mapped[str] = mapped_column(Text, nullable=False)
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    data_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
+    entry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    index_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    artifact_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+

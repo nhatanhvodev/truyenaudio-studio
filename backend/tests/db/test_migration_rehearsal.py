@@ -38,6 +38,7 @@ from app.db.migration_status import (
     head_revision,
     migration_count,
     migration_status,
+    script_directory,
 )
 from app.db.models import (
     Chapter,
@@ -95,14 +96,18 @@ def test_clean_install_from_empty_data_root_reaches_head(tmp_path: Path) -> None
     status = migration_status(db_path)
     assert status.in_sync, status.summary()
     assert status.database_revision == head_revision()
-    assert status.migration_count == migration_count() == 18
+    # The chain length is derived, never frozen at a literal: every additive
+    # migration (0019 memory_indexes is the newest) would otherwise break the drill
+    # for a reason that has nothing to do with a clean install.
+    assert status.migration_count == migration_count() >= 19
     assert integrity(db_path) == "ok"
 
     tables = table_names(db_path)
     missing = sorted(set(Base.metadata.tables) - tables)
     assert missing == [], f"clean install is missing ORM tables: {missing}"
-    # The two newest (additive) migrations are part of a clean install too.
+    # The newest (additive) migrations are part of a clean install too.
     assert "voice_preview_jobs" in tables
+    assert "memory_indexes" in tables
     assert "alembic_version" in tables
 
     print(
@@ -125,7 +130,10 @@ def test_upgrade_from_legacy_revision_preserves_rows_and_leaves_new_tables_empty
     after = row_counts(seed.db_path)
     assert after == before
     status = migration_status(seed.db_path)
-    assert status.database_revision == LEGACY_HEAD
+    # Upgrading a legacy root lands on whatever the chain head is now, which is
+    # deliberately not the frozen legacy anchor (LEGACY_HEAD stays an explicitly
+    # *old* schema - see tests/fixtures/legacy_data_root.py).
+    assert status.database_revision == head_revision()
     assert status.in_sync, status.summary()
     assert integrity(seed.db_path) == "ok"
 
@@ -222,14 +230,18 @@ def test_upgraded_legacy_data_root_is_readable_through_real_read_routes(tmp_path
 
 
 #: A revision that creates DDL, writes a row and then raises mid-way. It is written
-#: into a *copy* of the real migration chain, never into the repository.
+#: into a *copy* of the real migration chain, never into the repository. Its id and
+#: down_revision are filled in from the real chain: the drill must sit exactly one
+#: step above head, because a frozen literal would collide with a real additive
+#: migration (0019 memory_indexes, X06) and leave two revisions on the same parent,
+#: which alembic refuses to resolve.
 BROKEN_REVISION_SOURCE = """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0019"
-down_revision = "0018"
+revision = "{revision}"
+down_revision = "{down_revision}"
 branch_labels = None
 depends_on = None
 
@@ -248,33 +260,60 @@ def downgrade() -> None:
 """
 
 
-def _broken_migrations(tmp_path: Path) -> Path:
-    """A copy of the real chain plus one revision that fails after creating DDL."""
+def rehearsal_revision_after(head: str) -> str:
+    """The revision id one step above 'head' (the real chain says '0019' -> '0020')."""
+    if not head.isdigit() or len(head) != 4:
+        raise RuntimeError(f"REHEARSAL_REVISION_UNSUPPORTED_HEAD:{head}")
+    return f"{int(head) + 1:04d}"
+
+
+def _broken_migrations(tmp_path: Path) -> tuple[Path, str]:
+    """A copy of the real chain plus one failing revision directly above head."""
     script_location = tmp_path / "broken-migrations"
     shutil.copytree(
         MIGRATIONS_DIR,
         script_location,
         ignore=shutil.ignore_patterns("__pycache__"),
     )
-    (script_location / "versions" / "0019_rehearsal_broken.py").write_text(
-        BROKEN_REVISION_SOURCE,
+    down_revision = head_revision()
+    revision = rehearsal_revision_after(down_revision)
+    (script_location / "versions" / f"{revision}_rehearsal_broken.py").write_text(
+        BROKEN_REVISION_SOURCE.format(revision=revision, down_revision=down_revision),
         encoding="utf-8",
     )
-    return script_location
+    return script_location, revision
 
 
 def test_failed_migration_does_not_advance_revision_and_is_detected(tmp_path: Path) -> None:
     """A migration that raises mid-way must not look like a successful upgrade."""
     seed = build_legacy_data_root(tmp_path / "fail-data", revision=LEGACY_HEAD)
     before = seed.counts
-    script_location = _broken_migrations(tmp_path)
+    script_location, rehearsal_revision = _broken_migrations(tmp_path)
+    real_head = head_revision()
+
+    # Intent guard, asserted instead of assumed: the rehearsal revision is the
+    # *only* child of the real head (no sibling on the same down_revision, so the
+    # copied chain has one unambiguous head) and it is that chain's head.
+    children = [
+        revision.revision
+        for revision in script_directory(script_location).walk_revisions()
+        if revision.down_revision == real_head
+    ]
+    assert children == [rehearsal_revision]
+    assert head_revision(script_location) == rehearsal_revision
 
     with pytest.raises(RuntimeError, match="REHEARSAL_FORCED_FAILURE"):
         upgrade(seed.db_path, "head", script_location)
 
     status = migration_status(seed.db_path, script_location=script_location)
-    assert status.head_revision == "0019"
-    assert status.database_revision == LEGACY_HEAD
+    assert status.head_revision == rehearsal_revision
+    # The failing revision did not advance the version row: what remains is the last
+    # revision that succeeded (the real chain head, applied just before the broken
+    # one). That is the honest form of 'the revision does not advance' now that the
+    # rehearsal sits one step above a real additive migration instead of directly
+    # above the legacy anchor.
+    assert status.database_revision == real_head
+    assert status.database_revision != rehearsal_revision
     assert status.detail == MIGRATION_INCOMPLETE
     assert status.in_sync is False
     assert integrity(seed.db_path) == "ok"

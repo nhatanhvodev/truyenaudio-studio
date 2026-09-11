@@ -7,6 +7,14 @@ touches or truncates source text (source is handled by the caller outside the
 context budget) and never promotes unapproved/candidate items — the caller
 only supplies APPROVED memory. Identical snapshots always produce identical
 selection, ordering and ``sha256``.
+
+Task X06 adds an **optional decoration** on top of that selector: a caller that
+already holds a validated user-supplied vector index may pass a
+:class:`VectorContextHint` (top-K reference ids plus the reason retrieval did or
+did not run). The hint never changes what is selected - the structured rules
+above stay the source of truth - and it defaults to `None`, so an off-path
+caller (no index imported, index disabled) gets exactly the pre-X06 result,
+including the same `sha256`.
 """
 
 from __future__ import annotations
@@ -27,11 +35,31 @@ class ContextItem:
 
 
 @dataclass(frozen=True)
+class VectorContextHint:
+    """What the optional vector layer contributed to a selection (task X06).
+
+    ``used`` is False whenever retrieval fell back (no index, disabled, stale,
+    missing or mismatched query embedding); ``reason`` then carries the
+    machine-readable cause so a trace can explain the fallback instead of
+    implying the vector path ran.
+    """
+
+    used: bool
+    reason: str
+    selected: tuple[str, ...] = ()
+
+    def trace(self) -> dict[str, object]:
+        return {"used": self.used, "reason": self.reason, "selected": list(self.selected)}
+
+
+@dataclass(frozen=True)
 class ContextSelection:
     selected: tuple[ContextItem, ...]
     excluded: tuple[tuple[str, str], ...]  # (item id, reason)
     total_tokens: int
     sha256: str
+    #: None for an off-path selection: nothing about the result changes.
+    vector: VectorContextHint | None = None
 
 
 def estimate_tokens(text: str) -> int:
@@ -45,6 +73,7 @@ def select_context(
     items: tuple[ContextItem, ...],
     *,
     token_budget: int,
+    vector: VectorContextHint | None = None,
 ) -> ContextSelection:
     if token_budget < 0:
         raise ValueError("TOKEN_BUDGET_INVALID")
@@ -77,7 +106,14 @@ def select_context(
         ],
         "total_tokens": total,
     }
+    if vector is not None and vector.used:
+        # Recorded only when the vector layer actually contributed. A fallback
+        # therefore leaves the hashed payload - and the selection itself - byte
+        # for byte identical to the pre-X06 result; its reason still travels on
+        # the returned hint and in the caller's trace. The hint never adds, drops
+        # or reorders an item.
+        payload["vector"] = vector.trace()
     sha256 = hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
-    return ContextSelection(selection, tuple(excluded), total, sha256)
+    return ContextSelection(selection, tuple(excluded), total, sha256, vector)

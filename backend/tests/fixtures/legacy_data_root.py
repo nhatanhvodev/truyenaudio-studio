@@ -44,7 +44,12 @@ from app.db.models import (
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS_DIR = BACKEND_ROOT / "migrations"
 
-#: Two additive migrations behind head: 0017 (voice preview jobs) and 0018 (JobKind.SUMMARIZE).
+#: An explicitly OLD schema anchor, deliberately *not* the chain head: the drills
+#: park a data root here to prove an older schema still upgrades and still restores
+#: (the newest revision is whatever alembic reports as head, never this constant).
+#: LEGACY_REVISION sits three additive migrations behind it (0017 voice preview jobs,
+#: 0018 JobKind.SUMMARIZE, 0019 memory_indexes); LEGACY_HEAD is the revision that
+#: preceded the newest one when the X06 memory_indexes migration landed.
 LEGACY_REVISION = "0016"
 LEGACY_HEAD = "0018"
 
