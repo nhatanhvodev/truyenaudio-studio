@@ -1715,32 +1715,41 @@ test('appearance preferences reach the document', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
   await page.goto('/settings/appearance');
-  await page.getByLabel(/chủ đề|theme/i).selectOption('light');
-  await page.getByRole('button', { name: /lưu/i }).click();
+  await page.getByLabel('Theme').selectOption('light');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
-  await page.getByLabel(/cỡ chữ|font/i).selectOption('large');
-  await page.getByRole('button', { name: /lưu/i }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-density', /comfortable|compact/);
+  await page.getByLabel('Cỡ chữ').selectOption('large');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
+  // fontScale reaches the DOM as the ROOT FONT SIZE, not as density. An earlier
+  // draft asserted data-density here, which was decorative: it is 'comfortable'
+  // or 'compact' no matter what the font select did, so the assertion passed
+  // even if the save wrote nothing. 112.5% is ROOT_FONT_SIZE.large
+  // (themeRuntime.ts) — assert the value applyPreferences actually writes.
+  await expect(page.locator('html')).toHaveAttribute('style', /font-size:\s*112\.5%/);
 });
 
 test('system theme follows the OS and is overridden by an explicit choice', async ({ browser }) => {
   const context = await browser.newContext({ colorScheme: 'light' });
   const page = await context.newPage();
   await page.goto('/settings/appearance');
-  await page.getByLabel(/chủ đề|theme/i).selectOption('system');
-  await page.getByRole('button', { name: /lưu/i }).click();
+  await page.getByLabel('Theme').selectOption('system');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
   await page.goto('/settings/appearance');
-  await page.getByLabel(/chủ đề|theme/i).selectOption('dark');
-  await page.getByRole('button', { name: /lưu/i }).click();
+  await page.getByLabel('Theme').selectOption('dark');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await context.close();
 });
 ```
 
-Adjust the `getByLabel` patterns to the labels actually rendered by `AppearanceSettings` — read the component and use its exact label text. Do not rename labels to make the test pass.
+**Corrected labels and button names.** The four labels `AppearanceSettings` actually renders are
+`Theme`, `Mật độ hiển thị`, `Cỡ chữ` and `Giảm chuyển động` (`AppearanceSettings.tsx:76,92,110,128`);
+its buttons are `Lưu tùy chọn hiển thị` and `Về mặc định`. Earlier plan text used loose regexes
+(`/chủ đề|theme/i`, `/lưu/i`) — the patterns above now use the exact strings. Read the component and
+confirm before running, and do not rename any label to make the test pass.
 
 Then add the in-app reduced-motion case. This one is deliberately **not** the same as Task 24's
 `reducedMotion: 'reduce'` case: that one exercises the OS media query, this one proves the stored
@@ -1755,8 +1764,8 @@ test('the in-app reduced-motion preference stops transitions on its own', async 
   const page = await context.newPage();
 
   await page.goto('/settings/appearance');
-  await page.getByLabel(/giảm chuyển động|chuyển động|motion/i).check();
-  await page.getByRole('button', { name: /lưu/i }).click();
+  await page.getByLabel('Giảm chuyển động').check();
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-reduce-motion', 'true');
 
   // Every transition must be neutralised. Collect the offenders rather than
