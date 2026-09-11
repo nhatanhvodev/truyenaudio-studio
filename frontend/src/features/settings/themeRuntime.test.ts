@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ROOT_FONT_SIZE,
   UI_PREFERENCES_STORAGE_KEY,
   applyPreferences,
   notifyPreferencesChanged,
@@ -88,13 +89,21 @@ describe('boot script parity with resolveTheme', () => {
     fontSize: string;
   }
 
-  function runBootScript(storedRaw: string | null, systemDark: boolean): BootResult {
+  // `matchMedia: false` models a degenerate window with no matchMedia at all;
+  // the default keeps injecting the stubbed query with `systemDark`.
+  function runBootScript(
+    storedRaw: string | null,
+    systemDark: boolean,
+    options: { matchMedia?: boolean } = {},
+  ): BootResult {
     if (!body) throw new Error('boot script not found in index.html');
     const root = { dataset: {} as Record<string, string>, style: { fontSize: '' } };
-    const window = {
+    const window: Record<string, unknown> = {
       localStorage: { getItem: () => storedRaw },
-      matchMedia: () => ({ matches: systemDark }),
     };
+    if (options.matchMedia !== false) {
+      window.matchMedia = () => ({ matches: systemDark });
+    }
     new Function('window', 'document', body)(window, { documentElement: root });
     return { theme: root.dataset.theme, density: root.dataset.density, fontSize: root.style.fontSize };
   }
@@ -133,6 +142,19 @@ describe('boot script parity with resolveTheme', () => {
     expect(resolveTheme(parsed.theme, systemDark as boolean)).toBe(expected);
   });
 
+  // A degenerate environment with no window.matchMedia at all. systemPrefersDark()
+  // falls back to `true` (dark) when matchMedia is not a function, so an explicit
+  // 'system' must resolve dark on BOTH sides. The boot script used to fall
+  // through to 'light' here — the exact first-paint flash this script exists to
+  // prevent. The `true` below is what systemPrefersDark() produces for this case;
+  // the boot result is still compared through parsePreferences + resolveTheme, not
+  // against a literal.
+  it('resolves system to dark on both sides when matchMedia is absent', () => {
+    const raw = stored('system');
+    const bootTheme = runBootScript(raw, true, { matchMedia: false }).theme;
+    expect(bootTheme).toBe(resolveTheme(parsePreferences(raw).preferences.theme, true));
+  });
+
   it('writes density and root font size, defaulting when absent or invalid', () => {
     expect(runBootScript(null, true)).toMatchObject({ density: 'comfortable', fontSize: '100%' });
     expect(runBootScript(stored('dark', { density: 'compact', fontScale: 'large' }), true)).toMatchObject({
@@ -143,6 +165,22 @@ describe('boot script parity with resolveTheme', () => {
       density: 'comfortable',
       fontSize: '100%',
     });
+  });
+
+  // SIZES is a plain object literal, so prototype keys resolve to a truthy
+  // inherited object rather than undefined. Without an own-property check the
+  // `|| '100%'` fallback never fires and a non-string reaches style.fontSize.
+  it('falls back to 100% when fontScale is a prototype key', () => {
+    expect(runBootScript(stored('dark', { fontScale: '__proto__' }), true).fontSize).toBe('100%');
+    expect(runBootScript(stored('dark', { fontScale: 'constructor' }), true).fontSize).toBe('100%');
+  });
+
+  it('pins the small font scale on both sides of the boot-script split', () => {
+    const bootFontSize = runBootScript(stored('dark', { fontScale: 'small' }), true).fontSize;
+    expect(bootFontSize).toBe(ROOT_FONT_SIZE.small);
+    applyPreferences({ ...defaultPreferences(), theme: 'dark', fontScale: 'small' });
+    expect(document.documentElement.style.fontSize).toBe(bootFontSize);
+    document.documentElement.style.fontSize = '';
   });
 
   it('keeps the dark default when localStorage throws', () => {

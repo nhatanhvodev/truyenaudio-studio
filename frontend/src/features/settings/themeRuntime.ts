@@ -3,7 +3,7 @@ import { parsePreferences, type Theme, type UiPreferences } from './uiPreference
 export const UI_PREFERENCES_STORAGE_KEY = 'studio.ui-preferences';
 
 /** Root font sizes that implement the fontScale preference. */
-const ROOT_FONT_SIZE: Record<UiPreferences['fontScale'], string> = {
+export const ROOT_FONT_SIZE: Record<UiPreferences['fontScale'], string> = {
   small: '87.5%',
   medium: '100%',
   large: '112.5%',

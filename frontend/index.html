@@ -20,14 +20,17 @@
     }
     if (theme === 'system') {
       theme =
-        window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        typeof window.matchMedia !== 'function' ||
+        window.matchMedia('(prefers-color-scheme: dark)').matches
           ? 'dark'
           : 'light';
     }
     root.dataset.theme = theme;
 
     root.dataset.density = prefs.density === 'compact' ? 'compact' : 'comfortable';
-    root.style.fontSize = SIZES[prefs.fontScale] || '100%';
+    root.style.fontSize = Object.prototype.hasOwnProperty.call(SIZES, prefs.fontScale)
+      ? SIZES[prefs.fontScale]
+      : '100%';
   })();
 </script>
 <script type="module" src="/src/main.tsx"></script>
