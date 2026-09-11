@@ -7,7 +7,7 @@ NOT_STARTED, NOT_RUN/BLOCKED (chỉ do thiếu môi trường live/cloud/model �
 
 ## Cổng nghiệm thu hiện tại
 
-- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **1.256 passed**, 1 warning
+- Backend full suite (repo root): `.venv\Scripts\python.exe -m pytest backend/tests -q` → **1.258 passed**, 1 warning
   (SQLAlchemy FK-cycle sort, có sẵn từ baseline), exit 0 — đo lại trong phiên này, sau khi thêm route U07 và
   đổi `JobRunner` (thay cho con số 700 của phiên trước).
 - Frontend: `npx vitest run` → **272 passed / 45 file**; `npm run build` (tsc + Vite) → PASS — đo lại trong phiên này
