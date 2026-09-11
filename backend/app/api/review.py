@@ -35,6 +35,13 @@ class RepairApplyRequest(BaseModel):
     expected_proposal_hash: str = Field(alias="expectedProposalHash", min_length=1)
 
 
+# Which engine produced a repair proposal. The preview/apply route is hardwired to
+# the offline deterministic translator (J01 owns the real cloud repair), and the
+# proposal carries this marker so the UI can never present a locally generated
+# proposal as a cloud-model repair — applying one writes a new translation run.
+REPAIR_OFFLINE_GENERATOR = "OFFLINE_DETERMINISTIC"
+
+
 def create_review_router(settings: Settings | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/chapters/{chapter_id}/review")
     active_settings = settings or Settings()
@@ -90,6 +97,9 @@ def create_review_router(settings: Settings | None = None) -> APIRouter:
           written, the current REVIEW run is only read;
         - the same chapter + segment selection + provider model yields a stable
           hash (the proposal payload is deterministic and immutable);
+        - the payload states its own generator (REPAIR_OFFLINE_GENERATOR): it is
+          NOT a cloud-model repair, and the UI must show that before an operator
+          applies the proposal (apply writes a new translation run);
         - the real cloud-model repair belongs to the J01 REPAIR job handler and
           is NOT_RUN in this round.
         """
@@ -166,6 +176,7 @@ def _repair_proposal_payload(proposal: object) -> dict[str, object]:
         "id": data["id"],
         "baseRunId": data["base_run_id"],
         "baseRunSha256": data["base_run_sha256"],
+        "generator": REPAIR_OFFLINE_GENERATOR,
         "providerModel": data["provider_model"],
         "storyMemoryRevisionHash": data["story_memory_revision_hash"],
         "hash": data["hash"],

@@ -9,9 +9,17 @@ type Proposal = {
   id: string;
   baseRunId: string;
   estimatedCostVnd: number;
+  /**
+   * Which engine produced the proposal. "OFFLINE_DETERMINISTIC" is the local
+   * converter (no network, no model), and the diff says so before an operator
+   * can accept it — accepting writes a new translation run.
+   */
+  generator?: string;
   hash: string;
   replacements: Replacement[];
 };
+
+const OFFLINE_GENERATOR = 'OFFLINE_DETERMINISTIC';
 
 type Props = {
   proposal: Proposal;
@@ -29,6 +37,13 @@ export default function RepairDiff({ proposal, onAccept, onReject }: Props) {
         </div>
         <p style={styles.cost}>{formatVnd(proposal.estimatedCostVnd)}</p>
       </header>
+
+      {proposal.generator === OFFLINE_GENERATOR ? (
+        <p role="status" data-testid="repair-generator-note" style={styles.generatorNote}>
+          Đề xuất do bộ chuyển đổi <strong>offline tất định</strong> tạo, không gọi model cloud và không phát sinh chi
+          phí (đường cloud thuộc J01). Kiểm tra từng dòng trước khi chấp nhận.
+        </p>
+      ) : null}
 
       <div style={styles.list}>
         {proposal.replacements.map((replacement) => (
@@ -111,6 +126,15 @@ const styles: Record<string, React.CSSProperties> = {
   cost: {
     margin: 0,
     fontWeight: 800,
+  },
+  generatorNote: {
+    margin: 0,
+    padding: '8px 10px',
+    border: '1px solid #f0c36d',
+    borderRadius: 6,
+    background: '#fffaeb',
+    color: '#7a4b00',
+    lineHeight: 1.5,
   },
   list: {
     display: 'grid',

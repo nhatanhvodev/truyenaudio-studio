@@ -42,6 +42,46 @@ describe('RepairDiff', () => {
     expect(onReject).not.toHaveBeenCalled();
   });
 
+  it('declares an offline-generated proposal before it can be accepted', () => {
+    render(
+      <RepairDiff
+        proposal={{
+          id: 'proposal-offline',
+          baseRunId: 'run-1',
+          estimatedCostVnd: 0,
+          generator: 'OFFLINE_DETERMINISTIC',
+          hash: 'c'.repeat(64),
+          replacements: [],
+        }}
+        onAccept={vi.fn()}
+        onReject={vi.fn()}
+      />,
+    );
+
+    // Applying a proposal writes a new translation run, so the operator must see
+    // that this one did not come from a cloud model.
+    expect(screen.getByTestId('repair-generator-note')).toHaveTextContent(/offline tất định/);
+    expect(screen.getByTestId('repair-generator-note')).toHaveTextContent(/J01/);
+  });
+
+  it('stays silent about the generator when the payload does not name one', () => {
+    render(
+      <RepairDiff
+        proposal={{
+          id: 'proposal-3',
+          baseRunId: 'run-1',
+          estimatedCostVnd: 0,
+          hash: 'b'.repeat(64),
+          replacements: [],
+        }}
+        onAccept={vi.fn()}
+        onReject={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId('repair-generator-note')).toBeNull();
+  });
+
   it('rejects a proposal without accepting it', () => {
     const onAccept = vi.fn();
     const onReject = vi.fn();

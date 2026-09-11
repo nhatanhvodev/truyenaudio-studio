@@ -22,6 +22,7 @@ from app.db.models import (
     TranslationRun,
     TranslationSegment,
 )
+from app.api.review import REPAIR_OFFLINE_GENERATOR
 from app.modules.translation.repair import RepairConflict, RepairService
 from app.settings.config import Settings
 
@@ -29,6 +30,7 @@ PROPOSAL_KEYS = {
     "id",
     "baseRunId",
     "baseRunSha256",
+    "generator",
     "providerModel",
     "storyMemoryRevisionHash",
     "hash",
@@ -80,6 +82,9 @@ def test_preview_matches_frontend_camel_case_contract(tmp_path) -> None:
     assert len(proposal["replacements"]) == 1
     assert set(proposal["replacements"][0]) == REPLACEMENT_KEYS
     assert proposal["estimatedCostVnd"] == 0
+    # The proposal declares its own generator: it is the local offline converter,
+    # never a cloud model, and the UI shows that before an operator applies it.
+    assert proposal["generator"] == REPAIR_OFFLINE_GENERATOR
     assert len(proposal["hash"]) == 64
     replacement = proposal["replacements"][0]
     assert replacement["sourceSegmentId"] == _fixture().major_segment_id

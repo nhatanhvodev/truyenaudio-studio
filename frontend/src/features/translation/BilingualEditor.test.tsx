@@ -263,6 +263,7 @@ describe('BilingualEditor repair proposals (U06 round 3)', () => {
       id: 'prop-1',
       baseRunId: 'run-1',
       baseRunSha256: 'b'.repeat(64),
+      generator: 'OFFLINE_DETERMINISTIC',
       providerModel: 'qwen-mt-plus',
       storyMemoryRevisionHash: 'c'.repeat(64),
       hash: 'd'.repeat(64),
@@ -311,6 +312,9 @@ describe('BilingualEditor repair proposals (U06 round 3)', () => {
     // "Proposed target" line, not a single text node.
     const proposed = within(diffSection).getByLabelText('Proposed target');
     expect(proposed.textContent).toBe('Lam Dong co 42 dong, chinh xac.');
+    // The generator marker travels from the API payload into the diff, so an
+    // operator sees it is an offline proposal before applying it (writes a run).
+    expect(within(diffSection).getByTestId('repair-generator-note')).toHaveTextContent(/offline tất định/);
     const preview = calls.find((call) => call.url.endsWith('/review/repair-preview'));
     expect(JSON.parse(String(preview?.init?.body))).toEqual({ selectedSegmentIds: ['seg-1'] });
   });

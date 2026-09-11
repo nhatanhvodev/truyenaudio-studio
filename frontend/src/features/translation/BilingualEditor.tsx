@@ -43,6 +43,8 @@ type RepairProposal = {
   id: string;
   baseRunId: string;
   baseRunSha256: string;
+  /** Which engine produced the proposal; the route reports the offline one today. */
+  generator?: string;
   providerModel: string;
   storyMemoryRevisionHash: string;
   hash: string;
@@ -343,6 +345,7 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
             id: repairProposal.id,
             baseRunId: repairProposal.baseRunId,
             estimatedCostVnd: repairProposal.estimatedCostVnd,
+            generator: repairProposal.generator,
             hash: repairProposal.hash,
             replacements: repairProposal.replacements,
           }}

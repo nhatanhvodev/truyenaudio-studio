@@ -61,7 +61,7 @@ Yêu cầu tối thiểu: Python 3.12, Node 24.x (xem `README.md`).
 | U03 Library paging + import review | ✅ | ✅ | — | browser E2E `import-preview.spec.ts` |
 | U04 Draft API + optimistic | ✅ | ✅ | — | CAS 409, editor conflict |
 | U05 Tabs/dock/layout | ✅ | ✅ | — | browser E2E `workspace-tabs.spec.ts` |
-| U06 Editor song ngữ/QA/inspector | ✅ *(acceptance còn nợ)* | ✅ | ❌ | repair proposal preview/apply **fake**; **virtualize chưa làm** — xem `progress-upgrade-plan.md` (PARTIAL) |
+| U06 Editor song ngữ/QA/inspector | ✅ | ✅ | ❌ | repair preview/apply dùng adapter **offline tất định** và **đã dán nhãn trong payload + UI** (`generator`); **virtualize chỉ là ghi chú rủi ro của plan, không phải tiêu chí nghiệm thu** (editor chưa virtualize nên rủi ro không phát sinh); còn NOT_RUN: repair bằng model cloud thật (J01) |
 | U07 Job UI + draft stream | ✅ | ✅ | ❌ | batch partial-failure + **route thật `POST /api/jobs/{id}/cancel|retry`** (wrapper `request_cancel`/`retry_failed`, mã lỗi có tên, chống gửi lại BILLING_UNKNOWN, idempotent) và UI đã nối; còn **E2E SSE trên browser NOT_RUN** — xem `progress-upgrade-plan.md` |
 | U08 Provider/model settings | ✅ | ✅ | ❌ | E2E credential rotate/mask; quote ceiling cần budget live |
 | U09 Style/glossary/character/memory | ✅ | ✅ | — | 4 manager + scope preview; nested project route **đã có thật** (`ProjectSettingsRoutes.tsx`, mount `router.tsx:118`, 3 test `ProjectNav.test.tsx`) — còn E2E downstream-stale NOT_RUN |
