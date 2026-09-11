@@ -1,0 +1,35 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.dialog {
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  padding: var(--sp-5);
+  max-width: min(40rem, calc(100vw - 2 * var(--sp-4)));
+  max-height: calc(100vh - 2 * var(--sp-4));
+  overflow-y: auto;
+  min-width: 0;
+  outline: none; /* the panel takes focus via ref; keep the ring suppressed as before */
+}
+.title { font-size: var(--fs-lg); font-weight: 600; margin-bottom: var(--sp-3); }
+.header { display: flex; justify-content: space-between; align-items: baseline; }
+.close {
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.close:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

@@ -1,0 +1,11 @@
+.tip {
+  position: absolute;
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm);
+  max-width: 20rem;
+  z-index: 120;
+}

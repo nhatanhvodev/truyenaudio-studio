@@ -1,0 +1,38 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(0 0 0 / 0.45);
+  z-index: 100;
+}
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(20rem, 100vw);
+  background: var(--surface-raised);
+  color: var(--text);
+  border-left: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+  overflow-y: auto;
+  z-index: 100;
+  min-width: 0;
+  outline: none; /* the panel takes focus via ref; keep the ring suppressed as before */
+}
+.title { font-size: var(--fs-lg); font-weight: 600; margin-bottom: var(--sp-3); }
+.header { display: flex; justify-content: space-between; align-items: baseline; }
+.close {
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.close:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

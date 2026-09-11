@@ -1,0 +1,15 @@
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border-control);
+  border-left: 3px solid var(--text-muted);
+  border-radius: var(--radius);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-md);
+  min-width: 0;
+}
+.toneSuccess { border-left-color: var(--success); color: var(--success); }
+.toneDanger { border-left-color: var(--danger); color: var(--danger); }

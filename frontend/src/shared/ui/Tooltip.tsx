@@ -7,17 +7,15 @@ import {
   type ReactElement,
 } from 'react';
 
-import { colors, font, radius, spacing, type UiTheme } from './tokens';
+import styles from './Tooltip.module.css';
 
 export interface TooltipProps {
   content: string;
   children: ReactElement;
-  theme?: UiTheme;
 }
 
-export function Tooltip({ content, children, theme = 'light' }: TooltipProps) {
+export function Tooltip({ content, children }: TooltipProps) {
   const id = useId();
-  const c = colors[theme];
   const [open, setOpen] = useState(false);
   const timeoutRef = useRef<number | null>(null);
   const trigger = Children.only(children);
@@ -51,17 +49,7 @@ export function Tooltip({ content, children, theme = 'light' }: TooltipProps) {
         <span
           id={id}
           role="tooltip"
-          style={{
-            position: 'absolute',
-            zIndex: 40,
-            background: c.surfaceRaised,
-            color: c.text,
-            border: `1px solid ${c.border}`,
-            borderRadius: radius.sm,
-            padding: `${spacing.xs}px ${spacing.sm}px`,
-            fontSize: font.sizeSm,
-            maxWidth: 280,
-          }}
+          className={styles.tip}
         >
           {content}
         </span>
