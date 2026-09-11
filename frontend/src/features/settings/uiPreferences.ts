@@ -48,7 +48,7 @@ const CONTENT_OR_SECRET_PATTERN =
 export function defaultPreferences(): UiPreferences {
   return {
     version: UI_PREFERENCES_VERSION,
-    theme: 'system',
+    theme: 'dark',
     density: 'comfortable',
     fontScale: 'medium',
     reduceMotion: false,

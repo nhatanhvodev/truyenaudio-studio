@@ -5,6 +5,7 @@ import {
   parsePreferences,
   preferencesAreSafe,
   serializePreferences,
+  THEMES,
 } from './uiPreferences';
 
 describe('UI preferences (U10)', () => {
@@ -78,5 +79,22 @@ describe('UI preferences (U10)', () => {
     expect(preferencesAreSafe('')).toBe(true);
     expect(preferencesAreSafe('{not json')).toBe(false);
     expect(preferencesAreSafe(JSON.stringify({ version: 1, theme: 'dark' }))).toBe(true);
+  });
+});
+
+describe('dark is the default preference', () => {
+  it('defaults to dark, not system', () => {
+    expect(defaultPreferences().theme).toBe('dark');
+  });
+
+  it('keeps system available as an explicit choice', () => {
+    expect(THEMES).toContain('system');
+    expect(THEMES).toHaveLength(3);
+  });
+
+  it('falls back to dark when the stored theme is not a known value', () => {
+    expect(parsePreferences(JSON.stringify({ version: 1, theme: 'neon' })).preferences.theme).toBe(
+      'dark',
+    );
   });
 });

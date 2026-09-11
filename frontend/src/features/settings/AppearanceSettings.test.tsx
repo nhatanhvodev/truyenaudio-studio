@@ -48,7 +48,7 @@ describe('AppearanceSettings (U10)', () => {
     // Saving rewrites the corrupt document with a valid, minimal one.
     expect(JSON.parse(String(window.localStorage.getItem(STORAGE_KEY)))).toEqual({
       version: 1,
-      theme: 'system',
+      theme: 'dark',
       density: 'comfortable',
       fontScale: 'medium',
       reduceMotion: false,
@@ -65,7 +65,7 @@ describe('AppearanceSettings (U10)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Về mặc định' }));
 
     await waitFor(() => expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull());
-    expect(screen.getByLabelText('Theme')).toHaveValue('system');
+    expect(screen.getByLabelText('Theme')).toHaveValue('dark');
     expect(screen.getByText(/Đã đưa tùy chọn hiển thị về mặc định/)).toBeVisible();
   });
 });
