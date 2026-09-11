@@ -1406,7 +1406,15 @@ git commit -m "refactor(ui): move Modal, Drawer, Tooltip and Toast onto CSS Modu
 - [ ] **Step 1: Run the existing tests**
 
 Run: `cd frontend && npx vitest run src/shared/ui/feedback-table.test.tsx src/shared/ui/tree.test.tsx`
-Expected: PASS. Note the Tree's `role="tree"`/`role="treeitem"` and `aria-expanded`/`aria-level` assertions and the Table's header/row assertions.
+Expected: PASS. Note the Table's header/row assertions and whatever `tree.test.tsx` actually asserts.
+
+**Correction to earlier plan text: this codebase's `Tree` has no keyboard navigation and no
+`aria-level`.** An earlier draft of this step, and Step 3 below, told you to "keep every ARIA attribute
+and the Tree's keyboard navigation untouched" and to look for `aria-level` assertions. Neither exists in
+`Tree.tsx` or `tree.test.tsx` — there is no arrow/Home/End handling to preserve and no `aria-level` being
+rendered. **Nothing is missing and nothing was removed.** Do not add keyboard navigation or `aria-level`
+to satisfy the instruction: that would be a new feature, not this task, and no test asks for it. Read the
+test file and preserve exactly what it does assert.
 
 - [ ] **Step 2: Create the three modules**
 
@@ -1469,7 +1477,9 @@ Expected: PASS. Note the Tree's `role="tree"`/`role="treeitem"` and `aria-expand
 
 - [ ] **Step 3: Rewrite the three components**
 
-Swap inline styles for module classes. Keep every ARIA attribute and the Tree's keyboard navigation untouched.
+Swap inline styles for module classes. Keep every ARIA attribute untouched — see Step 1: there is no
+Tree keyboard navigation and no `aria-level` in this codebase, so there is nothing of the sort to keep
+or to add.
 
 - [ ] **Step 4: Delete `tokens.ts` and trim `index.ts`**
 
