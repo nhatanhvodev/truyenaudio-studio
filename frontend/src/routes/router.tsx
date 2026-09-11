@@ -311,13 +311,14 @@ function ImportScreen() {
 
 function BatchScreen() {
   const { projectId } = useParams();
-  // Hooks run before the early return: the action handlers must be created on
-  // every render, even while the route has no project yet (U07 batch retry).
-  const { onCancel, onRetry } = useJobActions();
   if (!projectId) {
     return <Navigate to="/" replace />;
   }
-  return <BatchQueue projectId={projectId} onRetry={onRetry} onCancel={onCancel} />;
+  // BatchQueue already posts to the per-job cancel/retry routes itself (the routes
+  // were the missing half until U07) and shows the refusal reason inline, so it is
+  // deliberately NOT rewired through jobActions: doing so would swallow the reason
+  // behind a silent snapshot refresh.
+  return <BatchQueue projectId={projectId} />;
 }
 
 function TranslationScreen() {
@@ -1190,7 +1191,7 @@ function ExportScreen() {
  * confirm. A refused action (409/404) is therefore not an error dialog: the job
  * simply shows its real state again.
  */
-function useJobActions(store = defaultJobEventStore) {
+function jobActions(store = defaultJobEventStore) {
   const act = (suffix: 'cancel' | 'retry') => async (event: JobEvent) => {
     try {
       await apiJson(`/api/jobs/${encodeURIComponent(event.jobId)}/${suffix}`, { method: 'POST' });
@@ -1203,7 +1204,7 @@ function useJobActions(store = defaultJobEventStore) {
 }
 
 function JobsScreen() {
-  const { onCancel, onRetry } = useJobActions();
+  const { onCancel, onRetry } = jobActions();
   return (
     <section style={styles.panel}>
       <h1 style={styles.title}>Jobs</h1>

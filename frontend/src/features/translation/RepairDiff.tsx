@@ -20,6 +20,8 @@ type Proposal = {
 };
 
 const OFFLINE_GENERATOR = 'OFFLINE_DETERMINISTIC';
+const UNKNOWN_GENERATOR_NOTE =
+  'Chưa xác định được nguồn sinh đề xuất này. Kiểm tra từng dòng trước khi chấp nhận — chấp nhận sẽ ghi một run dịch mới.';
 
 type Props = {
   proposal: Proposal;
@@ -43,7 +45,14 @@ export default function RepairDiff({ proposal, onAccept, onReject }: Props) {
           Đề xuất do bộ chuyển đổi <strong>offline tất định</strong> tạo, không gọi model cloud và không phát sinh chi
           phí (đường cloud thuộc J01). Kiểm tra từng dòng trước khi chấp nhận.
         </p>
-      ) : null}
+      ) : (
+        // Fail-closed: a payload that omits or renames the marker gets the caution
+        // too. Only a generator explicitly known to be model-backed may be silent,
+        // and none exists until J01 wires the cloud repair.
+        <p role="status" data-testid="repair-generator-note" style={styles.generatorNote}>
+          {UNKNOWN_GENERATOR_NOTE}
+        </p>
+      )}
 
       <div style={styles.list}>
         {proposal.replacements.map((replacement) => (

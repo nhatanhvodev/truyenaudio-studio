@@ -312,3 +312,106 @@ def test_retry_failed_leaves_non_failed_jobs_untouched(engine: Engine, determini
 
     assert view is None
     assert _status_of(engine, job_id)[0] == JobStatus.QUEUED.value
+
+def _competing_transition_engine(settings: Settings):
+    """A second connection standing in for the worker PROCESS (U07 review).
+
+    The worker runs in its own process in production, so the API's read and write
+    can straddle a transition it commits. Tests drive that interleaving with a
+    hook that fires just before the cancel UPDATE executes.
+    """
+    return create_engine_for(settings.data_root / "studio.sqlite3")
+
+
+def test_cancel_after_a_claim_stays_cancel_requested(engine: Engine, settings: Settings) -> None:
+    """A claim landing during the cancel must NOT stamp a RUNNING job CANCELED.
+
+    Stamping it CANCELED takes the job out of the only status the worker honours
+    (CANCEL_REQUESTED): the handler keeps calling the provider, and its next
+    callback raises InvalidJobTransition outside the worker's try/except, which
+    kills the worker process.
+    """
+    from sqlalchemy import event
+
+    job_id = _enqueue(engine, "cancel-race-claim")
+    other = _competing_transition_engine(settings)
+    fired = {"count": 0}
+
+    def decisive(conn, cursor, statement, parameters, context, executemany):
+        if "cancel_requested_at" not in statement or fired["count"] > 0:
+            return
+        fired["count"] += 1
+        with other.begin() as competing:
+            competing.execute(
+                text(
+                    """
+                    UPDATE jobs
+                    SET status = 'RUNNING', lease_owner = 'competing-worker', lease_expires_at = :expires
+                    WHERE id = :job_id
+                    """
+                ),
+                {"expires": (datetime.now(UTC) + timedelta(seconds=60)).isoformat(), "job_id": job_id},
+            )
+
+    event.listen(engine, "before_cursor_execute", decisive)
+    try:
+        view = JobRunner(engine).request_cancel(job_id, datetime.now(UTC))
+    finally:
+        event.remove(engine, "before_cursor_execute", decisive)
+        other.dispose()
+
+    assert fired["count"] == 1, "the interleaving was not exercised"
+    assert view is not None
+    assert view.status is JobStatus.CANCEL_REQUESTED
+    with engine.connect() as connection:
+        row = connection.execute(
+            text("SELECT status, lease_owner FROM jobs WHERE id = :id"), {"id": job_id}
+        ).one()
+    assert (row[0], row[1]) == (JobStatus.CANCEL_REQUESTED.value, "competing-worker")
+
+
+def test_cancel_of_a_requeued_job_terminates_instead_of_parking_it(engine: Engine, settings: Settings) -> None:
+    """The opposite race must not leave an unrecoverable zombie.
+
+    If the worker requeues a retryable failure between the read and the write, the
+    row is QUEUED when the write lands: cancelling it outright is recoverable,
+    while CANCEL_REQUESTED with no lease can never be claimed or recovered.
+    """
+    from sqlalchemy import event
+
+    job_id = _enqueue(engine, "cancel-race-requeue")
+    runner = JobRunner(engine)
+    lease = runner.claim("competing-worker", datetime.now(UTC))
+    assert lease is not None and lease.job_id == job_id
+    other = _competing_transition_engine(settings)
+    fired = {"count": 0}
+
+    def decisive(conn, cursor, statement, parameters, context, executemany):
+        if "cancel_requested_at" not in statement or fired["count"] > 0:
+            return
+        fired["count"] += 1
+        with other.begin() as competing:
+            competing.execute(
+                text(
+                    """
+                    UPDATE jobs
+                    SET status = 'QUEUED', lease_owner = NULL, lease_expires_at = NULL, next_run_at = :now
+                    WHERE id = :job_id
+                    """
+                ),
+                {"now": datetime.now(UTC).isoformat(), "job_id": job_id},
+            )
+
+    event.listen(engine, "before_cursor_execute", decisive)
+    try:
+        view = JobRunner(engine).request_cancel(job_id, datetime.now(UTC))
+    finally:
+        event.remove(engine, "before_cursor_execute", decisive)
+        other.dispose()
+
+    assert fired["count"] == 1, "the interleaving was not exercised"
+    assert view is not None and view.status is JobStatus.CANCELED
+    assert _status_of(engine, job_id)[0] == JobStatus.CANCELED.value
+    # Nothing is left parked: a terminal job is not claimable again.
+    assert JobRunner(engine).claim("competing-worker", datetime.now(UTC) + timedelta(seconds=1)) is None
+

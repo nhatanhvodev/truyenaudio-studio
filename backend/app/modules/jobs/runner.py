@@ -18,15 +18,6 @@ HEARTBEAT_INTERVAL_SECONDS = 15
 RECOVERY_THRESHOLD_SECONDS = 90
 
 
-TERMINAL_STATUSES = {
-    JobStatus.SUCCEEDED.value,
-    JobStatus.FAILED.value,
-    JobStatus.CANCELED.value,
-    JobStatus.BLOCKED_BUDGET.value,
-    JobStatus.BILLING_UNKNOWN.value,
-}
-
-
 class JobRunnerError(Exception):
     """Base exception for durable queue transition failures."""
 
@@ -294,26 +285,39 @@ class JobRunner:
         return HeartbeatView(job_id, worker_id, now, lease_expires_at)
 
     def request_cancel(self, job_id: str, now: datetime) -> JobView | None:
+        """Cancel immediately when QUEUED, otherwise ask the worker to stop.
+
+        The decision is made IN SQL, in the same statement that writes it. The
+        worker is a separate process and owns the row's lifecycle once it claims
+        a job, so a status read taken in Python would be stale by the time the
+        write lands: observing QUEUED and then writing CANCELED onto a row the
+        worker has since claimed would leave a RUNNING job terminal (the worker
+        would no longer see CANCEL_REQUESTED, would keep calling the provider,
+        and its next callback would kill the worker loop). Deciding from the
+        live row also keeps the job recoverable in the opposite race: a row
+        requeued to QUEUED between the two statements is cancelled outright
+        instead of being parked in CANCEL_REQUESTED with no lease.
+        """
         _require_aware(now)
         with self.engine.begin() as connection:
-            row = connection.execute(text("SELECT * FROM jobs WHERE id = :id"), {"id": job_id}).mappings().one_or_none()
-            if row is None or row["status"] in TERMINAL_STATUSES:
-                return None
-
-            status = JobStatus(row["status"])
-            next_status = JobStatus.CANCELED if status is JobStatus.QUEUED else JobStatus.CANCEL_REQUESTED
             result = connection.execute(
                 text(
                     """
                     UPDATE jobs
-                    SET status = :status,
+                    SET status = CASE WHEN status = :queued THEN :canceled ELSE :cancel_requested END,
                         cancel_requested_at = :now,
                         updated_at = :now
                     WHERE id = :job_id
                       AND status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELED', 'BLOCKED_BUDGET', 'BILLING_UNKNOWN')
                     """
                 ),
-                {"status": next_status.value, "now": now.isoformat(), "job_id": job_id},
+                {
+                    "queued": JobStatus.QUEUED.value,
+                    "canceled": JobStatus.CANCELED.value,
+                    "cancel_requested": JobStatus.CANCEL_REQUESTED.value,
+                    "now": now.isoformat(),
+                    "job_id": job_id,
+                },
             )
             if result.rowcount != 1:
                 return None

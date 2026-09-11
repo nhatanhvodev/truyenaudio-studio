@@ -58,15 +58,25 @@ export type StoreDeps = {
 
 const DEFAULT_BACKOFF_MS = [1000, 2000, 4000, 8000];
 
-/** Error codes that must never be retried automatically (mirrors the backend classifier). */
-const NON_RETRYABLE = [
-  'HTTP_400',
-  'HTTP_401',
-  'HTTP_403',
-  'HTTP_404',
-  'INPUT_UNSUPPORTED',
-  'TRANSLATION_RUN_SEGMENTS_INCOMPLETE',
-];
+/**
+ * Error codes the backend classifier would actually retry
+ * (backend/app/modules/jobs/retry.py: RETRYABLE_CODES plus HTTP_408/5xx and the
+ * rate-limit code). This is an ALLOWLIST on purpose: a denylist would offer a
+ * "Thử lại" button for codes such as WORKER_HANDLER_EXCEPTION that the API
+ * refuses, so the operator would click an action that can only answer 409.
+ */
+const RETRYABLE_CODES = ['PROVIDER_NETWORK', 'PROVIDER_5XX', 'PROVIDER_TIMEOUT', 'DB_BUSY', 'PROVIDER_RATE_LIMIT'];
+
+function isRetryableCode(code: string | null | undefined): boolean {
+  const value = code ?? '';
+  if (value === 'HTTP_429') {
+    return true;
+  }
+  if (RETRYABLE_CODES.includes(value)) {
+    return true;
+  }
+  return /^HTTP_5\d\d$/.test(value) || value === 'HTTP_408';
+}
 
 export function defaultDeps(): StoreDeps {
   return {
@@ -142,11 +152,21 @@ export class JobEventStore {
   async refresh(): Promise<void> {
     // The feed carries the CURRENT projection and a job keeps its marker row, so
     // a state change can arrive under a sequence the buffer already holds.
-    // Re-reading is therefore a replace, not an append with replay dedupe.
+    // Re-reading is therefore a replace, not an append with replay dedupe —
+    // but only AFTER the read succeeds: a failed refresh must not wipe the list
+    // an operator is looking at.
+    let events: JobEvent[];
+    try {
+      events = await this.deps.fetchSnapshot();
+    } catch {
+      this.setState('offline');
+      return;
+    }
     this.events = [];
     this.cursor = null;
     this.truncated = false;
-    await this.refreshSnapshot();
+    this.append(events, { reset: true });
+    this.setState(this.stream ? 'connected' : 'connecting');
   }
 
   async start(): Promise<void> {
@@ -299,9 +319,7 @@ export function retryableFailures(events: JobEvent[]): JobEvent[] {
     }
   }
   return [...latest.values()].filter(
-    (event) =>
-      event.status === 'FAILED' &&
-      !NON_RETRYABLE.some((code) => (event.errorCode ?? '').startsWith(code)),
+    (event) => event.status === 'FAILED' && isRetryableCode(event.errorCode),
   );
 }
 

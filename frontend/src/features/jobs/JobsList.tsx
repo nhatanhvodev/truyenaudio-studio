@@ -33,8 +33,8 @@ export function latestByJob(events: JobEvent[]): JobEvent[] {
 
 type Props = {
   /** Called for a retryable failure; the screen decides how to re-enqueue. */
-  onRetry?: (event: JobEvent) => void;
-  onCancel?: (event: JobEvent) => void;
+  onRetry?: (event: JobEvent) => void | Promise<void>;
+  onCancel?: (event: JobEvent) => void | Promise<void>;
   /** Shared store (defaults to the app-wide one; injectable for tests). */
   store?: JobEventStore;
 };
@@ -96,12 +96,12 @@ export default function JobsList({ onRetry, onCancel, store }: Props) {
                 </td>
                 <td style={styles.td}>
                   {job.status === 'RUNNING' || job.status === 'QUEUED' ? (
-                    <button type="button" onClick={() => onCancel?.(job)} style={styles.secondary}>
+                    <button type="button" onClick={() => void onCancel?.(job)} style={styles.secondary}>
                       Hủy job
                     </button>
                   ) : null}
                   {retryable.has(job.jobId) ? (
-                    <button type="button" onClick={() => onRetry?.(job)} style={styles.primary}>
+                    <button type="button" onClick={() => void onRetry?.(job)} style={styles.primary}>
                       Thử lại
                     </button>
                   ) : null}

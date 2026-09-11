@@ -64,7 +64,7 @@ describe('RepairDiff', () => {
     expect(screen.getByTestId('repair-generator-note')).toHaveTextContent(/J01/);
   });
 
-  it('stays silent about the generator when the payload does not name one', () => {
+  it('warns instead of staying silent when the payload does not name a generator', () => {
     render(
       <RepairDiff
         proposal={{
@@ -79,7 +79,8 @@ describe('RepairDiff', () => {
       />,
     );
 
-    expect(screen.queryByTestId('repair-generator-note')).toBeNull();
+    // Fail-closed: an unnamed generator must not reach apply without a caution.
+    expect(screen.getByTestId('repair-generator-note')).toHaveTextContent(/Chưa xác định được nguồn sinh/);
   });
 
   it('rejects a proposal without accepting it', () => {

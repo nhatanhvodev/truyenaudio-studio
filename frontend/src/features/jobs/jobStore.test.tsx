@@ -171,12 +171,43 @@ describe('JobEventStore (U07 round 2)', () => {
     const unsubscribe = store.subscribe(() => undefined);
     await waitFor(() => expect(StubStream.instances).toHaveLength(1));
 
-    events.push(event(2, 'job-1', 'QUEUED'));
+    // The SAME sequenceId with a changed status, which is what the feed returns
+    // when a job's marker row is refreshed: append+dedupe would discard it as a
+    // replay and the stale FAILED row would survive.
+    events[0] = event(1, 'job-1', 'QUEUED');
     await act(async () => {
       await store.refresh();
     });
 
-    expect(store.snapshot().events.map((item) => item.status)).toEqual(['FAILED', 'QUEUED']);
+    expect(store.snapshot().events.map((item) => item.status)).toEqual(['QUEUED']);
+    unsubscribe();
+  });
+
+  it('keeps the last known jobs when a refresh read fails (U07)', async () => {
+    let failNext = false;
+    const store = new JobEventStore({
+      fetchSnapshot: async () => {
+        if (failNext) {
+          throw new Error('offline');
+        }
+        return [event(1, 'job-1', 'RUNNING')];
+      },
+      openStream: (url) => new StubStream(url),
+      schedule: () => 0,
+      cancelScheduled: () => undefined,
+    });
+    const unsubscribe = store.subscribe(() => undefined);
+    await waitFor(() => expect(StubStream.instances).toHaveLength(1));
+    expect(store.snapshot().events).toHaveLength(1);
+
+    failNext = true;
+    await act(async () => {
+      await store.refresh();
+    });
+
+    // An action whose reconcile read fails must not blank the list.
+    expect(store.snapshot().events).toHaveLength(1);
+    expect(store.snapshot().state).toBe('offline');
     unsubscribe();
   });
 
@@ -242,7 +273,9 @@ describe('retryableFailures (U07 batch retry)', () => {
 
     const retryable = retryableFailures(events).map((item) => item.jobId);
 
-    expect(retryable.sort()).toEqual(['job-plain', 'job-timeout']);
+    // job-plain (FAILED, no error code) is NOT offered: the API classifies an
+    // empty code as non-retryable and would answer JOB_RETRY_NOT_RETRYABLE.
+    expect(retryable.sort()).toEqual(['job-timeout']);
   });
 
   it('never offers a retry for a job that later succeeded', () => {
