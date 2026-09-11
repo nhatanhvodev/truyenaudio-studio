@@ -1,36 +1,34 @@
 import { useId, type SelectHTMLAttributes } from 'react';
 
-import { colors, font, radius, spacing, type UiTheme } from './tokens';
+import styles from './Select.module.css';
 
 export interface SelectProps
   extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id'> {
   label: string;
-  theme?: UiTheme;
   error?: string | null;
   options: readonly { value: string; label: string }[];
 }
 
 export function Select({
   label,
-  theme = 'light',
   error,
   options,
   required,
-  style,
+  className,
   ...rest
 }: SelectProps) {
   const autoId = useId();
   const id = autoId;
   const errorId = error ? `${id}-error` : undefined;
-  const c = colors[theme];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
-      <label
-        htmlFor={id}
-        style={{ fontSize: font.sizeSm, fontWeight: font.weightMedium, color: c.text }}
-      >
+    <>
+      <label htmlFor={id} className={styles.label}>
         {label}
-        {required ? <span aria-hidden="true"> *</span> : null}
+        {required ? (
+          <span className={styles.required} aria-hidden="true">
+            *
+          </span>
+        ) : null}
       </label>
       <select
         id={id}
@@ -38,29 +36,21 @@ export function Select({
         aria-describedby={errorId}
         required={required}
         {...rest}
-        style={{
-          background: c.surface,
-          color: c.text,
-          border: `1px solid ${error ? c.danger : c.border}`,
-          borderRadius: radius.sm,
-          padding: `${spacing.sm}px ${spacing.md}px`,
-          fontSize: font.sizeMd,
-          fontFamily: 'inherit',
-          outline: 'none',
-          ...style,
-        }}
+        className={[styles.select, error ? styles.invalid : undefined, className]
+          .filter(Boolean)
+          .join(' ')}
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} className={styles.option}>
             {option.label}
           </option>
         ))}
       </select>
       {error ? (
-        <span id={errorId} role="alert" style={{ color: c.danger, fontSize: font.sizeSm }}>
+        <span id={errorId} role="alert" className={styles.error}>
           {error}
         </span>
       ) : null}
-    </div>
+    </>
   );
 }

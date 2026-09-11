@@ -1,38 +1,36 @@
 import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 
-import { colors, font, radius, spacing, type UiTheme } from './tokens';
+import styles from './Input.module.css';
 
 export interface InputProps
   extends Omit<InputHTMLAttributes<HTMLInputElement>, 'id'> {
   label: string;
-  theme?: UiTheme;
   error?: string | null;
   hint?: ReactNode;
 }
 
 export function Input({
   label,
-  theme = 'light',
   error,
   hint,
   required,
-  style,
+  className,
   ...rest
 }: InputProps) {
   const autoId = useId();
   const id = autoId;
   const errorId = error ? `${id}-error` : undefined;
   const hintId = hint ? `${id}-hint` : undefined;
-  const c = colors[theme];
   const describedBy = [errorId, hintId].filter(Boolean).join(' ') || undefined;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
-      <label
-        htmlFor={id}
-        style={{ fontSize: font.sizeSm, fontWeight: font.weightMedium, color: c.text }}
-      >
+    <>
+      <label htmlFor={id} className={styles.label}>
         {label}
-        {required ? <span aria-hidden="true"> *</span> : null}
+        {required ? (
+          <span className={styles.required} aria-hidden="true">
+            *
+          </span>
+        ) : null}
       </label>
       <input
         id={id}
@@ -40,34 +38,20 @@ export function Input({
         aria-describedby={describedBy}
         required={required}
         {...rest}
-        style={{
-          background: c.surface,
-          color: c.text,
-          border: `1px solid ${error ? c.danger : c.border}`,
-          borderRadius: radius.sm,
-          padding: `${spacing.sm}px ${spacing.md}px`,
-          fontSize: font.sizeMd,
-          fontFamily: 'inherit',
-          outline: 'none',
-          ...style,
-        }}
-        onFocus={(event) => {
-          event.currentTarget.style.boxShadow = `0 0 0 2px ${c.focusRing}`;
-        }}
-        onBlur={(event) => {
-          event.currentTarget.style.boxShadow = 'none';
-        }}
+        className={[styles.field, error ? styles.invalid : undefined, className]
+          .filter(Boolean)
+          .join(' ')}
       />
       {error ? (
-        <span id={errorId} role="alert" style={{ color: c.danger, fontSize: font.sizeSm }}>
+        <span id={errorId} role="alert" className={styles.error}>
           {error}
         </span>
       ) : null}
       {hint ? (
-        <span id={hintId} style={{ color: c.textMuted, fontSize: font.sizeSm }}>
+        <span id={hintId} className={styles.description}>
           {hint}
         </span>
       ) : null}
-    </div>
+    </>
   );
 }
