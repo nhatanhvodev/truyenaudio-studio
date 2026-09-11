@@ -98,6 +98,45 @@ FLAGS: dict[str, FeatureFlag] = {
             "Bỏ qua cổng quyền khi export công khai — vi phạm F03 nếu bật.",
             evidence_feature="public_export_bypass_live",
         ),
+        # Phase 2 extensions (X01–X05). One flag per provider, each gated by its
+        # *own* manifest feature: a provider that has no live evidence stays off
+        # even when a different provider has already been verified, so one
+        # passing adapter can never switch the group on (plan X07 acceptance).
+        FeatureFlag(
+            "provider_groq_live",
+            True,
+            False,
+            "Gọi Groq thật (X01) — chỉ bật khi manifest ghi PASS cho provider_groq_live.",
+            evidence_feature="provider_groq_live",
+        ),
+        FeatureFlag(
+            "provider_nim_live",
+            True,
+            False,
+            "Gọi NVIDIA NIM thật (X02) — account/license là gate riêng của provider này.",
+            evidence_feature="provider_nim_live",
+        ),
+        FeatureFlag(
+            "provider_cerebras_live",
+            True,
+            False,
+            "Gọi Cerebras thật (X03) — cần evidence live riêng, không suy từ adapter khác.",
+            evidence_feature="provider_cerebras_live",
+        ),
+        FeatureFlag(
+            "provider_cloudflare_live",
+            True,
+            False,
+            "Gọi Cloudflare Workers AI thật (X04) — cần account/region/permission được xác nhận.",
+            evidence_feature="provider_cloudflare_live",
+        ),
+        FeatureFlag(
+            "provider_huggingface_live",
+            True,
+            False,
+            "Gọi Hugging Face hosted inference thật (X05) — không bật local LLM/tải model.",
+            evidence_feature="provider_huggingface_live",
+        ),
     )
 }
 

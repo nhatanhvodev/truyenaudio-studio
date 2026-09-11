@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "releaseScope": "fixture-verified",
-  "generatedAt": "2026-09-10T14:14:31Z",
-  "commit": "dcf92c3adfa41ef8578af2bc55d13dd730b58427",
-  "note": "R01 release manifest. Only evidence == PASS may switch a flag on; NOT_RUN/FAIL/BLOCKED keep the feature disabled. Scope is fixture-verified, NOT production-validated: no cloud, no TTS model, no rights-cleared corpus, no browser long-task/heap measurement.",
+  "generatedAt": "2026-09-10T18:30:00Z",
+  "commit": "37a638187f44d3e399013716a15d0658ee6376a8",
+  "note": "R01+X06+X07 release manifest. Only evidence == PASS may switch a flag on; NOT_RUN/FAIL/BLOCKED keep the feature disabled. Scope is fixture-verified, NOT production-validated: no cloud, no TTS model, no rights-cleared corpus, no browser long-task/heap measurement. Five Phase 2 extension providers (X01-X05, commit 37a6381): each records an offline contract-suite result only, so all five read NOT_RUN. X06 (vector index, 34 contract tests) also NOT_RUN for live. All Phase 2 features stay disabled.",
   "features": [
     {
       "id": "clean_install_migration",
@@ -116,6 +116,41 @@
       "summary": "Bypassing the rights gate on public export would violate F03; it must stay off regardless of evidence.",
       "evidenceRef": "docs/plans/implementation-plan.md",
       "flag": "public_export_bypass"
+    },
+    {
+      "id": "provider_groq_live",
+      "evidence": "NOT_RUN",
+      "summary": "Groq (X01): 49 contract tests PASS offline (guard-before-HTTP, billing-unknown, key never leaves the Authorization header), but no account, credential, terms review or live invocation exists - live stays NOT_RUN.",
+      "evidenceRef": "docs/validation/phase2.md#31-groq-x01",
+      "flag": "provider_groq_live"
+    },
+    {
+      "id": "provider_nim_live",
+      "evidence": "NOT_RUN",
+      "summary": "NVIDIA NIM (X02): 66 contract tests PASS offline (endpoint allowlist, capability_verified=false, usage actual), but no NVIDIA account/licence and no self-hosted endpoint was exercised - live stays NOT_RUN.",
+      "evidenceRef": "docs/validation/phase2.md#32-nvidia-nim-x02",
+      "flag": "provider_nim_live"
+    },
+    {
+      "id": "provider_cerebras_live",
+      "evidence": "NOT_RUN",
+      "summary": "Cerebras (X03): 45 contract tests PASS offline (chat payload, SSE split/finish, no silent model substitution), but no Cerebras account/key exists and the free-quota terms were never reviewed - live stays NOT_RUN.",
+      "evidenceRef": "docs/validation/phase2.md#33-cerebras-x03",
+      "flag": "provider_cerebras_live"
+    },
+    {
+      "id": "provider_cloudflare_live",
+      "evidence": "NOT_RUN",
+      "summary": "Cloudflare Workers AI (X04): 53 contract tests PASS offline (account-scoped run path, non-chat models refused, no account secret in payload/result), but no Cloudflare account, API token or region confirmation exists - live stays NOT_RUN.",
+      "evidenceRef": "docs/validation/phase2.md#34-cloudflare-workers-ai-x04",
+      "flag": "provider_cloudflare_live"
+    },
+    {
+      "id": "provider_huggingface_live",
+      "evidence": "NOT_RUN",
+      "summary": "Hugging Face (X05): 67 contract tests PASS offline (hosted text-generation only, no download path, task refusal, routed-model reporting), but no HF token, licence review or inference-provider routing evidence exists - live stays NOT_RUN.",
+      "evidenceRef": "docs/validation/phase2.md#35-hugging-face-x05",
+      "flag": "provider_huggingface_live"
     }
   ]
 }

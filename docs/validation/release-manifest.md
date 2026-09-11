@@ -20,8 +20,8 @@ Cột **Đang bật?**: `—` = feature **không có flag runtime** (luôn chạ
 
 | Feature | Evidence | Đang bật? | Nghĩa & cách kiểm chứng |
 |---|---|---|---|
-| `clean_install_migration` | **PASS** | — | Data root trống → `alembic upgrade head` đạt revision 0018, 18 migration, 37 bảng, integrity ok. Kiểm: `pytest backend/tests/db/test_migration_rehearsal.py -q` |
-| `legacy_upgrade_preserves_data` | **PASS** | — | DB ở 0016 có dữ liệu thật → upgrade lên 0018, số hàng trước == sau. Kiểm: cùng file test trên |
+| `clean_install_migration` | **PASS** | — | Data root trống → `alembic upgrade head` đạt revision 0019, 19 migration, 38 bảng, integrity ok. Kiểm: `pytest backend/tests/db/test_migration_rehearsal.py -q` |
+| `legacy_upgrade_preserves_data` | **PASS** | — | DB ở 0016 có dữ liệu thật → upgrade lên 0019, số hàng trước == sau. Kiểm: cùng file test trên |
 | `failed_migration_detection` | **PASS** | — | Migration lỗi giữa đường được báo `MIGRATION_INCOMPLETE`; revision-vs-head phát hiện được. Kiểm: `scripts/preflight.ps1 -VerifyDatabase` |
 | `backup_rollback_checksum` | **PASS** | — | Backup trước upgrade → restore vào data root mới: sha256/byte_size/integrity khớp + digest nội dung logic y hệt. Kiểm: `pytest backend/tests/storage/test_backup_rollback_drill.py -q` |
 | `legacy_read_routes` | **PASS** | — | 4 route đọc thật trả 200 trên dữ liệu tạo từ schema 0016 |
@@ -33,9 +33,14 @@ Cột **Đang bật?**: `—` = feature **không có flag runtime** (luôn chạ
 | `vieneu_tts_live` | **NOT_RUN** | ❌ | `data/models` **không tồn tại**, không có model + license |
 | `quality_evaluation_corpus` | **NOT_RUN** | ❌ | Không có corpus được cấp quyền, không có reviewer — xem `quality.md` |
 | `ffmpeg_real_master` | **NOT_RUN** | ❌ | FFmpeg không chạy được: symlink WinGet gãy (target không tồn tại) |
-| `vector_index_live` | **NOT_RUN** | ❌ flag `vector_index` | Cần embedding do người dùng nhập; X06 thuộc Phase 2 |
+| `vector_index_live` | **NOT_RUN** | ❌ flag `vector_index` | X06 code-complete + 34 contract test PASS offline; vẫn NOT_RUN — chưa có embedding artifact thật/benchmark relevance/latency/RSS |
 | `auto_approve_translation_live` | **NOT_RUN** | ❌ flag `auto_approve_translation` | Chưa có evidence chất lượng để tự duyệt |
 | `public_export_bypass_live` | **BLOCKED** | ❌ flag `public_export_bypass` | Bị chặn **có chủ đích**: C08 yêu cầu kiểm quyền public trước khi xuất |
+| `provider_groq_live` | **NOT_RUN** | ❌ flag `provider_groq_live` | X01: 49 contract test PASS offline; chưa có account/key, chưa review terms ⇒ live NOT_RUN |
+| `provider_nim_live` | **NOT_RUN** | ❌ flag `provider_nim_live` | X02: 66 contract test PASS offline; chưa có NVIDIA account/license, chưa chạy endpoint thật ⇒ live NOT_RUN |
+| `provider_cerebras_live` | **NOT_RUN** | ❌ flag `provider_cerebras_live` | X03: 45 contract test PASS offline; chưa có key, quota free chưa xác nhận ⇒ live NOT_RUN |
+| `provider_cloudflare_live` | **NOT_RUN** | ❌ flag `provider_cloudflare_live` | X04: 53 contract test PASS offline; chưa có account/token, region chưa xác nhận ⇒ live NOT_RUN |
+| `provider_huggingface_live` | **NOT_RUN** | ❌ flag `provider_huggingface_live` | X05: 67 contract test PASS offline; chưa có token, license model/routing chưa review ⇒ live NOT_RUN |
 
 ## Tự kiểm chứng toàn bộ
 
