@@ -1,0 +1,20 @@
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+.caption { text-align: left; color: var(--text-muted); font-size: var(--fs-sm); padding-bottom: var(--sp-2); }
+.th {
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase; /* interface label only */
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-control);
+  padding: var(--sp-2) var(--sp-3);
+}
+.td {
+  color: var(--text);
+  border-bottom: 1px solid var(--border-subtle); /* decorative separator, exempt from 1.4.11 */
+  padding: var(--sp-2) var(--sp-3);
+  vertical-align: top;
+  min-width: 0;
+}
+.empty { color: var(--text-subtle); padding: var(--sp-4); text-align: center; }

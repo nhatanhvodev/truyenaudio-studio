@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 
-import { colors, font, spacing, type UiTheme } from './tokens';
+import styles from './Tree.module.css';
 
 export interface TreeNode {
   id: string;
@@ -13,12 +13,10 @@ export interface TreeProps {
   selectedId?: string | null;
   onSelect?: (id: string) => void;
   label: string;
-  theme?: UiTheme;
 }
 
-export function Tree({ nodes, selectedId, onSelect, label, theme = 'light' }: TreeProps) {
+export function Tree({ nodes, selectedId, onSelect, label }: TreeProps) {
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  const c = colors[theme];
 
   function toggle(id: string) {
     setCollapsed((previous) => {
@@ -48,16 +46,8 @@ export function Tree({ nodes, selectedId, onSelect, label, theme = 'light' }: Tr
               onSelect(node.id);
             }
           }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: spacing.xs,
-            paddingLeft: depth * spacing.lg,
-            cursor: onSelect ? 'pointer' : 'default',
-            color: selectedId === node.id ? c.primary : c.text,
-            fontWeight: selectedId === node.id ? 600 : 400,
-            fontSize: font.sizeMd,
-          }}
+          className={onSelect ? styles.item : `${styles.item} ${styles.unselectable}`}
+          style={{ '--tree-depth': depth } as CSSProperties}
         >
           {hasChildren ? (
             <button
@@ -67,24 +57,17 @@ export function Tree({ nodes, selectedId, onSelect, label, theme = 'light' }: Tr
                 event.stopPropagation();
                 toggle(node.id);
               }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: c.textMuted,
-                cursor: 'pointer',
-                width: 18,
-                padding: 0,
-              }}
+              className={styles.chevron}
             >
               {isCollapsed ? '▸' : '▾'}
             </button>
           ) : (
-            <span style={{ width: 18, display: 'inline-block' }} />
+            <span className={styles.spacer} />
           )}
           {node.label}
         </span>
         {hasChildren && !isCollapsed ? (
-          <ul role="group" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          <ul role="group" className={styles.group}>
             {node.children!.map((child) => renderNode(child, depth + 1))}
           </ul>
         ) : null}
@@ -93,7 +76,7 @@ export function Tree({ nodes, selectedId, onSelect, label, theme = 'light' }: Tr
   }
 
   return (
-    <ul role="tree" aria-label={label} style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+    <ul role="tree" aria-label={label} className={styles.tree}>
       {nodes.map((node) => renderNode(node, 0))}
     </ul>
   );

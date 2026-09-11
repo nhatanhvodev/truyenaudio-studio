@@ -1,0 +1,16 @@
+.track {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  height: 0.5rem;
+  /* Mirrored from the pre-change inline width: '100%'. */
+  width: 100%;
+  overflow: hidden;
+}
+.bar {
+  background: var(--primary);
+  height: 100%;
+  /* Mirrored from the pre-change inline transition on the fill width. */
+  transition: width 120ms ease;
+}
+.label { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-muted); }

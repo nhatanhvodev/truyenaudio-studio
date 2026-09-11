@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-import { colors, font, spacing, type UiTheme } from './tokens';
+import styles from './Table.module.css';
 
 export interface Column<Row> {
   key: string;
@@ -12,31 +12,16 @@ export interface TableProps<Row> {
   rows: readonly Row[];
   columns: readonly Column<Row>[];
   caption?: string;
-  theme?: UiTheme;
 }
 
-export function Table<Row extends { id: string }>({
-  rows,
-  columns,
-  caption,
-  theme = 'light',
-}: TableProps<Row>) {
-  const c = colors[theme];
+export function Table<Row extends { id: string }>({ rows, columns, caption }: TableProps<Row>) {
   return (
-    <table
-      style={{
-        width: '100%',
-        borderCollapse: 'collapse',
-        color: c.text,
-        fontFamily: 'inherit',
-        fontSize: font.sizeMd,
-      }}
-    >
-      {caption ? <caption style={{ textAlign: 'left', padding: spacing.sm }}>{caption}</caption> : null}
+    <table className={styles.table}>
+      {caption ? <caption className={styles.caption}>{caption}</caption> : null}
       <thead>
-        <tr style={{ borderBottom: `2px solid ${c.border}`, textAlign: 'left' }}>
+        <tr>
           {columns.map((column) => (
-            <th key={column.key} scope="col" style={{ padding: spacing.sm, fontWeight: 600 }}>
+            <th key={column.key} scope="col" className={styles.th}>
               {column.header}
             </th>
           ))}
@@ -44,9 +29,9 @@ export function Table<Row extends { id: string }>({
       </thead>
       <tbody>
         {rows.map((row) => (
-          <tr key={row.id} style={{ borderBottom: `1px solid ${c.border}` }}>
+          <tr key={row.id}>
             {columns.map((column) => (
-              <td key={column.key} style={{ padding: spacing.sm }}>
+              <td key={column.key} className={styles.td}>
                 {column.render(row)}
               </td>
             ))}

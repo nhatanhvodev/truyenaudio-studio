@@ -1,0 +1,44 @@
+.tree {
+  font-size: var(--fs-md);
+  /* Mirrored from the pre-change inline listStyle/margin/padding on the root <ul>. */
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+/* Mirrored from the pre-change inline listStyle/margin/padding on the nested group <ul>. */
+.group { list-style: none; margin: 0; padding: 0; }
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: var(--density-row);
+  padding: 0 var(--sp-2);
+  /* Depth indentation preserved from the pre-change inline paddingLeft: depth * spacing.lg. */
+  padding-left: calc(var(--sp-2) + var(--tree-depth, 0) * var(--sp-4));
+  color: var(--text);
+  cursor: pointer;
+  border-radius: var(--radius);
+}
+.item[aria-selected='true'] {
+  background: var(--surface-raised);
+  /* Preserved from the pre-change selected look: primary text, semibold weight. */
+  color: var(--primary);
+  font-weight: 600;
+}
+/* Preserved from the pre-change cursor: onSelect ? 'pointer' : 'default'. */
+.unselectable { cursor: default; }
+.item:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-offset));
+}
+/* Mirrored from the pre-change inline styles on the expand/collapse toggle button. */
+.chevron {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 18px;
+  padding: 0;
+}
+/* Mirrored from the pre-change inline placeholder for leaf nodes. */
+.spacer { width: 18px; display: inline-block; }
