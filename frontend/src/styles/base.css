@@ -1,0 +1,63 @@
+/*
+ * Scale tokens. fontScale is implemented by changing the ROOT font-size, so
+ * every rem in the app scales together and browser zoom still works on top.
+ * The values here are the "medium" defaults; Task 9 overrides them per
+ * preference by setting documentElement.style.fontSize.
+ */
+
+:root {
+  --font-ui: system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: Consolas, ui-monospace, SFMono-Regular, 'Courier New', monospace;
+  --font-read: var(--font-ui), 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
+
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.875rem;
+  --fs-lg: 1rem;
+  --fs-read: 1.125rem;
+  --lh-read: 1.7;
+
+  --radius: 0;
+  --focus-ring: 2px;
+  --focus-offset: 2px;
+
+  --density-row: 2.25rem;
+  --density-pad: 0.75rem;
+}
+
+html { font-size: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Diagnostics, costs and identifiers only — never prose. */
+.mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
+
+/* Reading surfaces: source and translated prose. Never uppercased. */
+.reading {
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  text-transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
