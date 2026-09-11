@@ -118,6 +118,13 @@ Chi tiết từng fixture (p50/p95/p99, SQL, RSS, WAL) nằm trong `docs/validat
 
 ### 3.3 Giới hạn thiết kế đã biết
 
+- **Segmenter chưa được nối vào luồng chạy**: `backend/app/modules/translation/segmenter.py` (`segment_source`, gói câu
+  theo min/target/max Hán tự) có **unit test riêng nhưng không có caller nào trong code sản phẩm** — kiểm repo-wide ngày
+  hôm nay, chỉ `backend/tests/translation/test_segmenter.py` gọi. Hệ quả: `TranslationWorkflow._source_segments` luôn
+  rơi vào nhánh fallback và **mỗi chương có đúng một source segment** (toàn bộ văn bản). Plan **không** đặt yêu cầu về
+  granularity phân đoạn (không có mục nào nói tới segmenter/segmentation) nên đây không phải nợ của plan, nhưng nó chặn
+  fixture “2.000 segment” của G-PERF (xem V02 trong `progress-upgrade-plan.md`) và là lựa chọn cần người quyết: **nối
+  segmenter** vào import/dịch, hay **bỏ module + test** nếu không dùng nữa.
 - **Draft delta sống giữa job**: SQLite một-writer nên draft commit cùng transaction của run;
   UI thấy nháp sau khi job ghi xong (U07/J04).
 - **Job retry/cancel qua UI**: **đã nối xong** — `POST /api/jobs/{id}/cancel` và `/retry` là wrapper mỏng trên
