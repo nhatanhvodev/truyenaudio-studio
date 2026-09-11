@@ -1558,41 +1558,34 @@ attribute is indistinguishable from a build that forgot to write it.
 
 - [ ] **Step 2: Write the failing test for the settings screen**
 
-Append to `AppearanceSettings.test.tsx`. It asserts the DOM actually changes, which is the behaviour that did not exist before this plan. The block's `beforeEach` calls `applyPreferences(defaultPreferences())`, which now also writes `data-reduce-motion` — so the reduced-motion test below starts from a known `false` and proves the toggle moves it:
+Append to `AppearanceSettings.test.tsx`. It asserts the DOM actually changes, which is the behaviour that did not exist before this plan.
+
+**Correction to earlier plan text for this step.** That file has ONE describe block, `describe('AppearanceSettings (U10)')` at `:13`, a top-level `afterEach` at `:8` (`cleanup()` + `window.localStorage.clear()`) and **no `beforeEach` at all**; nothing in the file calls `applyPreferences`. Append to the real block and do not create a second one.
+
+**The test must render through `ThemeProvider`.** `render(<AppearanceSettings />)` on its own has no subscriber: `notifyPreferencesChanged()` dispatches `studio:ui-preferences` on `window`, and `ThemeProvider.tsx:16` is the only listener in the codebase. A bare render would therefore fail for a reason unrelated to the change. The provider's mount effect applies the stored document first — defaults, so `reduceMotion: false` → `data-reduce-motion="false"` — and then reacts to the event, which gives the test the known-`false` start it needs and makes the assertion a proof of the real wiring.
+
+Also add `document.documentElement.removeAttribute('data-reduce-motion');` to the existing top-level `afterEach`: jsdom's document is shared by every test in the file, so without it the attribute leaks into the neighbours.
 
 ```tsx
-import { applyPreferences, UI_PREFERENCES_STORAGE_KEY } from './themeRuntime';
+import { ThemeProvider } from './ThemeProvider';
 
-describe('AppearanceSettings applies to the document', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-    document.documentElement.removeAttribute('data-theme');
-    applyPreferences(defaultPreferences());
-  });
+  it('applies the reduced-motion preference to the document', () => {
+    render(
+      <ThemeProvider>
+        <AppearanceSettings />
+      </ThemeProvider>,
+    );
 
-  it('writes data-theme when the theme is saved', async () => {
-    render(<AppearanceSettings />);
-    fireEvent.change(screen.getByLabelText(/chủ đề|theme/i), { target: { value: 'light' } });
-    fireEvent.click(screen.getByRole('button', { name: /lưu/i }));
-    expect(document.documentElement.dataset.theme).toBe('light');
-  });
+    // The provider applied the stored defaults on mount.
+    expect(document.documentElement.dataset.reduceMotion).toBe('false');
 
-  it('returns to the default when preferences are reset', async () => {
-    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, JSON.stringify({ ...defaultPreferences(), theme: 'light' }));
-    render(<AppearanceSettings />);
-    fireEvent.click(screen.getByRole('button', { name: /mặc định/i }));
-    expect(document.documentElement.dataset.theme).toBe('dark');
-  });
-
-  it('applies the reduced-motion preference to the document', async () => {
-    render(<AppearanceSettings />);
-    const toggle = screen.getByLabelText(/giảm chuyển động|chuyển động|motion/i);
-    fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole('button', { name: /lưu/i }));
+    fireEvent.click(screen.getByLabelText('Giảm chuyển động'));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }));
     expect(document.documentElement.dataset.reduceMotion).toBe('true');
   });
-});
 ```
+
+The label and button strings above are the ones actually rendered (`AppearanceSettings.tsx:128` and `:137`) — confirm them against the component before using them, and never rename a label to make a test pass.
 
 Read `AppearanceSettings.tsx` and use the checkbox's **actual** label text in the pattern — the one
 above is a guess. Do not rename the label to make the test pass.
@@ -1653,6 +1646,16 @@ compare boot against the app-side path for the same input, exactly as the theme 
 
 The point is that neither implementation can drift alone; a case that only compares against a literal
 does not do that.
+
+**Two notes on the current shape of that harness.** `runBootScript` takes a third argument,
+`options: { matchMedia?: boolean }`, used by the degenerate-window case — it was added after this
+section was written. Extend the function; do not remove the parameter or rewrite its callers.
+
+And `stored()` is declared `stored(theme: string | null, extra: Record<string, string> = {})`, so
+`stored('dark', { reduceMotion: true })` as written above is a **type error**, not a runtime one —
+esbuild strips types without checking them, so vitest would still pass while `tsc -b` failed the build,
+and the failure would look unrelated. Widen `extra` to `Record<string, unknown>`; every existing
+string-valued call site stays as it is.
 
 - [ ] **Step 7: Call the runtime from `save()` and `reset()`**
 
