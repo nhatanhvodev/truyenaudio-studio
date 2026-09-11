@@ -33,9 +33,15 @@
   padding: var(--sp-2) var(--sp-3);
   cursor: pointer;
 }
-.option[aria-selected='true'],
-.option[data-highlighted='true'] {
+.option[aria-selected='true'] {
   background: var(--primary);
   color: var(--on-primary);
+}
+.option[data-highlighted='true'] {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-offset));
+}
+.option[data-highlighted='true'][aria-selected='true'] {
+  outline-color: var(--on-primary);
 }
 .empty { color: var(--text-subtle); font-size: var(--fs-sm); padding: var(--sp-2) var(--sp-3); }
