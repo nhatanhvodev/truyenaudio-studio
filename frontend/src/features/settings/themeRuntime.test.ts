@@ -30,6 +30,7 @@ describe('applyPreferences', () => {
   beforeEach(() => {
     document.documentElement.removeAttribute('data-theme');
     document.documentElement.removeAttribute('data-density');
+    document.documentElement.removeAttribute('data-reduce-motion');
     document.documentElement.style.fontSize = '';
   });
 
@@ -47,6 +48,14 @@ describe('applyPreferences', () => {
       seen.add(document.documentElement.style.fontSize);
     }
     expect(seen.size).toBe(3);
+  });
+
+  it('writes data-reduce-motion from the preference', () => {
+    applyPreferences({ ...defaultPreferences(), reduceMotion: true });
+    expect(document.documentElement.dataset.reduceMotion).toBe('true');
+
+    applyPreferences({ ...defaultPreferences(), reduceMotion: false });
+    expect(document.documentElement.dataset.reduceMotion).toBe('false');
   });
 });
 
@@ -87,6 +96,7 @@ describe('boot script parity with resolveTheme', () => {
     theme: string;
     density: string;
     fontSize: string;
+    reduceMotion: string;
   }
 
   // `matchMedia: false` models a degenerate window with no matchMedia at all;
@@ -105,10 +115,15 @@ describe('boot script parity with resolveTheme', () => {
       window.matchMedia = () => ({ matches: systemDark });
     }
     new Function('window', 'document', body)(window, { documentElement: root });
-    return { theme: root.dataset.theme, density: root.dataset.density, fontSize: root.style.fontSize };
+    return {
+      theme: root.dataset.theme,
+      density: root.dataset.density,
+      fontSize: root.style.fontSize,
+      reduceMotion: root.dataset.reduceMotion,
+    };
   }
 
-  function stored(theme: string | null, extra: Record<string, string> = {}): string | null {
+  function stored(theme: string | null, extra: Record<string, unknown> = {}): string | null {
     return theme === null ? null : JSON.stringify({ version: 1, theme, ...extra });
   }
 
@@ -165,6 +180,28 @@ describe('boot script parity with resolveTheme', () => {
       density: 'comfortable',
       fontSize: '100%',
     });
+  });
+
+  // Both sides are fed the SAME stored document: the boot script against the
+  // raw string, the app against parsePreferences output. A case that only
+  // compared against a literal would pass even while the two implementations
+  // disagreed — which is the one thing this block exists to prevent.
+  it('writes reduce-motion identically on both sides of the boot-script split', () => {
+    const cases: Array<[string | null, string]> = [
+      [stored('dark', { reduceMotion: true }), 'true'],
+      [stored('dark', { reduceMotion: false }), 'false'],
+      [stored('dark', {}), 'false'],
+      [stored('dark', { reduceMotion: 'yes' }), 'false'],
+      [null, 'false'],
+    ];
+    for (const [raw, expected] of cases) {
+      const bootReduceMotion = runBootScript(raw, true).reduceMotion;
+      const appPreferences = parsePreferences(raw).preferences;
+      applyPreferences(appPreferences);
+      expect(bootReduceMotion).toBe(expected);
+      expect(document.documentElement.dataset.reduceMotion).toBe(bootReduceMotion);
+    }
+    document.documentElement.removeAttribute('data-reduce-motion');
   });
 
   // SIZES is a plain object literal, so prototype keys resolve to a truthy

@@ -61,3 +61,17 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * The in-app preference. Independent of the media query above on purpose: a
+ * user may want reduced motion in this app without changing their OS, and a
+ * user whose OS asks for it must still get it with the preference off.
+ */
+:root[data-reduce-motion='true'] *,
+:root[data-reduce-motion='true'] *::before,
+:root[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

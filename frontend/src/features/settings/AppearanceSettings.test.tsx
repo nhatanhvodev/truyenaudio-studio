@@ -2,12 +2,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { AppearanceSettings } from './AppearanceSettings';
+import { ThemeProvider } from './ThemeProvider';
 
 const STORAGE_KEY = 'studio.ui-preferences';
 
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  document.documentElement.removeAttribute('data-reduce-motion');
 });
 
 describe('AppearanceSettings (U10)', () => {
@@ -67,5 +69,20 @@ describe('AppearanceSettings (U10)', () => {
     await waitFor(() => expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull());
     expect(screen.getByLabelText('Theme')).toHaveValue('dark');
     expect(screen.getByText(/Đã đưa tùy chọn hiển thị về mặc định/)).toBeVisible();
+  });
+
+  it('applies the reduced-motion preference to the document', () => {
+    render(
+      <ThemeProvider>
+        <AppearanceSettings />
+      </ThemeProvider>,
+    );
+
+    // The provider applied the stored defaults on mount.
+    expect(document.documentElement.dataset.reduceMotion).toBe('false');
+
+    fireEvent.click(screen.getByLabelText('Giảm chuyển động'));
+    fireEvent.click(screen.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }));
+    expect(document.documentElement.dataset.reduceMotion).toBe('true');
   });
 });

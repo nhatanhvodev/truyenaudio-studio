@@ -10,8 +10,7 @@ import {
   serializePreferences,
   type UiPreferences,
 } from './uiPreferences';
-
-const STORAGE_KEY = 'studio.ui-preferences';
+import { notifyPreferencesChanged, UI_PREFERENCES_STORAGE_KEY } from './themeRuntime';
 
 /**
  * U10: Appearance settings backed by the harmless UI preference document.
@@ -30,7 +29,7 @@ export function AppearanceSettings() {
   const [storedPreview, setStoredPreview] = useState('');
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY);
     const parsed = parsePreferences(raw);
     setPreferences(parsed.preferences);
     setRejectedKeys(parsed.rejectedKeys);
@@ -48,18 +47,20 @@ export function AppearanceSettings() {
       setError('UI_PREFERENCE_UNSAFE');
       return;
     }
-    window.localStorage.setItem(STORAGE_KEY, raw);
+    window.localStorage.setItem(UI_PREFERENCES_STORAGE_KEY, raw);
     setStoredPreview(raw);
     setMessage('Đã lưu tùy chọn hiển thị (chỉ gồm theme/mật độ/cỡ chữ).');
+    notifyPreferencesChanged();
   }
 
   function reset() {
-    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(UI_PREFERENCES_STORAGE_KEY);
     setPreferences(defaultPreferences());
     setRejectedKeys([]);
     setMigrated(false);
     setStoredPreview('');
     setMessage('Đã đưa tùy chọn hiển thị về mặc định.');
+    notifyPreferencesChanged();
   }
 
   return (

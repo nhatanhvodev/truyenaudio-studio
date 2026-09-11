@@ -39,6 +39,7 @@ export function applyPreferences(preferences: UiPreferences): void {
   const root = document.documentElement;
   root.dataset.theme = resolveTheme(preferences.theme, systemPrefersDark());
   root.dataset.density = preferences.density;
+  root.dataset.reduceMotion = preferences.reduceMotion ? 'true' : 'false';
   root.style.fontSize = ROOT_FONT_SIZE[preferences.fontScale];
 }
 

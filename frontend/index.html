@@ -28,6 +28,7 @@
     root.dataset.theme = theme;
 
     root.dataset.density = prefs.density === 'compact' ? 'compact' : 'comfortable';
+    root.dataset.reduceMotion = prefs.reduceMotion === true ? 'true' : 'false';
     root.style.fontSize = Object.prototype.hasOwnProperty.call(SIZES, prefs.fontScale)
       ? SIZES[prefs.fontScale]
       : '100%';
