@@ -1479,15 +1479,47 @@ git commit -m "refactor(ui): move Table, Tree and Progress onto CSS Modules; del
 **Files:**
 - Modify: `frontend/src/features/settings/AppearanceSettings.tsx`
 - Modify: `frontend/src/features/settings/AppearanceSettings.test.tsx`
-- Test: `frontend/src/features/settings/AppearanceSettings.test.tsx`
+- Modify: `frontend/src/features/settings/themeRuntime.ts`
+- Modify: `frontend/src/features/settings/themeRuntime.test.ts`
+- Modify: `frontend/src/styles/base.css`
+- Modify: `frontend/index.html`
+- Test: `frontend/src/features/settings/AppearanceSettings.test.tsx`, `frontend/src/features/settings/themeRuntime.test.ts`
 
 **Interfaces:**
 - Consumes: `notifyPreferencesChanged`, `applyPreferences`, `UI_PREFERENCES_STORAGE_KEY` from `./themeRuntime`.
-- Produces: saving or resetting in Appearance applies to the document immediately.
+- Produces: saving or resetting in Appearance applies to the document immediately, **including `reduceMotion`**.
 
-- [ ] **Step 1: Write the failing test**
+**Why this task carries `reduceMotion` too.** The plan first scoped it to "verified in Task 10", but
+nothing ever wrote it to the DOM. `AppearanceSettings.tsx:129` renders the checkbox, `uiPreferences.ts`
+sanitizes and persists the flag, and `applyPreferences()` wrote only `data-theme`, `data-density` and the
+root font size; `base.css` honoured the **operating system's** `prefers-reduced-motion` and nothing else.
+So a user who ticks "giảm chuyển động" saved a preference and got no behaviour change anywhere — a
+functional gap, not a missing test. It closes here, where the preference is applied, and is proven here.
+`reduceMotion` reaches the DOM as a root attribute, `data-reduce-motion`, matching the existing
+`data-theme` / `data-density` pattern — `applyPreferences()` stays the only writer.
 
-Append to `AppearanceSettings.test.tsx`. It asserts the DOM actually changes, which is the behaviour that did not exist before this plan:
+- [ ] **Step 1: Write the failing test for the runtime**
+
+Append to `themeRuntime.test.ts`, inside the existing `describe('applyPreferences', …)` block. Its
+`beforeEach` already strips the root attributes — add `removeAttribute('data-reduce-motion')` there
+alongside the others:
+
+```ts
+  it('writes data-reduce-motion from the preference', () => {
+    applyPreferences({ ...defaultPreferences(), reduceMotion: true });
+    expect(document.documentElement.dataset.reduceMotion).toBe('true');
+
+    applyPreferences({ ...defaultPreferences(), reduceMotion: false });
+    expect(document.documentElement.dataset.reduceMotion).toBe('false');
+  });
+```
+
+`false` must be written explicitly, not omitted: the attribute is what CSS keys off, and an absent
+attribute is indistinguishable from a build that forgot to write it.
+
+- [ ] **Step 2: Write the failing test for the settings screen**
+
+Append to `AppearanceSettings.test.tsx`. It asserts the DOM actually changes, which is the behaviour that did not exist before this plan. The block's `beforeEach` calls `applyPreferences(defaultPreferences())`, which now also writes `data-reduce-motion` — so the reduced-motion test below starts from a known `false` and proves the toggle moves it:
 
 ```tsx
 import { applyPreferences, UI_PREFERENCES_STORAGE_KEY } from './themeRuntime';
@@ -1512,15 +1544,78 @@ describe('AppearanceSettings applies to the document', () => {
     fireEvent.click(screen.getByRole('button', { name: /mặc định/i }));
     expect(document.documentElement.dataset.theme).toBe('dark');
   });
+
+  it('applies the reduced-motion preference to the document', async () => {
+    render(<AppearanceSettings />);
+    const toggle = screen.getByLabelText(/giảm chuyển động|chuyển động|motion/i);
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole('button', { name: /lưu/i }));
+    expect(document.documentElement.dataset.reduceMotion).toBe('true');
+  });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+Read `AppearanceSettings.tsx` and use the checkbox's **actual** label text in the pattern — the one
+above is a guess. Do not rename the label to make the test pass.
 
-Run: `cd frontend && npx vitest run src/features/settings/AppearanceSettings.test.tsx`
-Expected: FAIL — `data-theme` stays `'dark'` after saving `'light'`.
+- [ ] **Step 3: Run both to verify they fail**
 
-- [ ] **Step 3: Call the runtime from `save()` and `reset()`**
+Run: `cd frontend && npx vitest run src/features/settings/themeRuntime.test.ts src/features/settings/AppearanceSettings.test.tsx`
+Expected: FAIL — `data-theme` stays `'dark'` after saving `'light'`, and `dataset.reduceMotion` is `undefined`.
+
+- [ ] **Step 4: Write the attribute in `applyPreferences`**
+
+In `themeRuntime.ts`, alongside the existing writes:
+
+```ts
+  root.dataset.reduceMotion = preferences.reduceMotion ? 'true' : 'false';
+```
+
+- [ ] **Step 5: Make `base.css` honour the attribute**
+
+`base.css` has one `@media (prefers-reduced-motion: reduce)` block. CSS has no way to fold a media
+query and a selector into one rule, so the declaration block is duplicated verbatim — that duplication
+is deliberate and standard for this pattern, not an oversight. Leave the existing media query exactly as
+it is (it covers users who set the OS preference and never open Settings) and add this block
+immediately after it:
+
+```css
+/*
+ * The in-app preference. Independent of the media query above on purpose: a
+ * user may want reduced motion in this app without changing their OS, and a
+ * user whose OS asks for it must still get it with the preference off.
+ */
+:root[data-reduce-motion='true'] *,
+:root[data-reduce-motion='true'] *::before,
+:root[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+```
+
+- [ ] **Step 6: Write the attribute in the boot script**
+
+`frontend/index.html` must set it too, for the same reason it resolves the theme: so the first paint is
+already correct and React does not change it a frame later. Next to the existing `data-density` line:
+
+```js
+    root.dataset.reduceMotion = prefs.reduceMotion === true ? 'true' : 'false';
+```
+
+Then extend the boot-script parity test in `themeRuntime.test.ts`. The existing `runBootScript` returns
+`{ theme, density, fontSize }` — add `reduceMotion` to that result and to the `BootResult` interface, then
+compare boot against the app-side path for the same input, exactly as the theme cases do:
+
+- `stored('dark', { reduceMotion: true })` → `'true'` on both sides
+- `stored('dark', { reduceMotion: false })` → `'false'` on both sides
+- an absent key, a non-boolean such as `'yes'`, and the `null` (nothing stored) case → `'false'` on both
+
+The point is that neither implementation can drift alone; a case that only compares against a literal
+does not do that.
+
+- [ ] **Step 7: Call the runtime from `save()` and `reset()`**
 
 In `AppearanceSettings.tsx`, add the import and call `notifyPreferencesChanged()` at the end of both handlers. The existing `save()` already re-serializes and validates; do not change that logic — it is the guard that keeps credentials out of browser storage.
 
@@ -1536,15 +1631,15 @@ notifyPreferencesChanged();
 
 Drop the local `const STORAGE_KEY = 'studio.ui-preferences';` and use the imported `UI_PREFERENCES_STORAGE_KEY` so the key has one definition.
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 8: Run tests**
 
-Run: `cd frontend && npx vitest run src/features/settings`
-Expected: PASS, including the pre-existing `preferencesAreSafe` / rejected-key tests.
+Run: `cd frontend && npx vitest run src/features/settings && npm run build`
+Expected: PASS, including the pre-existing `preferencesAreSafe` / rejected-key tests and every boot-script parity case (theme, density, font size and the new reduce-motion ones).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add frontend/src/features/settings/AppearanceSettings.tsx frontend/src/features/settings/AppearanceSettings.test.tsx
+git add frontend/src/features/settings/AppearanceSettings.tsx frontend/src/features/settings/AppearanceSettings.test.tsx frontend/src/features/settings/themeRuntime.ts frontend/src/features/settings/themeRuntime.test.ts frontend/src/styles/base.css frontend/index.html
 git commit -m "feat(settings): make the appearance controls apply to the document immediately"
 ```
 
@@ -1605,10 +1700,56 @@ test('system theme follows the OS and is overridden by an explicit choice', asyn
 
 Adjust the `getByLabel` patterns to the labels actually rendered by `AppearanceSettings` — read the component and use its exact label text. Do not rename labels to make the test pass.
 
+Then add the in-app reduced-motion case. This one is deliberately **not** the same as Task 24's
+`reducedMotion: 'reduce'` case: that one exercises the OS media query, this one proves the stored
+preference works on its own. Run it in a context that explicitly asks for **no** reduced motion, or the
+two causes are indistinguishable and the test would pass even if the preference wrote nothing:
+
+```ts
+test('the in-app reduced-motion preference stops transitions on its own', async ({ browser }) => {
+  // Explicitly no OS-level reduced motion: the only thing that can stop the
+  // transitions below is the preference written to data-reduce-motion.
+  const context = await browser.newContext({ reducedMotion: 'no-preference' });
+  const page = await context.newPage();
+
+  await page.goto('/settings/appearance');
+  await page.getByLabel(/giảm chuyển động|chuyển động|motion/i).check();
+  await page.getByRole('button', { name: /lưu/i }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-reduce-motion', 'true');
+
+  // Every transition must be neutralised. Collect the offenders rather than
+  // counting them, so a failure names the rule that leaked.
+  const offenders = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('*'))
+      .map((el) => ({
+        name: `${el.tagName.toLowerCase()}${el.className ? `.${String(el.className).split(' ')[0]}` : ''}`,
+        duration: window.getComputedStyle(el).transitionDuration,
+      }))
+      .filter((entry) => entry.duration !== '0s' && entry.duration !== '0.01ms')
+      .map((entry) => `${entry.name} [${entry.duration}]`),
+  );
+  expect(offenders, `still transitioning: ${offenders.slice(0, 5).join(' | ')}`).toEqual([]);
+
+  // And it must survive a reload, i.e. the boot script writes it too — not just
+  // the React effect that ran after the first mount.
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-reduce-motion', 'true');
+
+  await context.close();
+});
+```
+
+Read the checkbox's actual label in `AppearanceSettings.tsx` and use its exact text; the pattern above
+is a guess. Use `.check()` only if the control is a checkbox — if it is a `<Select>` or a button, use the
+matching interaction instead. Do not rename the label to make the test pass.
+
+If the reload assertion fails while the first one passes, that is a real finding: it means `index.html`'s
+boot script is not writing the attribute, so the preference is lost on every page load until React mounts.
+
 - [ ] **Step 3: Run the spec**
 
 Run: `cd frontend && npx playwright test e2e/visual-a11y.spec.ts`
-Expected: PASS, including the two new cases.
+Expected: PASS, including the three new cases.
 
 - [ ] **Step 4: Commit**
 
@@ -2270,12 +2411,36 @@ Keep, unchanged:
 - `AppearanceSettings`: the sanitizing save path — `preferencesAreSafe` rejects any value matching the content/secret pattern, and rejected keys are never echoed into the DOM.
 - **No credential, key or token anywhere in `localStorage`.**
 
-- [ ] **Step 4: Run**
+- [ ] **Step 4: Sweep the reset's collateral damage on this task's surfaces**
+
+`styles/reset.css` (Task 2) strips the user-agent chrome from **every** `<button>` in the
+document — `button { background: none; border: none; padding: 0; }` — and from every raw
+`<ul>`/`<ol>` — `list-style: none; padding: 0;`. That is deliberate as a base layer, but it
+means any element that never picks up a class is now **unstyled and unbounded**, not merely
+unstyled. Two consequences you must actively close on every file this task touches:
+
+1. **Raw `<button>` elements.** Not every button goes through the `Button` primitive. Find
+   every literal `<button` in the files you are restyling and give it a real class from your
+   module: padding of at least `var(--sp-2)` vertically, a visible `:hover`, and a
+   `:focus-visible` ring (`outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset);`).
+   Check every settings group in your Files list and any screen you modify — a raw button
+   with no class renders as bare text with **zero padding**, which drops its hit target well
+   under the 24×24px WCAG 2.5.8 minimum and leaves it with no focus indicator at all.
+2. **Marker-less `<ul>`/`<ol>`.** Any list that relied on a bullet to separate items now has
+   none. Where the items are still visually distinct without it (each already has a border,
+   a row layout, or its own block), leave it. Where they are not, restore the separation
+   through your own module (a `gap`, a border, or a row padding) rather than by putting
+   `list-style` back.
+
+This step is not hypothetical tidying: the reset made these elements worse than the
+unstyled default, so a screen can regress here while every test stays green.
+
+- [ ] **Step 5: Run**
 
 Run: `cd frontend && npx vitest run && npx playwright test`
 Expected: PASS across all 9 specs. `provider-credentials.spec.ts` must still confirm an empty credential field and no secret in `localStorage`/`sessionStorage` at three points.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add frontend/src/features/exports/ frontend/src/features/settings/ frontend/src/features/glossary/ frontend/src/features/characters/ frontend/src/features/translation/ frontend/src/routes/screens/
