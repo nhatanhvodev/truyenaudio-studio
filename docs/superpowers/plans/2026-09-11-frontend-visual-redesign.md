@@ -960,6 +960,16 @@ Every task in G2 keeps the primitive's public props and ARIA exactly as they are
 
 ## Task 5: Button, Input, Select
 
+> **Owned by no task — already landed.** There is no G1 task that makes `*.module.css` typecheck,
+> and every G2 task imports one. `tsconfig.json` has `include: ["src"]` and no `types` field, and
+> the project had no `vite-env.d.ts`, so the first CSS-module import would have turned `tsc -b`
+> (the first half of `npm run build`) red with `TS2307: Cannot find module './X.module.css' or its
+> corresponding type declarations`. `frontend/src/vite-env.d.ts`, containing only
+> `/// <reference types="vite/client" />`, was added by the controller before this task and verified
+> causally (probe import fails without it, `tsc -b --force` exits 0 with it). It adds no dependency —
+> `vite` is already a devDependency and ships the client types — and nothing enters the bundle.
+> Do not re-add it and do not delete it.
+
 **Files:**
 - Create: `frontend/src/shared/ui/Button.module.css`, `Input.module.css`, `Select.module.css`
 - Modify: `frontend/src/shared/ui/Button.tsx`, `Input.tsx`, `Select.tsx`
