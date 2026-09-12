@@ -467,4 +467,108 @@ describe('BatchQueue server-side chapter filter (U03/V02)', () => {
 
     expect(screen.getByText(/Không lọc/)).toBeVisible();
   });
+
+  it('vứt bỏ trang bay về sau khi filter đã đổi, không trộn vào danh sách mới', async () => {
+    // The stale-page race. "Load more" is clicked, the filter changes before its
+    // response lands, and the page fetched under the OLD filter is appended to
+    // the NEW filter's first page. The list then shows chapters that do not
+    // match the filter at all - and they stay tickable, so they can be queued
+    // into a batch the user never selected them for.
+    //
+    // Both requests are held open. Holding only the stale one would let the
+    // replacement page land first and settle the screen, which hides the second
+    // half of the defect: the stale `finally` clearing the spinner the reload
+    // had claimed, leaving an empty list with nothing saying it is still loading.
+    let releaseStalePage: (() => void) | null = null;
+    let releaseFreshPage: (() => void) | null = null;
+    let chapterCall = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (!url.includes('/chapters?')) {
+          throw new Error(`unexpected url ${url}`);
+        }
+        chapterCall += 1;
+        if (chapterCall === 1) {
+          return jsonResponse({ items: [chapter('ch-1', 1)], nextCursor: 'cursor-2', total: 2 });
+        }
+        if (url.includes('cursor=cursor-2')) {
+          // Held until the test releases it, so the filter change lands while
+          // this page is genuinely in flight.
+          await new Promise<void>((resolve) => {
+            releaseStalePage = resolve;
+          });
+          return jsonResponse({ items: [chapter('ch-2', 2)], nextCursor: null, total: 2 });
+        }
+        // Page 1 of the NEW filter, requested by the reload the filter change triggers.
+        await new Promise<void>((resolve) => {
+          releaseFreshPage = resolve;
+        });
+        return jsonResponse({ items: [chapter('ch-9', 9)], nextCursor: null, total: 1 });
+      }),
+    );
+
+    render(<BatchQueue projectId="project-1" store={makeStore()} />);
+    await screen.findByText('Chapter 1');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await waitFor(() => expect(releaseStalePage).not.toBeNull());
+
+    fireEvent.change(screen.getByLabelText('Tìm chương (lọc ở server)'), { target: { value: 'kiem' } });
+    await waitFor(() => expect(releaseFreshPage).not.toBeNull());
+    // The reload cleared the list, so this is the only thing on screen saying so.
+    expect(screen.getByText('Loading')).toBeVisible();
+
+    // Only now does the stale page land, while the new one is still in flight.
+    await act(async () => {
+      releaseStalePage?.();
+    });
+
+    expect(screen.queryByText('Chapter 2')).not.toBeInTheDocument();
+    expect(screen.getByText('Loading')).toBeVisible();
+
+    await act(async () => {
+      releaseFreshPage?.();
+    });
+    expect(await screen.findByText('Chapter 9')).toBeVisible();
+    expect(screen.queryByText('Loading')).not.toBeInTheDocument();
+  });
+
+  it('không nhân đôi một chương khi server trả lại id đã có', async () => {
+    // The duplicate-key warning this file used to raise. React's own message says
+    // non-unique keys may cause children to be "duplicated and/or omitted" - which
+    // here would also mean one chapter listed twice, both boxes tickable, and the
+    // same id queued twice.
+    let chapterCall = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (!url.includes('/chapters?')) {
+          throw new Error(`unexpected url ${url}`);
+        }
+        chapterCall += 1;
+        if (chapterCall === 1) {
+          return jsonResponse({ items: [chapter('ch-1', 1)], nextCursor: 'c2', total: 3 });
+        }
+        if (chapterCall === 2) {
+          return jsonResponse({ items: [chapter('ch-2', 2)], nextCursor: 'c3', total: 3 });
+        }
+        // The third page REPEATS ch-2 and adds one genuinely new chapter, so the
+        // assertion below cannot pass merely because the page never arrived.
+        return jsonResponse({ items: [chapter('ch-2', 2), chapter('ch-3', 3)], nextCursor: null, total: 3 });
+      }),
+    );
+
+    render(<BatchQueue projectId="project-1" store={makeStore()} />);
+    await screen.findByText('Chapter 1');
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await screen.findByText('Chapter 2');
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+
+    // Waiting for the new chapter proves the repeated page was processed.
+    expect(await screen.findByText('Chapter 3')).toBeVisible();
+    expect(screen.getAllByText('Chapter 2')).toHaveLength(1);
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+  });
 });

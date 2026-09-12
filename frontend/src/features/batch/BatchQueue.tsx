@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
 import { retryableFailures, useJobEvents, type JobEvent, type JobEventStore } from '../jobs/jobStore';
@@ -127,6 +127,37 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
+  /**
+   * Which version of the list is current.
+   *
+   * The reload effect below owns the list, and it discards its own in-flight
+   * response on cleanup. `loadMore` had no equivalent guard, so a page it
+   * requested under the OLD filter could still be appended AFTER the effect had
+   * cleared the list and loaded the new filter's first page - mixing two filters
+   * in one list. Those stray rows look like ordinary rows: they can be ticked,
+   * and every ticked id is POSTed as `chapterIds` to a batch the user pays for.
+   *
+   * The effect bumps this on every run, and `loadMore` snapshots it on entry, so
+   * "is my response still wanted?" becomes one integer comparison instead of a
+   * second copy of the effect's cleanup logic that could drift out of step.
+   */
+  const listGeneration = useRef(0);
+
+  function appendPage(page: ChapterPage) {
+    setItems((current) => {
+      // Dedupe by id: a page may legitimately repeat a chapter the server already
+      // sent (a filter change re-reads page 1, and an offset/keyset boundary can
+      // overlap). Appending blindly rendered one chapter twice - `key={chapter.id}`
+      // then violated React's uniqueness rule, whose own warning says non-unique
+      // keys may cause children to be "duplicated and/or omitted". It would also
+      // list the same chapter as two tickable rows.
+      const known = new Set(current.map((item) => item.id));
+      const fresh = page.items.filter((item) => !known.has(item.id));
+      return fresh.length === 0 ? current : [...current, ...fresh];
+    });
+    setNextCursor(page.nextCursor);
+  }
+
   const filterQuery = useMemo(() => {
     const params = new URLSearchParams();
     const needle = query.trim();
@@ -141,6 +172,9 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    // Invalidate anything `loadMore` already has in flight before the list is
+    // cleared, so its response cannot land on top of this run's first page.
+    listGeneration.current += 1;
     setItems([]);
     setNextCursor(null);
     setSelected(new Set());
@@ -227,18 +261,29 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
     if (!nextCursor) {
       return;
     }
+    const generation = listGeneration.current;
+    const stale = () => generation !== listGeneration.current;
     setLoading(true);
     setError('');
     try {
       const page = await apiJson<ChapterPage>(
         `/api/projects/${projectId}/chapters?limit=${pageLimit}&cursor=${encodeURIComponent(nextCursor)}${filterQuery ? `&${filterQuery}` : ''}`,
       );
-      setItems((current) => [...current, ...page.items]);
-      setNextCursor(page.nextCursor);
+      if (stale()) {
+        return;
+      }
+      appendPage(page);
     } catch (reason) {
+      if (stale()) {
+        return;
+      }
       setError(reason instanceof Error ? reason.message : 'CHAPTER_PAGE_FAILED');
     } finally {
-      setLoading(false);
+      // Also guarded: the reload claimed the spinner when it cleared the list, so
+      // a stale response clearing it here would hide a load that is still running.
+      if (!stale()) {
+        setLoading(false);
+      }
     }
   }
 
