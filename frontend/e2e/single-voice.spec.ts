@@ -56,6 +56,43 @@ test('fake single narrator reaches verified publication bundle', async ({
   // Fake (local, offline) translation then approval.
   await page.getByRole('button', { name: 'Dịch convert nội bộ' }).click();
   await expect(page.getByText('Đã dịch hoàn tất')).toBeVisible();
+
+  // The source pane is the first point in this flow where the CJK fixture is
+  // actually rendered: before the translation runs this route shows only
+  // interface labels, and the count guard below measured zero CJK elements
+  // there, so the check placed before it would have proved nothing.
+  //
+  // Uppercase is a no-op on CJK, so a rule that uppercases prose is invisible in
+  // the rendered text and can only be caught by computed style. Prove the fixture
+  // is actually rendered first, or the assertion below could pass on an empty set.
+  const cjkElementCount = await page.evaluate(() => {
+    let count = 0;
+    document.querySelectorAll<HTMLElement>('body *').forEach((el) => {
+      const ownText = Array.from(el.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? '')
+        .join('');
+      if (/[㐀-鿿]/.test(ownText)) count += 1;
+    });
+    return count;
+  });
+  expect(cjkElementCount, 'the CJK fixture must be on screen before this check means anything').toBeGreaterThan(0);
+
+  const uppercasedProse = await page.evaluate(() => {
+    const bad: string[] = [];
+    document.querySelectorAll<HTMLElement>('body *').forEach((el) => {
+      const ownText = Array.from(el.childNodes)
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent ?? '')
+        .join('');
+      if (!/[㐀-鿿]/.test(ownText)) return;
+      const transform = window.getComputedStyle(el).textTransform;
+      if (transform !== 'none') bad.push(`${el.tagName}:"${ownText.trim().slice(0, 20)}" [${transform}]`);
+    });
+    return bad;
+  });
+  expect(uppercasedProse, `uppercased CJK prose: ${uppercasedProse.join(' | ')}`).toEqual([]);
+
   await page.getByRole('button', { name: /Phê duyệt chuẩn/ }).click();
 
   // One voice render, then approve the master audio.
