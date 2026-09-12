@@ -1,0 +1,58 @@
+/*
+ * One-time dark-default notice (ThemeChangeNotice.tsx).
+ *
+ * NORMAL FLOW, never an overlay. A fixed or absolutely positioned banner can
+ * cover a control, which would break keyboard reachability for real users and
+ * trip the E2E actionability checks for the same reason — the two reachability
+ * specs in e2e/visual-a11y.spec.ts exist precisely because a control was once
+ * made unreachable. So this sits in the page and pushes content down instead.
+ *
+ * `flex-wrap` plus a `min-width: 0` text column is what keeps it inside the
+ * viewport at 320px and at 200% text size, where the sentence and the two
+ * controls stop fitting on one line.
+ */
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  box-sizing: border-box;
+  max-width: 57.5rem;
+  margin: 0 auto var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.text {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.link { color: var(--primary); }
+
+.link:focus-visible,
+.dismiss:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.dismiss {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  cursor: pointer;
+}
+
+.dismiss:hover { color: var(--text); }

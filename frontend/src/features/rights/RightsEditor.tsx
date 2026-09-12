@@ -1,3 +1,24 @@
+/*
+ * NOT DEAD BY ACCIDENT — DO NOT DELETE, AND DO NOT RESTYLE.
+ *
+ * This component has zero importers (`git log -S"RightsEditor"` shows it has
+ * never been imported by anything, not even the commit that added it), and it is
+ * the only file under `src/` still carrying raw colour literals instead of the
+ * ADR-0002 tokens. It is therefore the one documented exception to the
+ * "one colour system" gate, alongside `styles/tokens.css`.
+ *
+ * Both facts are known and recorded, not overlooked:
+ * `docs/research/product-validation-research-v2.md:142` tracks it as a product
+ * GAP — "Frontend có `RightsEditor` và `CloudConsent` component nhưng route chính
+ * chưa cho thấy một onboarding rights flow hoàn chỉnh". It is waiting to be wired
+ * into that flow, so deleting it would throw away intended work.
+ *
+ * Restyling it onto tokens would be the worst of the three options: it is
+ * unreachable, so the change would have no user-visible effect and no test could
+ * cover it. When it is finally wired up, convert it then — in the same change
+ * that makes it reachable, where a test can see the result.
+ */
+
 type Evidence = {
   id: string;
   evidence_kind: string;

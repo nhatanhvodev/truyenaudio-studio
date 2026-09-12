@@ -4,9 +4,21 @@
  * the middle, inspector right.
  *
  * The first block is the locked geometry from the redesign brief. The numbers
- * in it (240px navigator, 320px inspector, 25–75% split clamp) are fixed and
- * must not be "improved". Everything else is the screen's own surface, on
- * tokens only (ADR-0002).
+ * in it (240px navigator, 320px inspector) are fixed and must not be
+ * "improved". Everything else is the screen's own surface, on tokens only
+ * (ADR-0002).
+ *
+ * The split track carries a `clamp(25%, var(--split, 50%), 75%)` guard, but
+ * `--split` is set by NOTHING — not by this stylesheet, not by any inline style
+ * and not by `setProperty` anywhere in the app (verified across `src/`). So the
+ * split renders permanently at 50/50 and the clamp is a guard for a value no one
+ * writes. There is no splitter on this screen: no drag handle, no pointer or
+ * keyboard resize. Do not read this geometry as a working resizable pane.
+ *
+ * `docs/specs/ui-ux-spec.md` asks for a source/target tab split and an inspector
+ * drawer below 1024px. Neither is implemented — and neither was implemented
+ * before the redesign either, which shipped no CSS at all. See the reflow note
+ * below for why the rails are stacked rather than hidden.
  */
 
 /* --- locked workspace shell --------------------------------------------- */
@@ -21,6 +33,8 @@
 .navigator { border-right: 1px solid var(--border-subtle); overflow-y: auto; min-width: 0; }
 .editor { min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .inspector { border-left: 1px solid var(--border-subtle); overflow-y: auto; min-width: 0; }
+/* `--split` is never set: this is a fixed 50/50 split with a guard for a value
+   nothing writes. See the header note — there is no splitter here. */
 .split { display: grid; grid-template-columns: clamp(25%, var(--split, 50%), 75%) minmax(0, 1fr); min-height: 0; flex: 1; }
 .pane { min-width: 0; overflow-y: auto; padding: var(--sp-4); }
 .paneSource { border-right: 1px solid var(--border-subtle); color: var(--text-muted); }

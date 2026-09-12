@@ -25,7 +25,23 @@
 }
 .tab[aria-selected='true'] { background: var(--bg); color: var(--text); border-bottom-color: var(--primary); }
 .tab:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: calc(-1 * var(--focus-offset)); }
-.dirty { color: var(--warning); } /* always paired with a text label, never colour alone */
+/*
+ * Unsaved content marker. Replaced the old `.dirty` rule, which set a colour on
+ * a class that no element ever received — so the tab strip showed nothing and a
+ * user learned about unsaved work only by trying to close the tab.
+ *
+ * A SQUARE, not a disc: `--radius` is 0 across this design, and the shape is the
+ * cue (its presence, not its colour, is what marks the tab), so this satisfies
+ * the "never colour alone" rule the old comment stated. `aria-describedby` on
+ * the tab carries the same meaning for assistive technology.
+ */
+.dirtyMark {
+  flex: 0 0 auto;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin-left: var(--sp-2);
+  background: var(--warning);
+}
 .close { font-family: var(--font-mono); color: var(--text-subtle); padding: 0 var(--sp-1); }
 
 /*

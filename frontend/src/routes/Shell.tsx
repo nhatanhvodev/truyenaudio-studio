@@ -6,6 +6,7 @@ import { WorkspaceTabs } from '../features/workspace/WorkspaceTabs';
 import { describeRoute, projectIdForRoute } from '../features/workspace/workspaceRoutes';
 import { WenkuCrawlProvider } from '../features/import/WenkuCrawlContext';
 import { JobProgress } from '../features/jobs/JobProgress';
+import { ThemeChangeNotice } from '../features/settings/ThemeChangeNotice';
 
 import styles from './Shell.module.css';
 
@@ -39,6 +40,7 @@ export function Shell() {
     <WenkuCrawlProvider>
       <main className={styles.shell}>
         <GlobalNav />
+        <ThemeChangeNotice />
         <nav className={styles.nav} aria-label="Workflow">
           <Link to="/" className={styles.navLink}>Dự án</Link>
           <Link to="/jobs" className={styles.navLink}>Jobs</Link>

@@ -27,6 +27,19 @@ type Props = {
 };
 
 /**
+ * Shared description for a tab holding unsaved editor content. A dirty tab
+ * points at it with `aria-describedby`, never with extra text inside the button:
+ * the accessible NAME of a tab is how the tab is addressed (`getByRole('tab',
+ * { name })` in the unit and E2E suites both match on it exactly), so appending
+ * a marker to the name would rename every tab that has unsaved work.
+ *
+ * The same string already reaches the DOM from the layout status line below, so
+ * this adds no new user-visible wording.
+ */
+const DIRTY_HINT_ID = 'workspace-tab-dirty-hint';
+const DIRTY_HINT_TEXT = 'có thay đổi chưa lưu';
+
+/**
  * U05 round 3: the actual tab/dock UI.
  *
  * The tab list is driven by the U05 layout store (order, limit, eviction and
@@ -206,6 +219,11 @@ export function WorkspaceTabs({
 
   return (
     <section className={styles.shell} aria-label="Không gian làm việc">
+      {/* Rendered once and referenced by id, so any number of dirty tabs can
+          describe themselves from it without duplicating the id. */}
+      <span id={DIRTY_HINT_ID} className="visually-hidden">
+        {DIRTY_HINT_TEXT}
+      </span>
       <div className={styles.row}>
         <div role="tablist" aria-label="Tab đang mở" onKeyDown={onKeyDown} className={styles.tablist}>
           {tabs.map((tab, index) => {
@@ -218,6 +236,7 @@ export function WorkspaceTabs({
                   id={`tab-${tab.id}`}
                   aria-selected={selected}
                   aria-controls={`panel-${tab.id}`}
+                  aria-describedby={tab.dirty ? DIRTY_HINT_ID : undefined}
                   tabIndex={index === focusIndex ? 0 : -1}
                   ref={(node) => {
                     tabRefs.current[tab.id] = node;
@@ -226,6 +245,10 @@ export function WorkspaceTabs({
                   className={styles.tab}
                 >
                   {tab.title}
+                  {/* Decorative: the cue is the marker's PRESENCE, not its
+                      colour, and aria-hidden keeps it out of the accessible
+                      name while aria-describedby above carries the meaning. */}
+                  {tab.dirty ? <span aria-hidden="true" className={styles.dirtyMark} /> : null}
                 </button>
                 <button
                   type="button"

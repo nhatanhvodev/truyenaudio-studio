@@ -16,6 +16,12 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"],
+  // `e2e` is included so `tsc -b` (already part of `npm run build`) typechecks
+  // the Playwright specs. They were previously checked by nothing at all:
+  // Playwright transpiles without typechecking, and the app tsconfig did not
+  // reach them, so a type error in a spec passed BOTH the build and the suite.
+  // Safe to share this config because the specs import only `@playwright/test`
+  // and `node:*` — nothing from `src/`.
+  "include": ["src", "e2e"],
   "references": []
 }

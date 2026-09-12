@@ -245,9 +245,28 @@ test('text resized to 200% keeps content readable without clipping (WCAG 1.4.4)'
 
       // No visible text container may clip its own content at 200% text size.
       const clipped = await page.evaluate(() => {
+        // Content that is deliberately screen-reader-only is clipped ON PURPOSE.
+        // The `.visually-hidden` utility in styles/base.css gives it a 1px box
+        // with `clip-path: inset(50%)` and `overflow: hidden`, so it reaches the
+        // accessibility tree without occupying the page. Its text is wider than
+        // that box by construction, which makes `scrollWidth > clientWidth` true
+        // for every such element on every run - the dirty-tab hint in
+        // WorkspaceTabs is the first one this collector met.
+        //
+        // The exemption matches the FULL signature - clipped AND a 1px box AND
+        // overflow:hidden - not merely "has a clip-path". A visible container
+        // that someone clips later still lays out at its normal size, so it is
+        // still reported and this test keeps its teeth.
+        const isScreenReaderOnly = (el: HTMLElement, style: CSSStyleDeclaration) =>
+          (style.clipPath !== 'none' || style.clip !== 'auto') &&
+          el.clientWidth <= 1 &&
+          el.clientHeight <= 1 &&
+          style.overflow === 'hidden';
+
         const offenders: string[] = [];
         document.querySelectorAll<HTMLElement>('p, h1, h2, h3, span, button, label, li').forEach((el) => {
           if (el.clientWidth === 0 || el.clientHeight === 0) return;
+          if (isScreenReaderOnly(el, window.getComputedStyle(el))) return;
           if (el.scrollWidth > el.clientWidth + 1) {
             offenders.push(`${el.tagName}:"${(el.textContent ?? '').trim().slice(0, 30)}"`);
           }
@@ -330,6 +349,69 @@ test('system theme follows the OS and is overridden by an explicit choice', asyn
   await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await context.close();
+});
+
+test('the dark-default notice reaches exactly the cohort the change affects', async ({ browser }) => {
+  // ADR-0002 makes dark the DEFAULT, which is a real behaviour change for one
+  // narrow cohort, and only that one. The exclusions are the point of the
+  // notice, so all three are asserted here rather than just the happy path:
+  // an OS-dark user saw dark before and sees dark now (nothing changed), and a
+  // user with a stored preference keeps their value including an explicit
+  // "system". Asserting only that the banner appears would pass even if it
+  // appeared for everybody.
+  const noticeText = /Giao diện mặc định đã chuyển sang bản tối/;
+
+  // 1. Light OS, nothing stored: shown, dismissible, and it leaves no overflow.
+  const light = await browser.newContext({ colorScheme: 'light' });
+  const lightPage = await light.newPage();
+  await lightPage.goto('/');
+  await expect(lightPage.getByText(noticeText).first()).toBeVisible();
+  await expect(lightPage.getByRole('link', { name: 'Cài đặt › Appearance' })).toHaveAttribute(
+    'href',
+    '/settings/appearance',
+  );
+
+  // A new element at the top of every page is exactly the kind of thing that
+  // reintroduces the horizontal overflow this suite was written to catch.
+  await lightPage.setViewportSize({ width: 320, height: 720 });
+  await expectNoHorizontalOverflow(lightPage);
+
+  // Dismissal must PERSIST. A notice that returns on every load would be worse
+  // than not having one, and the suite would still pass on the first load alone.
+  await lightPage.getByRole('button', { name: 'Đóng thông báo giao diện' }).click();
+  await expect(lightPage.getByText(noticeText)).toHaveCount(0);
+  await lightPage.reload();
+  await expect(lightPage.getByText(noticeText)).toHaveCount(0);
+
+  // 2. Dark OS, nothing stored: nothing changed for this user.
+  const dark = await browser.newContext({ colorScheme: 'dark' });
+  const darkPage = await dark.newPage();
+  await darkPage.goto('/');
+  await expect(darkPage.getByText(noticeText)).toHaveCount(0);
+
+  // 3. Light OS, but a stored document - 'system' included, because that user
+  //    made a choice and its meaning did not change.
+  const stored = await browser.newContext({ colorScheme: 'light' });
+  const storedPage = await stored.newPage();
+  await storedPage.goto('/');
+  await storedPage.evaluate(() => {
+    window.localStorage.setItem(
+      'studio.ui-preferences',
+      JSON.stringify({
+        version: 1,
+        theme: 'system',
+        density: 'comfortable',
+        fontScale: 'medium',
+        reduceMotion: false,
+      }),
+    );
+  });
+  await storedPage.reload();
+  await expect(storedPage.getByText(noticeText)).toHaveCount(0);
+
+  await light.close();
+  await dark.close();
+  await stored.close();
 });
 
 test('the in-app reduced-motion preference stops transitions on its own', async ({ browser }) => {

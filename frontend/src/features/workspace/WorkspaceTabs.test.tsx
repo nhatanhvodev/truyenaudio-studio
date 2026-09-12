@@ -146,6 +146,33 @@ describe('WorkspaceTabs (U05 round 3)', () => {
     await waitFor(() => expect(screen.queryByRole('tab', { name: TABS[1].title })).not.toBeInTheDocument());
   });
 
+  it('marks a dirty tab without renaming it for assistive technology', async () => {
+    mockFetch(() => jsonResponse(emptyLayoutPayload()));
+
+    render(<Harness dirty={[TABS[1].id]} />);
+    await waitForTabs();
+
+    // `getByRole('tab', { name })` is how a tab is addressed in this suite AND
+    // in the E2E suite (workspace-tabs.spec.ts matches names exactly). The whole
+    // point of the marker is that it must not join that name, so this lookup
+    // succeeding IS the regression guard.
+    const dirty = screen.getByRole('tab', { name: TABS[1].title });
+    const describedBy = dirty.getAttribute('aria-describedby');
+    expect(describedBy, 'a dirty tab must point at the shared hint').toBeTruthy();
+    const hint = document.getElementById(describedBy ?? '');
+    expect(hint, 'the described-by target must exist in the document').not.toBeNull();
+    expect(hint).toHaveTextContent('có thay đổi chưa lưu');
+
+    // The visible cue, and it must be decorative: aria-hidden keeps it out of
+    // the accessible name that the lookup above depends on.
+    expect(dirty.querySelector('[aria-hidden="true"]')).not.toBeNull();
+
+    // A clean tab carries neither cue — otherwise the marker says nothing.
+    const clean = screen.getByRole('tab', { name: TABS[0].title });
+    expect(clean).not.toHaveAttribute('aria-describedby');
+    expect(clean.querySelector('[aria-hidden="true"]')).toBeNull();
+  });
+
   it('closes a clean tab and navigates to the neighbouring tab', async () => {
     mockFetch(() => jsonResponse(emptyLayoutPayload()));
 

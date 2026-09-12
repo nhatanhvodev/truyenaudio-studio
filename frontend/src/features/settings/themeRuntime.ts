@@ -43,6 +43,49 @@ export function applyPreferences(preferences: UiPreferences): void {
   root.style.fontSize = ROOT_FONT_SIZE[preferences.fontScale];
 }
 
+/**
+ * Set once the user has acknowledged the dark-default notice, so it is shown at
+ * most once per browser.
+ */
+export const THEME_NOTICE_STORAGE_KEY = 'studio.ui-theme-notice';
+
+/**
+ * True when this browser still needs telling that the DEFAULT theme is dark.
+ *
+ * ADR-0002 makes dark the default, so a user who had never opened Appearance
+ * settings now lands on a dark app even when their operating system is light.
+ * That is the intended identity change — but it is also a surprise, and it is
+ * worth being precise about who actually gets it:
+ *
+ * - anyone with a stored preference document keeps their value, INCLUDING an
+ *   explicit "system", so nothing changed under them and they are not told;
+ * - an OS-dark user saw dark before and sees dark now, so nothing changed for
+ *   them either;
+ * - only "no stored preference document AND OS light" is a real change.
+ *
+ * Returns false rather than throwing when storage is unavailable: a browser with
+ * storage blocked must not get a notice it can never dismiss.
+ */
+export function shouldAnnounceDarkDefault(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (window.localStorage.getItem(THEME_NOTICE_STORAGE_KEY) !== null) return false;
+    if (window.localStorage.getItem(UI_PREFERENCES_STORAGE_KEY) !== null) return false;
+  } catch {
+    return false;
+  }
+  return !systemPrefersDark();
+}
+
+export function acknowledgeDarkDefaultNotice(): void {
+  try {
+    window.localStorage.setItem(THEME_NOTICE_STORAGE_KEY, '1');
+  } catch {
+    // Storage blocked: the notice returns on the next load. Better than dropping
+    // an acknowledgement that was never persisted.
+  }
+}
+
 export function notifyPreferencesChanged(): void {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new Event(CHANGE_EVENT));
