@@ -1820,6 +1820,44 @@ Every task in G4 is **behaviour-neutral**: no visual change, no logic change. Th
 Run: `cd frontend && npx playwright test`
 Expected: PASS. Write the pass count down; every G4 task compares against it.
 
+## G4's transitional `styles` rule (applies to Tasks 11–15)
+
+`router.tsx` defines ONE module-local, unexported `const styles: Record<string, React.CSSProperties>`
+(lines 1245–1374 at the start of G4) that every screen reads through `style={styles.<key>}`. It is not
+exported, so a moved screen cannot import it back — and importing it would be circular anyway, since
+`router.tsx` now imports the screen.
+
+**So each extracted module carries its own local `const styles` holding exactly the keys its moved
+range referenced, and nothing else.** Measure, do not guess:
+
+```bash
+# over the range you are moving, e.g. 129-177 for Shell:
+awk 'NR>=129 && NR<=177' src/routes/router.tsx | grep -o "styles\.[A-Za-z0-9_]*" | sort -u
+```
+
+Measured key counts, so a mismatch is visible immediately:
+
+| Module | Task | Keys |
+|---|---|---|
+| `Shell` | 11 | 3 |
+| `ImportScreen` | 12 | 8 |
+| `BatchScreen` | 12 | 0 (no `styles` object at all) |
+| `TranslationScreen` | 13 | 12 |
+| `VoiceScreen` | 14 | 5 |
+| `AudioScreen` | 14 | 7 |
+| `ExportScreen` | 15 | 1 |
+| `JobsScreen` | 15 | 2 |
+| `BilingualScreen` | 15 | 1 |
+| `JobDraftScreen` | 15 | 2 |
+| `jobActions` | 15 | 0 (returns strings, not elements) |
+
+If your grep disagrees with a number here, the number you got is right and this table is wrong —
+report the discrepancy rather than forcing a match.
+
+Duplication across modules is accepted on purpose: the object is transitional. G5 replaces every one of
+these inline styles with a CSS module, and Task 16 deletes what is left in `router.tsx`. Do not delete
+the object from `router.tsx` during Tasks 11–15, and do not try to make it shared.
+
 ## Task 11: Extract `Shell` and the navigation
 
 **Files:**
@@ -1871,6 +1909,8 @@ git commit -m "refactor(routes): extract Shell into its own module, behaviour un
 
 Cut `ImportScreen` (lines 178–311) and `BatchScreen` (312–323) into their own files. Keep every `data-testid`, every string, and every prop. Move the imports each one needs; leave the rest in `router.tsx`.
 
+**Also move `type Chapter` (lines 30–37) into `ImportScreen.tsx`.** It is used at exactly one place, `router.tsx:246`, inside `ImportScreen`. Left behind it would have to be imported back out of `router.tsx`, which now imports `ImportScreen` — the `import type` is erased at compile time so it would not break at runtime, but it leaves router.tsx carrying a declaration nothing there uses, and Task 16 requires router.tsx to end up as the route table and nothing else. `BatchScreen` uses none of the module-local types.
+
 - [ ] **Step 2: Run the covering specs**
 
 Run: `cd frontend && npx vitest run && npx playwright test e2e/import-preview.spec.ts e2e/batch-recovery.spec.ts`
@@ -1900,7 +1940,11 @@ The largest screen (lines 324–931). Move it whole; do not split it further in 
 
 - [ ] **Step 1: Move verbatim**
 
-Cut lines 324–931 into `frontend/src/routes/screens/TranslationScreen.tsx`. Preserve exactly, because tests assert on them:
+Cut lines 324–931 into `frontend/src/routes/screens/TranslationScreen.tsx`.
+
+**Also move `type TranslationPayload` (lines 49–61) and `type TranslationIssue` (39–47) into `TranslationScreen.tsx`.** `TranslationPayload` is referenced only inside this screen — `:327,347,374,423,449,474` — and it is the only user of `TranslationIssue`, at `:60`. Same reasoning as Task 12: leaving them in `router.tsx` forces a back-import from a module that now imports this one, and router.tsx is supposed to end up as the route table and nothing else.
+
+Preserve exactly, because tests assert on them:
 - `TRANSLATION_QA_BLOCKERS_OPEN` and the approval guard that uses it.
 - The `QualityPlanPanel` mount conditional (only when a cloud profile is present).
 - `data-testid` attributes.
@@ -1933,10 +1977,28 @@ git commit -m "refactor(routes): extract TranslationScreen, behaviour unchanged"
 
 - [ ] **Step 1: Move both verbatim**
 
-`VoiceScreen` is lines 932–1030, `AudioScreen` 1031–1172. Preserve exactly:
+**Corrected ranges — earlier plan text said `VoiceScreen` is lines 932–1030.** `VoiceScreen`'s closing brace is at line **1015**. Lines 1016–1029 are two declarations that belong to `AudioScreen`: `type ServerMaster` (1016–1020) and `STALE_MASTER_CODES` (1022–1029). Cutting 932–1030 as written would move both into `VoiceScreen.tsx` while the bullet below still demands `STALE_MASTER_CODES` be preserved as `AudioScreen`'s — leaving `AudioScreen.tsx` referencing two out-of-scope identifiers, for a `tsc -b` failure the implementer would then improvise around.
+
+| What | Lines | Goes to |
+|---|---|---|
+| `VoiceScreen` | 932–1015 | `VoiceScreen.tsx` |
+| `type ServerMaster` | 1016–1020 | `AudioScreen.tsx` |
+| `STALE_MASTER_CODES` | 1022–1029 | `AudioScreen.tsx` |
+| `AudioScreen` | 1031–1172 | `AudioScreen.tsx` |
+
+Also move in this task, both used **only** by `VoiceScreen` (`router.tsx:937,941`): `const fakePresetId` (line 27) and `const fakeAudioEnabled` (line 28). They are runtime values — left behind, `VoiceScreen.tsx` would import them back out of `router.tsx`, a real circular import, since `router.tsx` imports `VoiceScreen`. Types survive that (erased at compile time); runtime consts do not.
+
+`RenderedAudio` (line 63) is the one declaration here used by **both** screens — `VoiceScreen:986` produces it, `AudioScreen:1035–1036` consumes it. Put it in `AudioScreen.tsx` and `import type { RenderedAudio } from './AudioScreen'` in `VoiceScreen.tsx`.
+
+The rest have exactly one user each: `type VoiceCatalogPayload` (90–99) is used at `:945` in `VoiceScreen`; `type AudioStatus` (70–75) is used at `:1055` and `:1096` in `AudioScreen`. Each moves with its screen.
+
+`GateDecision` (77–81) and `ExportBundle` (83–88) are declared and never referenced — module-local, unexported, dead. Leave them; Task 16 deletes what remains.
+
+Preserve exactly:
 - `AudioScreen`'s `STALE_MASTER_CODES` set — `MASTER_HASH_MISMATCH`, `MASTER_ARTIFACT_NOT_READY`, `MASTER_TRANSLATION_STALE`, `MASTER_VOICE_PLAN_STALE`, `MASTER_PROBE_HASH_MISMATCH` — and the check that blocks approval when the server master differs from the one being auditioned (A05).
 - `data-testid="master-audio"`.
 - `ArtifactPlayer` wiring and the `AudioScreen` deep-link master load.
+- Every user-visible string and every `data-testid`.
 
 - [ ] **Step 2: Run the covering specs**
 
@@ -2004,7 +2066,12 @@ Every hit must be inside the `styles` object definition itself. Any hit inside a
 
 - [ ] **Step 2: Delete the object**
 
-Remove the entire `styles` object. This also removes the last hardcoded palette in the app, including the `linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)` button fill.
+Remove the entire `styles` object from `router.tsx`. This removes the last hardcoded palette **in this
+file**, including the `linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)` button fill.
+
+It does **not** remove the last hardcoded palette in the app: Tasks 11–15 gave each extracted screen a
+local copy of the keys it used (G4's transitional rule), so those hex values now live in
+`src/routes/screens/*.tsx`. G5 is what converts them. Do not chase them here.
 
 If some screen still references `styles.<key>`, that screen was not fully moved. Do not leave a hex literal behind and do not delete the object: go back to that screen's G4 task, finish moving it into its own module, then continue here. A leftover hex literal would pass Step 2 and fail Step 3's grep, so leaving one must be impossible.
 
@@ -2012,13 +2079,20 @@ If some screen still references `styles.<key>`, that screen was not fully moved.
 
 Run: `cd frontend && npx vitest run && npm run build && npx playwright test`
 
-And confirm no hardcoded palette survives anywhere:
+And confirm `router.tsx` itself is clean — **scoped to this one file, not the repo**:
 
 ```bash
-cd frontend && grep -rnE "#[0-9a-fA-F]{6}" src/ --include=*.tsx --include=*.ts | grep -v "\.test\." | grep -v "styles/tokens.css"
+cd frontend && grep -nE "#[0-9a-fA-F]{3,8}" src/routes/router.tsx
 ```
 
-Expected: no hits outside `tokens.css` (the contrast test reads hex from CSS, and test files may keep expectations). **This is the proof that the three parallel colour systems are down to one.**
+Expected: no hits.
+
+**Do not run a repo-wide version of that grep here, and do not treat a repo-wide hit count as a
+failure.** At this point in the plan 42 files still carry raw hex (~500 occurrences; the largest are
+`WenkuImport.tsx`, `BatchQueue.tsx`, `ProjectWizard.tsx`, `ExportWorkflow.tsx`, plus the
+`src/routes/screens/*.tsx` G4 just created). Converting them is the entire job of G5, which runs
+**after** this task. The repo-wide "one colour system" grep can only pass at the very end of G5 — it
+belongs to the final gate, not to Task 16.
 
 - [ ] **Step 4: Commit**
 
@@ -2658,6 +2732,16 @@ cd .. && .venv/Scripts/python.exe -m pytest backend/tests -q
 ```
 
 Expected: vitest ≥ 272 + new tests, all green. Build PASS. Playwright 9 specs + new cases green. Backend **1258 passed** — this work touches no backend file, so any backend failure is pre-existing or comes from a stray edit; investigate rather than rerunning.
+
+**And the repo-wide colour check — this is its home; Task 16 deliberately does not run it.** Only here,
+after G5 has converted every screen, is "one colour system" a claim that can be true:
+
+```bash
+cd frontend && grep -rnE "#[0-9a-fA-F]{6}" src/ --include=*.tsx --include=*.ts --include=*.css | grep -v "\.test\." | grep -v "styles/tokens.css"
+```
+
+Expected: no hits outside `tokens.css` (the contrast test reads hex from CSS, and test files may keep
+expectations). Any surviving hit is a screen G5 missed — fix it, do not relax the check.
 
 - [ ] **Step 4: Commit**
 
