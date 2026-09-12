@@ -1,9 +1,10 @@
-import { createBrowserRouter, Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { createBrowserRouter, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Shell } from './Shell';
 import { ImportScreen } from './screens/ImportScreen';
 import { BatchScreen } from './screens/BatchScreen';
 import { TranslationScreen } from './screens/TranslationScreen';
+import { VoiceScreen } from './screens/VoiceScreen';
+import { AudioScreen } from './screens/AudioScreen';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
@@ -16,26 +17,8 @@ import { defaultJobEventStore, type JobEvent } from '../features/jobs/jobStore';
 import BilingualEditor from '../features/translation/BilingualEditor';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { apiJson } from '../shared/api';
-import ArtifactPlayer from '../features/audio/ArtifactPlayer';
-import VoicePreviewPanel, { type VoiceOption } from '../features/voices/VoicePreviewPanel';
 import MultiVoiceCloudDemo from '../features/voices/MultiVoiceCloudDemo';
 
-const fakePresetId = '018f0000-0000-7000-8000-000000000001';
-const fakeAudioEnabled = ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_STUDIO_FAKE_AUDIO) === '1';
-
-type RenderedAudio = {
-  masterArtifactId: string;
-  masterSha256: string;
-  renderedSegmentIds: string[];
-  reusedSegmentIds: string[];
-};
-
-type AudioStatus = {
-  chapterId: string;
-  masterArtifactId: string | null;
-  masterSha256: string | null;
-  approved: boolean;
-};
 
 type GateDecision = {
   allowed: boolean;
@@ -48,17 +31,6 @@ type ExportBundle = {
   files: string[];
   manifestSha256: string;
   directoryPath: string;
-};
-
-type VoiceCatalogPayload = {
-  voices: {
-    id: string;
-    name: string;
-    locale: string;
-    available: boolean;
-    active: boolean;
-    activationHint?: string;
-  }[];
 };
 
 export const router = createBrowserRouter([
@@ -88,247 +60,6 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-
-function VoiceScreen() {
-  const { chapterId } = useParams();
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [presetId, setPresetId] = useState(fakeAudioEnabled ? fakePresetId : '');
-  const [voices, setVoices] = useState<VoiceOption[]>([]);
-
-  useEffect(() => {
-    if (fakeAudioEnabled) {
-      return;
-    }
-    let cancelled = false;
-    apiJson<VoiceCatalogPayload>('/api/voices?locale=vi-VN')
-      .then((payload) => {
-        if (cancelled) {
-          return;
-        }
-        // Nghe thử chỉ có nghĩa với giọng đã cài model + license; giọng chưa khả dụng
-        // vẫn hiện trong danh sách kèm hướng dẫn, nhưng không có nút điều khiển giả (A02).
-        setVoices(
-          payload.voices.map((voice) => ({
-            id: voice.id,
-            name: voice.name,
-            locale: voice.locale,
-            available: voice.available,
-            activationHint: voice.activationHint,
-          })),
-        );
-        const selected = payload.voices.find((voice) => voice.active && voice.available)
-          ?? payload.voices.find((voice) => voice.available);
-        setPresetId(selected?.id ?? '');
-      })
-      .catch((reason) => {
-        if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : 'VOICE_CATALOG_FAILED');
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function renderAudio() {
-    if (!chapterId) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      await apiJson(`/api/chapters/${chapterId}/audio/configure-single`, {
-        method: 'POST',
-        body: { presetId },
-      });
-      const rendered = await apiJson<RenderedAudio>(`/api/chapters/${chapterId}/audio/render`, {
-        method: 'POST',
-        body: {},
-      });
-      navigate(`/chapters/${chapterId}/audio`, { state: { rendered } });
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'AUDIO_RENDER_FAILED');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section style={styles.panel} aria-label="Chọn giọng">
-      <h1 style={styles.title}>Giọng đọc</h1>
-      <p style={styles.quote}>
-        {presetId ? `Preset ${presetId}` : 'Chưa có giọng local đã verify để render.'}
-      </p>
-      <VoicePreviewPanel
-        voices={voices}
-        selectedVoiceId={presetId || null}
-        onSelect={(voiceId) => setPresetId(voiceId)}
-      />
-      <button type="button" onClick={() => void renderAudio()} disabled={busy || !presetId} style={styles.primaryButton}>
-        Render một giọng
-      </button>
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
-    </section>
-  );
-}
-
-type ServerMaster = {
-  masterArtifactId: string;
-  masterSha256: string;
-};
-
-/** Mã lỗi backend báo bản master đang duyệt đã cũ; phải nạp lại trạng thái server (A05). */
-const STALE_MASTER_CODES = [
-  'MASTER_HASH_MISMATCH',
-  'MASTER_ARTIFACT_NOT_READY',
-  'MASTER_TRANSLATION_STALE',
-  'MASTER_VOICE_PLAN_STALE',
-  'MASTER_PROBE_HASH_MISMATCH',
-];
-
-function AudioScreen() {
-  const { chapterId } = useParams();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const initialRendered = (location.state as { rendered?: RenderedAudio } | null)?.rendered ?? null;
-  const [rendered, setRendered] = useState<RenderedAudio | null>(initialRendered);
-  const [serverMaster, setServerMaster] = useState<ServerMaster | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-
-  // Bản master trên server là nguồn duy nhất; nếu khác bản đang nghe thì phải nghe lại
-  // trước khi phê duyệt (tránh duyệt nhầm bản cũ - A05).
-  const masterIsStale =
-    rendered !== null &&
-    serverMaster !== null &&
-    (rendered.masterArtifactId !== serverMaster.masterArtifactId ||
-      rendered.masterSha256 !== serverMaster.masterSha256);
-
-  useEffect(() => {
-    if (!chapterId) {
-      return;
-    }
-    let cancelled = false;
-    apiJson<AudioStatus>(`/api/chapters/${chapterId}/audio/status`)
-      .then((status) => {
-        if (cancelled || !status.masterArtifactId || !status.masterSha256) {
-          return;
-        }
-        const master = {
-          masterArtifactId: status.masterArtifactId,
-          masterSha256: status.masterSha256,
-        };
-        setServerMaster(master);
-        // Điều hướng trực tiếp (không có state từ màn render) thì lấy luôn master của server;
-        // nếu đã có bản đang nghe thì giữ nguyên và để guard stale xử lý.
-        setRendered((current) =>
-          current ?? { ...master, renderedSegmentIds: [], reusedSegmentIds: [] },
-        );
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [chapterId]);
-
-  function useServerMaster() {
-    if (!serverMaster) {
-      return;
-    }
-    setRendered({
-      masterArtifactId: serverMaster.masterArtifactId,
-      masterSha256: serverMaster.masterSha256,
-      renderedSegmentIds: [],
-      reusedSegmentIds: [],
-    });
-    setNotice('Đang nghe bản master mới nhất trên máy chủ.');
-    setError('');
-  }
-
-  async function reloadServerMaster() {
-    if (!chapterId) {
-      return;
-    }
-    try {
-      const status = await apiJson<AudioStatus>(`/api/chapters/${chapterId}/audio/status`);
-      if (status.masterArtifactId && status.masterSha256) {
-        setServerMaster({
-          masterArtifactId: status.masterArtifactId,
-          masterSha256: status.masterSha256,
-        });
-      }
-    } catch {
-      // giữ nguyên trạng thái cũ; người dùng vẫn thấy cảnh báo stale nếu có
-    }
-  }
-
-  async function approveAudio() {
-    if (!chapterId || !rendered || masterIsStale) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      await apiJson(`/api/chapters/${chapterId}/audio/approve`, {
-        method: 'POST',
-        body: {
-          masterArtifactId: rendered.masterArtifactId,
-          expectedSha256: rendered.masterSha256,
-        },
-      });
-      navigate(`/chapters/${chapterId}/export`);
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : 'AUDIO_APPROVAL_FAILED';
-      setError(message);
-      if (STALE_MASTER_CODES.some((code) => message.includes(code))) {
-        await reloadServerMaster();
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section style={styles.panel} aria-label="Duyệt audio">
-      <h1 style={styles.title}>Audio</h1>
-      {rendered ? (
-        <>
-          <p style={styles.success}>Master {rendered.masterSha256.slice(0, 12)} sẵn sàng duyệt</p>
-          <ArtifactPlayer
-            chapterId={chapterId ?? ''}
-            artifactId={rendered.masterArtifactId}
-            sha256={rendered.masterSha256}
-          />
-          {masterIsStale ? (
-            <p role="alert" style={styles.error}>
-              Bản master trên máy chủ đã thay đổi ({(serverMaster?.masterSha256 ?? '').slice(0, 12)}). Hãy nghe lại
-              bản mới trước khi phê duyệt.
-              <button type="button" onClick={useServerMaster} style={styles.secondaryButton}>
-                Nghe bản mới
-              </button>
-            </p>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void approveAudio()}
-            disabled={busy || masterIsStale}
-            style={styles.primaryButton}
-          >
-            Phê duyệt audio
-          </button>
-        </>
-      ) : (
-        <Link to={`/chapters/${chapterId}/voice`} style={styles.navLink}>Render lại audio</Link>
-      )}
-      {notice ? <p role="status" style={styles.success}>{notice}</p> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
-    </section>
-  );
-}
 
 function ExportScreen() {
   const { chapterId } = useParams();
