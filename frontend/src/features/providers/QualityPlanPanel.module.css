@@ -1,0 +1,60 @@
+/*
+ * Quality plan panel (QualityPlanPanel.tsx) — the per-stage mode/opt-in/quote
+ * surface. Balanced is the default; Quality/Maximum need an explicit opt-in and
+ * a fresh quote, and a quote is invalidated whenever the model key changes.
+ */
+
+.panel { display: grid; gap: var(--sp-3); min-width: 0; }
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.lede { margin: 0; color: var(--text-muted); font-size: var(--fs-md); }
+
+.controls { display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: flex-end; min-width: 0; }
+
+.label { display: grid; gap: var(--sp-1); font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); }
+
+.select {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+.select:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.optIn { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-md); color: var(--text); }
+
+.primaryButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.primaryButton:hover:not(:disabled) { background: var(--primary-hover); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.status { margin: 0; color: var(--text-muted); font-size: var(--fs-md); }
+.error { margin: 0; color: var(--danger); font-size: var(--fs-md); font-weight: 600; }
+.notice { margin: 0; color: var(--warning); font-size: var(--fs-md); font-weight: 600; }
+
+.quote {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  font-size: var(--fs-md);
+}
+
+.quoteTerm { color: var(--text-muted); }
+.quoteValue { margin: 0; color: var(--text); font-family: var(--font-mono); overflow-wrap: anywhere; }

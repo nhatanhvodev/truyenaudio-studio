@@ -1,0 +1,131 @@
+/*
+ * Standalone translation editor (TranslationEditor.tsx) — the pre-ADR-0001
+ * screen kept alongside the bilingual workspace. Same tokens, same type ramp;
+ * source and target prose both opt out of uppercase explicitly.
+ */
+
+.shell {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--sp-5);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.meta { margin: var(--sp-1) 0 0; color: var(--text-subtle); font-family: var(--font-mono); font-size: var(--fs-sm); }
+
+.filterLabel { display: grid; gap: var(--sp-1); font-weight: 600; font-size: var(--fs-sm); }
+
+.select {
+  min-width: 8.25rem;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+.select:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.success { margin: 0; color: var(--success); font-weight: 600; }
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--sp-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.segmentList { display: grid; gap: var(--sp-3); min-width: 0; }
+
+.segment {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.source {
+  white-space: pre-wrap;
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  color: var(--text-muted);
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  text-transform: none;
+}
+.textarea:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.button {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) { background: var(--primary-hover); }
+.button:disabled { cursor: not-allowed; opacity: 0.55; }
+.button:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.issues { display: grid; gap: var(--sp-3); min-width: 0; }
+.empty { margin: 0; color: var(--text-subtle); font-size: var(--fs-md); }
+
+.issue {
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.issueTop {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.issueText { margin: var(--sp-2) 0 0; line-height: var(--lh-read); overflow-wrap: anywhere; }
+.evidence { margin: var(--sp-2) 0 0; color: var(--warning); font-size: var(--fs-sm); }
+
+@media (max-width: 1023px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+}

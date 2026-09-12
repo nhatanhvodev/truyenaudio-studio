@@ -1,5 +1,7 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import BilingualEditor from '../../features/translation/BilingualEditor';
+import styles from './BilingualScreen.module.css';
+
 
 export function BilingualScreen() {
   const { chapterId } = useParams();
@@ -8,7 +10,7 @@ export function BilingualScreen() {
     return <Navigate to="/" replace />;
   }
   return (
-    <section style={styles.panel} aria-label="Editor song ngữ">
+    <section className={styles.panel} aria-label="Editor song ngữ">
       <BilingualEditor
         chapterId={chapterId}
         onApproved={() => navigate(`/chapters/${chapterId}/voice`)}
@@ -16,16 +18,3 @@ export function BilingualScreen() {
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  panel: {
-    display: 'grid',
-    gap: 16,
-    maxWidth: 920,
-    margin: '0 auto',
-    padding: 20,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-};

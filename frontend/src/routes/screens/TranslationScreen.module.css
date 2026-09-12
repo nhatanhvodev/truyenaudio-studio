@@ -1,0 +1,289 @@
+/*
+ * Translation screen (TranslationScreen.tsx) — the locked three-pane workspace
+ * from docs/specs/ui-ux-spec.md: chapter navigator left, the working editor in
+ * the middle, inspector right.
+ *
+ * The first block is the locked geometry from the redesign brief. The numbers
+ * in it (240px navigator, 320px inspector, 25–75% split clamp) are fixed and
+ * must not be "improved". Everything else is the screen's own surface, on
+ * tokens only (ADR-0002).
+ */
+
+/* --- locked workspace shell --------------------------------------------- */
+.workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.navigator { border-right: 1px solid var(--border-subtle); overflow-y: auto; min-width: 0; }
+.editor { min-width: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.inspector { border-left: 1px solid var(--border-subtle); overflow-y: auto; min-width: 0; }
+.split { display: grid; grid-template-columns: clamp(25%, var(--split, 50%), 75%) minmax(0, 1fr); min-height: 0; flex: 1; }
+.pane { min-width: 0; overflow-y: auto; padding: var(--sp-4); }
+.paneSource { border-right: 1px solid var(--border-subtle); color: var(--text-muted); }
+
+/* Below 1024px: inspector becomes a drawer, source/translation become tabs. */
+@media (max-width: 1023px) {
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .navigator, .inspector { display: none; }
+  .split { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* --- navigator rail ------------------------------------------------------ */
+.navGroup { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.navTitle {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.navEntry { font-size: var(--fs-md); color: var(--text); padding: var(--sp-1) 0; min-width: 0; overflow-wrap: anywhere; }
+.navMeta { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); margin: var(--sp-2) 0 0; overflow-wrap: anywhere; }
+
+.filterSelect {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.filterSelect:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+/* --- editor column ------------------------------------------------------- */
+.editorBody { display: grid; gap: var(--sp-4); padding: var(--sp-4); min-width: 0; }
+
+.headerRow { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--sp-3); min-width: 0; }
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+
+.label { display: grid; gap: var(--sp-2); font-weight: 600; font-size: var(--fs-sm); color: var(--text-muted); }
+
+.input {
+  width: 100%;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-transform: none;
+}
+.input:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.keyInput { font-family: var(--font-mono); font-size: var(--fs-sm); flex: 1; min-width: 0; }
+
+.primaryButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.primaryButton:hover:not(:disabled) { background: var(--primary-hover); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.secondaryButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover:not(:disabled) { background: var(--surface); }
+.secondaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.warnButton {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--warning);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.warnButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.warnButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.quote { margin: 0; color: var(--text-muted); font-weight: 600; font-size: var(--fs-md); overflow-wrap: anywhere; }
+
+.guardBox {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+}
+.summary:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.panelBody { display: grid; gap: var(--sp-3); min-width: 0; }
+
+.geminiCard {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+
+.geminiHead { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+.geminiIntro { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.geminiMark { font-size: var(--fs-lg); }
+.geminiTitle { margin: 0; font-size: var(--fs-lg); color: var(--text); font-weight: 600; }
+.geminiHint { margin: var(--sp-1) 0 0; font-size: var(--fs-md); color: var(--text-muted); overflow-wrap: anywhere; }
+
+.keyLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  text-decoration: none;
+}
+.keyLink:hover { border-color: var(--text); }
+.keyLink:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.fieldLabel { display: block; font-size: var(--fs-md); font-weight: 600; color: var(--text-muted); margin-bottom: var(--sp-1); }
+.fieldNote { font-size: var(--fs-sm); color: var(--text-subtle); margin-top: var(--sp-1); }
+.fieldWarning { font-size: var(--fs-md); color: var(--danger); font-weight: 600; }
+
+.keyRow { display: flex; gap: var(--sp-2); min-width: 0; align-items: flex-start; }
+
+.actions { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; min-width: 0; }
+
+.reviewBox { display: grid; gap: var(--sp-3); min-width: 0; }
+
+.segment {
+  display: grid;
+  gap: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.segmentHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3) 0;
+  min-width: 0;
+}
+
+.segmentOrdinal { font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; color: var(--text-subtle); }
+
+.badgeRow { display: flex; gap: var(--sp-1); flex-wrap: wrap; min-width: 0; }
+
+.badge {
+  font-size: var(--fs-sm);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.badgeBlocker { border-color: var(--danger); color: var(--danger); }
+
+.originLabel { display: block; font-size: var(--fs-sm); color: var(--text-subtle); margin-bottom: var(--sp-1); letter-spacing: 0.06em; }
+
+.targetPane { font-family: var(--font-read); font-size: var(--fs-read); line-height: var(--lh-read); color: var(--text); text-transform: none; overflow-wrap: anywhere; }
+
+.editRow { display: grid; gap: var(--sp-2); min-width: 0; }
+
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  resize: vertical;
+  text-transform: none;
+}
+.textarea:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.targetRow { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+
+.approveRow { display: flex; gap: var(--sp-3); align-items: center; margin-top: var(--sp-4); flex-wrap: wrap; min-width: 0; }
+
+.success { margin: 0; color: var(--success); font-weight: 600; }
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+
+/* --- inspector rail ------------------------------------------------------ */
+.blockers {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.blockersHead { display: flex; align-items: center; gap: var(--sp-2); color: var(--warning); font-weight: 600; font-size: var(--fs-sm); letter-spacing: 0.06em; text-transform: uppercase; }
+.blockersText { margin: 0; font-size: var(--fs-md); color: var(--text-muted); line-height: var(--lh-read); overflow-wrap: anywhere; }
+.blockersActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
+
+@media (max-width: 1023px) {
+  .grid2 { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The Gemini CTA was a gradient + a busy-state grey. Both are states a token
+   already expresses: the button is the primary action, and `:disabled` (busy
+   OR missing profile/consent/budget) is the muted state. */
+.geminiButton { font-weight: 600; }
+.geminiButton:disabled { cursor: not-allowed; opacity: 0.55; }
+
+/* The credential field only tints to show whether it is filled; the value
+   itself is the signal, so this is never colour-alone. */
+.keyInputFilled { border-color: var(--primary); }
+.keyInputEmpty { border-color: var(--danger); }

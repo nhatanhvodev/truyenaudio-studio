@@ -1,0 +1,16 @@
+/*
+ * Bilingual screen shell (BilingualScreen.tsx). The screen is a one-line
+ * wrapper: BilingualEditor owns the whole surface, this is only the page
+ * container around it, on the same tokens as every other screen shell.
+ */
+.panel {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 57.5rem;
+  margin: 0 auto;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}

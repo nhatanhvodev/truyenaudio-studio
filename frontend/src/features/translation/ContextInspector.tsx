@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { apiJson } from '../../shared/api';
 import { Drawer } from '../../shared/ui/Drawer';
 
+import styles from './ContextInspector.module.css';
+
 type LockedRule = { sourceTerm: string; targetTerm: string; forbiddenForms: string[] };
 
 type MemoryEntry = {
@@ -112,41 +114,41 @@ export default function ContextInspector({ chapterId, loadTrace }: Props) {
   ].filter(Boolean);
 
   return (
-    <aside aria-label="Context inspector" style={styles.shell}>
-      <header style={styles.header}>
-        <h3 style={styles.title}>Ngữ cảnh của lượt dịch</h3>
-        <button type="button" onClick={() => setDetailsOpen(true)} style={styles.secondary}>
+    <aside aria-label="Context inspector" className={styles.shell}>
+      <header className={styles.header}>
+        <h3 className={styles.title}>Ngữ cảnh của lượt dịch</h3>
+        <button type="button" onClick={() => setDetailsOpen(true)} className={styles.secondaryButton}>
           Chi tiết ID
         </button>
       </header>
 
       {trace.run === null ? (
-        <p style={styles.note}>Chương này chưa có lượt dịch nào.</p>
+        <p className={styles.note}>Chương này chưa có lượt dịch nào.</p>
       ) : (
-        <p style={styles.note} aria-label="Lượt dịch">
+        <p className={styles.note} aria-label="Lượt dịch">
           {trace.run.status} · {trace.run.model ?? 'chưa rõ model'} · prompt {trace.run.promptVersion}
         </p>
       )}
 
       {staleReason.length > 0 ? (
-        <p role="alert" style={styles.warning}>
+        <p role="alert" className={styles.stale}>
           Ngữ cảnh đã thay đổi sau lượt dịch này ({staleReason.join(', ')}). Chạy lại nếu muốn dùng bản mới
           nhất.
         </p>
       ) : (
-        <p role="status" style={styles.ok}>
+        <p role="status" className={styles.ok}>
           Ngữ cảnh khớp với lượt dịch gần nhất.
         </p>
       )}
 
-      <section aria-label="Glossary đang áp dụng" style={styles.block}>
-        <strong style={styles.blockTitle}>Glossary ({trace.glossary.entryCount} mục)</strong>
+      <section aria-label="Glossary đang áp dụng" className={styles.group}>
+        <strong className={styles.groupTitle}>Glossary ({trace.glossary.entryCount} mục)</strong>
         {trace.glossary.lockedRules.length === 0 ? (
-          <p style={styles.note}>Không có thuật ngữ khóa trong phạm vi chương này.</p>
+          <p className={styles.note}>Không có thuật ngữ khóa trong phạm vi chương này.</p>
         ) : (
-          <ul style={styles.list}>
+          <ul className={styles.list}>
             {trace.glossary.lockedRules.map((rule) => (
-              <li key={`${rule.sourceTerm}-${rule.targetTerm}`}>
+              <li key={`${rule.sourceTerm}-${rule.targetTerm}`} className={styles.entry}>
                 {rule.sourceTerm} → {rule.targetTerm}
                 {rule.forbiddenForms.length > 0 ? ` (cấm: ${rule.forbiddenForms.join(', ')})` : ''}
               </li>
@@ -155,14 +157,14 @@ export default function ContextInspector({ chapterId, loadTrace }: Props) {
         )}
       </section>
 
-      <section aria-label="Bộ nhớ truyện đã duyệt" style={styles.block}>
-        <strong style={styles.blockTitle}>Bộ nhớ truyện đã duyệt ({trace.memory.entries.length})</strong>
+      <section aria-label="Bộ nhớ truyện đã duyệt" className={styles.group}>
+        <strong className={styles.groupTitle}>Bộ nhớ truyện đã duyệt ({trace.memory.entries.length})</strong>
         {trace.memory.entries.length === 0 ? (
-          <p style={styles.note}>Chưa có mục bộ nhớ nào được duyệt cho chương này.</p>
+          <p className={styles.note}>Chưa có mục bộ nhớ nào được duyệt cho chương này.</p>
         ) : (
-          <ul style={styles.list}>
+          <ul className={styles.list}>
             {trace.memory.entries.map((entry) => (
-              <li key={entry.id}>
+              <li key={entry.id} className={styles.entry}>
                 {entry.entityKey} · {entry.summary}
               </li>
             ))}
@@ -170,14 +172,14 @@ export default function ContextInspector({ chapterId, loadTrace }: Props) {
         )}
       </section>
 
-      <section aria-label="Nhân vật đang hoạt động" style={styles.block}>
-        <strong style={styles.blockTitle}>Nhân vật ({trace.characters.length})</strong>
+      <section aria-label="Nhân vật đang hoạt động" className={styles.group}>
+        <strong className={styles.groupTitle}>Nhân vật ({trace.characters.length})</strong>
         {trace.characters.length === 0 ? (
-          <p style={styles.note}>Chưa có nhân vật nào.</p>
+          <p className={styles.note}>Chưa có nhân vật nào.</p>
         ) : (
-          <ul style={styles.list}>
+          <ul className={styles.list}>
             {trace.characters.map((character) => (
-              <li key={character.characterId}>
+              <li key={character.characterId} className={styles.entry}>
                 {character.canonicalName}
                 {character.aliases.length > 0 ? ` (${character.aliases.join(', ')})` : ''} · {character.status}
               </li>
@@ -187,41 +189,41 @@ export default function ContextInspector({ chapterId, loadTrace }: Props) {
       </section>
 
       <Drawer open={detailsOpen} title="ID chi tiết (ngữ cảnh)" onClose={() => setDetailsOpen(false)}>
-        <dl style={styles.details}>
+        <dl className={styles.details}>
           <dt>Chapter</dt>
-          <dd><code>{trace.chapterId}</code></dd>
+          <dd><code className={styles.rawId}>{trace.chapterId}</code></dd>
           <dt>Project</dt>
-          <dd><code>{trace.projectId}</code></dd>
+          <dd><code className={styles.rawId}>{trace.projectId}</code></dd>
           <dt>Ordinal</dt>
           <dd>{trace.ordinal}</dd>
           {trace.run ? (
             <>
               <dt>Run</dt>
-              <dd><code>{trace.run.id}</code></dd>
+              <dd><code className={styles.rawId}>{trace.run.id}</code></dd>
               <dt>Source revision</dt>
-              <dd><code>{trace.run.sourceRevisionId}</code></dd>
+              <dd><code className={styles.rawId}>{trace.run.sourceRevisionId}</code></dd>
               <dt>Provider profile</dt>
-              <dd><code>{trace.run.providerProfileId ?? '—'}</code></dd>
+              <dd><code className={styles.rawId}>{trace.run.providerProfileId ?? '—'}</code></dd>
               <dt>Glossary hash (run)</dt>
-              <dd><code>{trace.run.glossaryRevisionHash ?? '—'}</code></dd>
+              <dd><code className={styles.rawId}>{trace.run.glossaryRevisionHash ?? '—'}</code></dd>
               <dt>Memory hash (run)</dt>
-              <dd><code>{trace.run.storyMemoryRevisionHash ?? '—'}</code></dd>
+              <dd><code className={styles.rawId}>{trace.run.storyMemoryRevisionHash ?? '—'}</code></dd>
             </>
           ) : null}
           <dt>Glossary hash (hiện tại)</dt>
-          <dd><code>{trace.glossary.sha256}</code></dd>
+          <dd><code className={styles.rawId}>{trace.glossary.sha256}</code></dd>
           <dt>Memory hash (hiện tại)</dt>
-          <dd><code>{trace.memory.sha256}</code></dd>
+          <dd><code className={styles.rawId}>{trace.memory.sha256}</code></dd>
           {trace.memory.entries.map((entry) => (
             <span key={entry.id}>
               <dt>Memory {entry.entityKey}</dt>
-              <dd><code>{entry.id}</code></dd>
+              <dd><code className={styles.rawId}>{entry.id}</code></dd>
             </span>
           ))}
           {trace.characters.map((character) => (
             <span key={character.characterId}>
               <dt>Character {character.canonicalName}</dt>
-              <dd><code>{character.revisionId}</code> (rev {character.revisionNo})</dd>
+              <dd><code className={styles.rawId}>{character.revisionId}</code> (rev {character.revisionNo})</dd>
             </span>
           ))}
         </dl>
@@ -250,16 +252,3 @@ function isTrace(value: unknown): value is ContextTrace {
     candidate.stale !== null
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {  shell: { display: 'grid', gap: 10, padding: 12, border: '1px solid #d9e1ea', borderRadius: 8, background: '#ffffff' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  title: { margin: 0, fontSize: 15 },
-  note: { margin: 0, fontSize: 13, color: '#475467' },
-  ok: { margin: 0, fontSize: 13, color: '#166534', fontWeight: 700 },
-  warning: { margin: 0, fontSize: 13, color: '#92400e', fontWeight: 700 },
-  block: { display: 'grid', gap: 4, padding: 8, border: '1px solid #e2e8f0', borderRadius: 6, background: '#f8fafc' },
-  blockTitle: { fontSize: 13 },
-  list: { margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5, color: '#344054' },
-  secondary: { padding: '6px 10px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff', fontWeight: 700 },
-  details: { display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: '6px 12px', fontSize: 12, margin: 0 },
-};

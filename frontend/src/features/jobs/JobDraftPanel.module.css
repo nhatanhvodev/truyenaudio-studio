@@ -1,0 +1,65 @@
+/*
+ * Job draft panel (JobDraftPanel.tsx) — read-only view of a streamed draft.
+ * The textarea is readOnly on purpose: a draft is never edited or approved
+ * here, it is only watched.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.header { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+.title { margin: 0; font-size: var(--fs-lg); }
+
+.badge {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.meta { margin: 0; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.warning { margin: 0; color: var(--warning); font-weight: 600; font-size: var(--fs-md); }
+
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  resize: vertical;
+  text-transform: none;
+}
+.textarea:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); min-width: 0; }
+
+.secondaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover { background: var(--surface); }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.note { font-size: var(--fs-md); color: var(--text-muted); font-weight: 600; }

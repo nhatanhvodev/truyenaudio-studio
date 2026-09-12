@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
 
+import styles from './BilingualEditor.module.css';
+
 import ContextInspector from './ContextInspector';
 import RepairDiff from './RepairDiff';
 
@@ -282,21 +284,21 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
   }
 
   return (
-    <section aria-label="Editor song ngữ" style={styles.shell}>
-      <header style={styles.header}>
+    <section aria-label="Editor song ngữ" className={styles.shell}>
+      <header className={styles.header}>
         <div>
-          <h2 style={styles.title}>Dịch &amp; hiệu đính</h2>
-          <p style={styles.meta}>
+          <h2 className={styles.title}>Dịch &amp; hiệu đính</h2>
+          <p className={styles.meta}>
             Run <span data-testid="run-id">{payload?.run.id}</span> · {payload?.run.status}
           </p>
         </div>
-        <label style={styles.label}>
+        <label className={styles.label}>
           Lọc QA
           <select
             aria-label="Lọc QA"
             value={severityFilter}
             onChange={(event) => setSeverityFilter(event.target.value)}
-            style={styles.select}
+            className={styles.select}
           >
             <option value="ALL">ALL</option>
             <option value="CRITICAL">CRITICAL</option>
@@ -306,22 +308,22 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
         </label>
       </header>
 
-      {message ? <p role="status" style={styles.success}>{message}</p> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {message ? <p role="status" className={styles.success}>{message}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
 
-      <div style={styles.repairBar}>
+      <div className={styles.repairBar}>
         {selectedSegmentIds.length > 0 ? (
           <button
             type="button"
             data-testid="preview-repair"
             onClick={() => void previewRepair()}
             disabled={busy}
-            style={styles.secondary}
+            className={styles.secondaryButton}
           >
             Xem đề xuất sửa
           </button>
         ) : null}
-        <span style={styles.repairHint}>
+        <span className={styles.repairHint}>
           {selectedSegmentIds.length === 0
             ? 'Chọn ít nhất một đoạn để xem đề xuất sửa.'
             : `Đã chọn ${selectedSegmentIds.length} đoạn.`}
@@ -332,7 +334,7 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
             data-testid="apply-repair"
             onClick={() => void applyRepair()}
             disabled={applyingProposal}
-            style={styles.primary}
+            className={styles.primaryButton}
           >
             {applyingProposal ? 'Đang áp dụng…' : 'Áp dụng đề xuất'}
           </button>
@@ -372,26 +374,26 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
               <section
                 key={replacement.sourceSegmentId}
                 aria-label={`Đề xuất sửa đoạn ${replacement.sourceSegmentId}`}
-                style={styles.repairRow}
+                className={styles.repairRow}
               >
-                <div style={styles.repairActions}>
+                <div className={styles.repairActions}>
                   <strong>{replacement.sourceSegmentId}</strong>
                   {decision === 'accepted' ? (
-                    <span style={styles.repairAccepted}>Đã nhận — draft đã đổi</span>
+                    <span className={styles.repairAccepted}>Đã nhận — draft đã đổi</span>
                   ) : decision === 'rejected' ? (
-                    <span style={styles.repairRejected}>Đã bỏ qua</span>
+                    <span className={styles.repairRejected}>Đã bỏ qua</span>
                   ) : null}
                   <button
                     type="button"
                     onClick={() => acceptReplacement(replacement)}
-                    style={styles.primary}
+                    className={styles.primaryButton}
                   >
                     Chấp nhận
                   </button>
                   <button
                     type="button"
                     onClick={() => rejectReplacement(replacement)}
-                    style={styles.secondary}
+                    className={styles.secondaryButton}
                   >
                     Bỏ qua
                   </button>
@@ -401,9 +403,9 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
           })
         : null}
 
-      <div style={styles.layout}>
-        <div style={styles.segments}>
-          {(payload?.segments ?? []).map((segment) => {
+      <div className={styles.layout}>
+        <div className={styles.segments}>
+          {(payload?.segments ?? []).map((segment, index) => {
             const segmentIssues = issues.filter((issue) => issue.sourceSegmentId === segment.sourceSegmentId);
             const revealed = revealedSegmentId === segment.sourceSegmentId;
             const proposal = segmentIssues.find((issue) => issue.suggestion)?.suggestion ?? null;
@@ -415,10 +417,10 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
                 }}
                 data-testid={`row-${segment.sourceSegmentId}`}
                 data-revealed={revealed ? 'true' : 'false'}
-                style={{ ...styles.row, ...(revealed ? styles.rowRevealed : {}) }}
+                className={[styles.segment, revealed ? styles.revealed : ''].filter(Boolean).join(' ')}
               >
-                <div style={styles.sourceCell}>
-                  <label style={styles.pick}>
+                <div className={styles.segmentIndex}>
+                  <label className={styles.pick}>
                     <input
                       type="checkbox"
                       aria-label={`Chọn đoạn ${segment.sourceSegmentId}`}
@@ -426,17 +428,22 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
                       onChange={() => toggleSegment(segment.sourceSegmentId)}
                     />
                   </label>
-                  <span style={styles.cellLabel}>GỐC (chỉ đọc)</span>
-                  <p
-                    aria-readonly="true"
-                    data-testid={`source-${segment.sourceSegmentId}`}
-                    style={styles.sourceText}
-                  >
-                    {segment.sourceText}
-                  </p>
+                  <span className={styles.ordinal}>{index + 1}</span>
                 </div>
-                <div style={styles.targetCell}>
-                  <span style={styles.cellLabel}>BẢN DỊCH · {segment.sourceSegmentId}</span>
+                <div className={styles.segmentBody}>
+                  <div className={styles.cells}>
+                    <div className={styles.cell}>
+                      <span className={styles.cellLabel}>GỐC (chỉ đọc)</span>
+                      <p
+                        aria-readonly="true"
+                        data-testid={`source-${segment.sourceSegmentId}`}
+                        className={styles.source}
+                      >
+                        {segment.sourceText}
+                      </p>
+                    </div>
+                    <div className={styles.cell}>
+                      <span className={styles.cellLabel}>BẢN DỊCH · {segment.sourceSegmentId}</span>
                   <textarea
                     aria-label={`Bản dịch ${segment.sourceSegmentId}`}
                     value={drafts[segment.sourceSegmentId] ?? ''}
@@ -453,15 +460,15 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
                       }
                     }}
                     rows={3}
-                    style={styles.textarea}
+                    className={styles.target}
                   />
-                  <div style={styles.actions}>
+                  <div className={styles.actions}>
                     <button
                       type="button"
                       aria-label={`Lưu đoạn ${segment.sourceSegmentId}`}
                       onClick={() => void saveSegment(segment.sourceSegmentId)}
                       disabled={savingId === segment.sourceSegmentId}
-                      style={styles.primary}
+                      className={styles.primaryButton}
                     >
                       {savingId === segment.sourceSegmentId ? 'Đang lưu…' : 'Lưu (Ctrl+S)'}
                     </button>
@@ -471,38 +478,39 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
                         onClick={() =>
                           setDrafts((current) => ({ ...current, [segment.sourceSegmentId]: proposal }))
                         }
-                        style={styles.secondary}
+                        className={styles.secondaryButton}
                       >
                         Áp dụng đề xuất QA
                       </button>
                     ) : null}
                   </div>
-                  {proposal ? <p style={styles.proposal}>Đề xuất: {proposal}</p> : null}
+                      {proposal ? <p className={styles.proposal}>Đề xuất: {proposal}</p> : null}
+                    </div>
+                  </div>
                 </div>
               </article>
             );
           })}
         </div>
 
-        <aside aria-label="QA inspector" style={styles.inspector}>
-          <h3 style={styles.inspectorTitle}>QA</h3>
-          {filteredIssues.length === 0 ? <p style={styles.empty}>Không có vấn đề QA</p> : null}
+        <aside aria-label="QA inspector" className={styles.inspector}>
+          <h3 className={styles.inspectorTitle}>QA</h3>
+          {filteredIssues.length === 0 ? <p className={styles.empty}>Không có vấn đề QA</p> : null}
           {filteredIssues.map((issue) => (
             <button
               key={issue.id}
               type="button"
               aria-pressed={selectedIssueId === issue.id}
               onClick={() => selectIssue(issue)}
-              style={{
-                ...styles.issue,
-                ...(selectedIssueId === issue.id ? styles.issueSelected : {}),
-              }}
+              className={[styles.issue, selectedIssueId === issue.id ? styles.issueSelected : '']
+                .filter(Boolean)
+                .join(' ')}
             >
-              <span style={styles.issueTop}>
-                {issue.severity} · {issue.category}
+              <span className={styles.issueTop}>
+                <span className={[styles.severity, severityClass(issue.severity)].join(' ')}>{issue.severity}</span> · {issue.category}
               </span>
-              <span style={styles.issueText}>{issue.suggestion ?? issue.evidence ?? ''}</span>
-              <span style={styles.issueSegment}>Đoạn {issue.sourceSegmentId ?? '—'}</span>
+              <span className={styles.issueText}>{issue.suggestion ?? issue.evidence ?? ''}</span>
+              <span className={styles.issueSegment}>Đoạn {issue.sourceSegmentId ?? '—'}</span>
             </button>
           ))}
         </aside>
@@ -510,21 +518,21 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
 
       <ContextInspector chapterId={chapterId} />
 
-      <footer style={styles.footer}>
+      <footer className={styles.footer}>
         <button
           type="button"
           onClick={() => void approve(false)}
           disabled={busy || openCritical.length > 0}
-          style={{ ...styles.primary, opacity: openCritical.length > 0 ? 0.6 : 1 }}
+          className={styles.primaryButton}
         >
           Phê duyệt
         </button>
         {openCritical.length > 0 ? (
           <>
-            <span role="status" style={styles.warning}>
+            <span role="status" className={styles.warning}>
               Còn {openCritical.length} lỗi CRITICAL chưa xử lý — cần sửa hoặc bỏ qua có chủ đích.
             </span>
-            <button type="button" onClick={() => void approve(true)} disabled={busy} style={styles.danger}>
+            <button type="button" onClick={() => void approve(true)} disabled={busy} className={styles.dangerButton}>
               Bỏ qua cảnh báo &amp; phê duyệt
             </button>
           </>
@@ -534,44 +542,17 @@ export default function BilingualEditor({ chapterId, onApproved }: Props) {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  shell: { display: 'grid', gap: 12, padding: 16, border: '1px solid #d9e1ea', borderRadius: 8, background: '#ffffff' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  title: { margin: 0, fontSize: 20 },
-  meta: { margin: '4px 0 0', color: '#667085', fontSize: 13 },
-  label: { display: 'grid', gap: 6, fontWeight: 700, fontSize: 13 },
-  select: { padding: '8px 10px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff' },
-  layout: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 12, alignItems: 'start' },
-  segments: { display: 'grid', gap: 12 },
-  row: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, padding: 12, border: '1px solid #d9e1ea', borderRadius: 8, background: '#fbfcfe' },
-  rowRevealed: { borderColor: '#155eef', boxShadow: '0 0 0 2px #dbe6ff' },
-  sourceCell: { display: 'grid', gap: 6, alignContent: 'start' },
-  targetCell: { display: 'grid', gap: 8 },
-  cellLabel: { fontSize: 11, fontWeight: 800, color: '#667085', textTransform: 'uppercase' },
-  sourceText: { margin: 0, lineHeight: 1.6, color: '#344054', whiteSpace: 'pre-wrap' },
-  textarea: { width: '100%', boxSizing: 'border-box', padding: 10, border: '1px solid #c8d1dc', borderRadius: 6, font: 'inherit', lineHeight: 1.5, resize: 'vertical' },
-  actions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  primary: { padding: '8px 12px', border: 0, borderRadius: 6, background: '#155eef', color: '#ffffff', fontWeight: 700 },
-  secondary: { padding: '8px 12px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff', fontWeight: 700 },
-  danger: { padding: '8px 12px', border: 0, borderRadius: 6, background: '#b45309', color: '#ffffff', fontWeight: 700 },
-  proposal: { margin: 0, fontSize: 13, color: '#7a4b00' },
-  inspector: { display: 'grid', gap: 8, padding: 10, border: '1px solid #d9e1ea', borderRadius: 8, background: '#f8fafc' },
-  inspectorTitle: { margin: 0, fontSize: 14 },
-  empty: { margin: 0, color: '#667085', fontSize: 13 },
-  issue: { display: 'grid', gap: 4, textAlign: 'left', padding: 8, border: '1px solid #d9e1ea', borderRadius: 6, background: '#ffffff', cursor: 'pointer' },
-  issueSelected: { borderColor: '#155eef', background: '#eef4ff' },
-  issueTop: { fontSize: 11, fontWeight: 800, color: '#475467' },
-  issueText: { fontSize: 13, color: '#344054' },
-  issueSegment: { fontSize: 11, color: '#667085' },
-  footer: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  pick: { display: 'flex', alignItems: 'center', gap: 4 },
-  repairBar: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
-  repairHint: { color: '#667085', fontSize: 13 },
-  repairRow: { border: '1px solid #e3e8ef', borderRadius: 6, padding: '6px 10px', background: '#fffdf5' },
-  repairActions: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  repairAccepted: { color: '#166534', fontWeight: 700, fontSize: 13 },
-  repairRejected: { color: '#667085', fontSize: 13 },
-  success: { margin: 0, color: '#166534', fontWeight: 700 },
-  error: { margin: 0, color: '#9a3412', fontWeight: 700 },
-  warning: { color: '#92400e', fontWeight: 700, fontSize: 13 },
-};
+/**
+ * Severity is never colour-alone: the word itself is the signal (`.severity*`
+ * only tints it). CRITICAL blocks approval, MAJOR is a warning, everything
+ * else is advisory.
+ */
+function severityClass(severity: string): string {
+  if (severity === 'CRITICAL') {
+    return styles.severityCritical;
+  }
+  if (severity === 'MAJOR') {
+    return styles.severityMajor;
+  }
+  return styles.severityMinor;
+}

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
 
+import styles from './QualityPlanPanel.module.css';
+
 export type QualityMode = 'ECONOMY' | 'BALANCED' | 'QUALITY' | 'MAXIMUM';
 export type Stage = 'TRANSLATE' | 'REVIEW' | 'POLISH';
 
@@ -76,33 +78,33 @@ export function QualityPlanPanel({
   }
 
   return (
-    <section aria-labelledby="quality-plan-heading">
-      <h2 id="quality-plan-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section className={styles.panel} aria-labelledby="quality-plan-heading">
+      <h2 id="quality-plan-heading" className={styles.title}>
         Translation quality
       </h2>
-      <p style={{ margin: '0 0 8px', color: '#4b5563' }}>
+      <p className={styles.lede}>
         Balanced là mặc định. Quality/Maximum chỉ chạy khi bạn tự bật và lấy báo giá cho từng stage.
       </p>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-        <label>
+      <div className={styles.controls}>
+        <label className={styles.label}>
           Chế độ
-          <select value={mode} onChange={(event) => setMode(event.target.value as QualityMode)}>
+          <select className={styles.select} value={mode} onChange={(event) => setMode(event.target.value as QualityMode)}>
             <option value="ECONOMY">Economy</option>
             <option value="BALANCED">Balanced (mặc định)</option>
             <option value="QUALITY">Quality</option>
             <option value="MAXIMUM">Maximum</option>
           </select>
         </label>
-        <label>
+        <label className={styles.label}>
           Stage
-          <select value={stage} onChange={(event) => setStage(event.target.value as Stage)}>
+          <select className={styles.select} value={stage} onChange={(event) => setStage(event.target.value as Stage)}>
             <option value="TRANSLATE">Translate</option>
             <option value="REVIEW">Review</option>
             <option value="POLISH">Polish</option>
           </select>
         </label>
-        <label>
+        <label className={styles.optIn}>
           <input
             type="checkbox"
             checked={optIn}
@@ -114,38 +116,43 @@ export function QualityPlanPanel({
       </div>
 
       {optInMissing ? (
-        <p role="status">Cần bật opt-in trước khi lấy báo giá cho Quality/Maximum.</p>
+        <p role="status" className={styles.status}>Cần bật opt-in trước khi lấy báo giá cho Quality/Maximum.</p>
       ) : null}
       {missingConsent ? (
-        <p role="status">Cần có cloud consent đang hiệu lực cho profile này trước khi lấy báo giá.</p>
+        <p role="status" className={styles.status}>Cần có cloud consent đang hiệu lực cho profile này trước khi lấy báo giá.</p>
       ) : null}
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" style={{ color: '#92400e' }}>
+        <p role="status" className={styles.notice}>
           {notice}
         </p>
       ) : null}
 
-      <button type="button" disabled={!canQuote} onClick={() => void requestQuote()}>
+      <button
+        type="button"
+        className={styles.primaryButton}
+        disabled={!canQuote}
+        onClick={() => void requestQuote()}
+      >
         {busy ? 'Đang lấy báo giá…' : 'Lấy báo giá'}
       </button>
 
       {quote ? (
-        <dl aria-label="Báo giá hiện tại">
-          <dt>Stage</dt>
-          <dd>{quote.stage}</dd>
-          <dt>Tổng dự kiến (VND)</dt>
-          <dd>{quote.totalVnd.toLocaleString('vi-VN')}</dd>
-          <dt>Hết hạn</dt>
-          <dd>{new Date(quote.expiresAt).toLocaleString('vi-VN')}</dd>
+        <dl aria-label="Báo giá hiện tại" className={styles.quote}>
+          <dt className={styles.quoteTerm}>Stage</dt>
+          <dd className={styles.quoteValue}>{quote.stage}</dd>
+          <dt className={styles.quoteTerm}>Tổng dự kiến (VND)</dt>
+          <dd className={styles.quoteValue}>{quote.totalVnd.toLocaleString('vi-VN')}</dd>
+          <dt className={styles.quoteTerm}>Hết hạn</dt>
+          <dd className={styles.quoteValue}>{new Date(quote.expiresAt).toLocaleString('vi-VN')}</dd>
           {quote.warnings && quote.warnings.length > 0 ? (
             <>
-              <dt>Cảnh báo</dt>
-              <dd>{quote.warnings.join('; ')}</dd>
+              <dt className={styles.quoteTerm}>Cảnh báo</dt>
+              <dd className={styles.quoteValue}>{quote.warnings.join('; ')}</dd>
             </>
           ) : null}
         </dl>

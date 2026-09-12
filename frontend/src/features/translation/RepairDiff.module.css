@@ -1,0 +1,96 @@
+/*
+ * Selective repair diff (RepairDiff.tsx).
+ *
+ * The generator note sits ABOVE the accept button on purpose: accepting writes
+ * a new translation run, so the operator reads which engine produced the
+ * proposal first. Do not reorder the surface.
+ */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.meta { margin: var(--sp-1) 0 0; color: var(--text-subtle); font-family: var(--font-mono); font-size: var(--fs-sm); }
+.cost { margin: 0; font-weight: 600; }
+
+.generatorNote {
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--warning);
+  line-height: var(--lh-read);
+}
+
+.list { display: grid; gap: var(--sp-3); min-width: 0; }
+
+.item {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+
+.source {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-read);
+  line-height: var(--lh-read);
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+.diff { display: grid; gap: var(--sp-1); min-width: 0; }
+.line { margin: 0; line-height: var(--lh-read); font-family: var(--font-read); text-transform: none; overflow-wrap: anywhere; }
+.removed { color: var(--danger); text-decoration: line-through; }
+.added { color: var(--success); text-decoration: none; }
+.unchanged { margin: 0; color: var(--text-muted); font-family: var(--font-read); text-transform: none; overflow-wrap: anywhere; }
+
+.actions { display: flex; justify-content: flex-end; gap: var(--sp-3); flex-wrap: wrap; }
+
+.secondaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover { background: var(--surface); }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.primaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.primaryButton:hover { background: var(--primary-hover); }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }

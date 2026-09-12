@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 
 import DraftControls from './DraftControls';
 
+import styles from './TranslationEditor.module.css';
+
 type Run = {
   id: string;
   sha256: string;
@@ -108,21 +110,21 @@ export default function TranslationEditor({ chapterId }: Props) {
   }
 
   return (
-    <section style={styles.shell} aria-label="Translation editor">
-      <header style={styles.header}>
+    <section className={styles.shell} aria-label="Translation editor">
+      <header className={styles.header}>
         <div>
-          <h2 style={styles.title}>Translation Review</h2>
-          <p style={styles.meta}>
+          <h2 className={styles.title}>Translation Review</h2>
+          <p className={styles.meta}>
             Run <span>{data?.run.id}</span> · <span>{data?.run.status}</span>
           </p>
         </div>
-        <label style={styles.filterLabel}>
+        <label className={styles.filterLabel}>
           Loc loi
           <select
             aria-label="Loc loi"
             value={severityFilter}
             onChange={(event) => setSeverityFilter(event.target.value)}
-            style={styles.select}
+            className={styles.select}
           >
             <option value="ALL">ALL</option>
             <option value="CRITICAL">CRITICAL</option>
@@ -133,8 +135,8 @@ export default function TranslationEditor({ chapterId }: Props) {
         </label>
       </header>
 
-      {message ? <p role="status" style={styles.success}>{message}</p> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {message ? <p role="status" className={styles.success}>{message}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
 
       <DraftControls
         chapterId={chapterId}
@@ -145,11 +147,11 @@ export default function TranslationEditor({ chapterId }: Props) {
         }
       />
 
-      <div style={styles.layout}>
-        <div style={styles.segmentList}>
+      <div className={styles.layout}>
+        <div className={styles.segmentList}>
           {(data?.segments ?? []).map((segment) => (
-            <article key={segment.sourceSegmentId} style={styles.segment}>
-              <div style={styles.source}>{segment.sourceText}</div>
+            <article key={segment.sourceSegmentId} className={styles.segment}>
+              <div className={styles.source}>{segment.sourceText}</div>
               <textarea
                 aria-label={`Ban dich ${segment.sourceSegmentId}`}
                 value={drafts[segment.sourceSegmentId] ?? ''}
@@ -159,13 +161,13 @@ export default function TranslationEditor({ chapterId }: Props) {
                     [segment.sourceSegmentId]: event.target.value,
                   }))
                 }
-                style={styles.textarea}
+                className={styles.textarea}
               />
               <button
                 type="button"
                 onClick={() => void save(segment)}
                 disabled={savingSegmentId === segment.sourceSegmentId}
-                style={styles.button}
+                className={styles.button}
               >
                 Luu ban sua
               </button>
@@ -173,16 +175,16 @@ export default function TranslationEditor({ chapterId }: Props) {
           ))}
         </div>
 
-        <aside style={styles.issues} aria-label="QA issues">
-          {filteredIssues.length === 0 ? <p style={styles.empty}>Khong co loi</p> : null}
+        <aside className={styles.issues} aria-label="QA issues">
+          {filteredIssues.length === 0 ? <p className={styles.empty}>Khong co loi</p> : null}
           {filteredIssues.map((issue) => (
-            <article key={issue.id} style={styles.issue}>
-              <div style={styles.issueTop}>
+            <article key={issue.id} className={styles.issue}>
+              <div className={styles.issueTop}>
                 <span>{issue.severity}</span>
                 <span>{issue.category}</span>
               </div>
-              <p style={styles.issueText}>{issue.suggestion}</p>
-              {issue.evidence ? <p style={styles.evidence}>{issue.evidence}</p> : null}
+              <p className={styles.issueText}>{issue.suggestion}</p>
+              {issue.evidence ? <p className={styles.evidence}>{issue.evidence}</p> : null}
             </article>
           ))}
         </aside>
@@ -190,124 +192,3 @@ export default function TranslationEditor({ chapterId }: Props) {
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    boxSizing: 'border-box',
-    minHeight: '100vh',
-    padding: 24,
-    color: '#18212f',
-    background: '#f7f8fb',
-    fontFamily: 'Inter, Segoe UI, Arial, sans-serif',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 16,
-  },
-  title: {
-    margin: 0,
-    fontSize: 24,
-    letterSpacing: 0,
-  },
-  meta: {
-    margin: '6px 0 0',
-    color: '#586274',
-  },
-  filterLabel: {
-    display: 'grid',
-    gap: 6,
-    fontWeight: 700,
-  },
-  select: {
-    minWidth: 132,
-    padding: '8px 10px',
-    border: '1px solid #ccd4df',
-    borderRadius: 6,
-    background: '#ffffff',
-  },
-  success: {
-    color: '#166534',
-    fontWeight: 700,
-  },
-  error: {
-    color: '#9a3412',
-    fontWeight: 700,
-  },
-  layout: {
-    display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) 320px',
-    gap: 16,
-    alignItems: 'start',
-  },
-  segmentList: {
-    display: 'grid',
-    gap: 12,
-  },
-  segment: {
-    display: 'grid',
-    gap: 10,
-    padding: 14,
-    border: '1px solid #d9e1ea',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  source: {
-    whiteSpace: 'pre-wrap',
-    lineHeight: 1.6,
-    color: '#344054',
-  },
-  textarea: {
-    width: '100%',
-    minHeight: 144,
-    resize: 'vertical',
-    boxSizing: 'border-box',
-    padding: 12,
-    border: '1px solid #c8d1dc',
-    borderRadius: 6,
-    font: 'inherit',
-    lineHeight: 1.5,
-  },
-  button: {
-    justifySelf: 'start',
-    padding: '9px 14px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 800,
-  },
-  issues: {
-    display: 'grid',
-    gap: 10,
-  },
-  empty: {
-    margin: 0,
-    color: '#586274',
-  },
-  issue: {
-    padding: 12,
-    border: '1px solid #d9e1ea',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  issueTop: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: 8,
-    fontSize: 12,
-    fontWeight: 800,
-    color: '#475467',
-  },
-  issueText: {
-    margin: '8px 0 0',
-    lineHeight: 1.4,
-  },
-  evidence: {
-    margin: '8px 0 0',
-    color: '#7a4b00',
-    fontSize: 13,
-  },
-};

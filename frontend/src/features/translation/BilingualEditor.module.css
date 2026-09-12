@@ -1,0 +1,180 @@
+/*
+ * Bilingual editor (BilingualEditor.tsx) — the aligned source/target workspace
+ * plus its QA inspector rail.
+ *
+ * The first block is the locked segment-row design from the redesign brief;
+ * the values in it are fixed. The second block is the rest of the surface.
+ * Every colour comes from a token (ADR-0002).
+ */
+
+/* --- locked segment row ------------------------------------------------- */
+.segment { display: grid; grid-template-columns: 3rem minmax(0, 1fr); border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.segmentIndex { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); padding: var(--sp-2); border-right: 1px solid var(--border-subtle); text-align: right; }
+.segmentBody { padding: var(--sp-3); min-width: 0; }
+.source { font-family: var(--font-read); font-size: var(--fs-read); line-height: var(--lh-read); color: var(--text-muted); text-transform: none; }
+.target { font-family: var(--font-read); font-size: var(--fs-read); line-height: var(--lh-read); color: var(--text); background: transparent; border: 1px solid transparent; width: 100%; resize: vertical; text-transform: none; }
+.target:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); border-color: var(--border-control); }
+.revealed { box-shadow: inset 2px 0 0 0 var(--primary); }
+.severity { font-size: var(--fs-sm); display: inline-flex; gap: var(--sp-1); align-items: center; }
+.severityCritical { color: var(--danger); }
+.severityMajor { color: var(--warning); }
+.severityMinor { color: var(--text-subtle); }
+
+/* Geometric additions the locked block does not carry: a textarea with
+   `width: 100%` and a 1px border needs `box-sizing` and padding, or it
+   overflows its pane by 2px and the text sits flush against the edge. No
+   value from the block above is overridden. */
+.target { box-sizing: border-box; padding: var(--sp-3) 0; margin: 0; display: block; }
+
+/* --- editor surface ----------------------------------------------------- */
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.meta { margin: var(--sp-1) 0 0; color: var(--text-subtle); font-family: var(--font-mono); font-size: var(--fs-sm); }
+
+.label { display: grid; gap: var(--sp-1); font-weight: 600; font-size: var(--fs-sm); }
+
+.select {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+.select:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--sp-3);
+  align-items: start;
+  min-width: 0;
+}
+
+.segments { display: grid; min-width: 0; border-top: 1px solid var(--border-subtle); }
+
+.cells { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-3); min-width: 0; }
+.cell { display: grid; gap: var(--sp-1); align-content: start; min-width: 0; }
+.cellLabel { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.06em; color: var(--text-muted); text-transform: uppercase; }
+
+.pick { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-1); }
+.ordinal { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+.primaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.primaryButton:hover:not(:disabled) { background: var(--primary-hover); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.secondaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover:not(:disabled) { background: var(--surface); }
+.secondaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.dangerButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--danger);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dangerButton:hover:not(:disabled) { background: var(--danger-hover); }
+.dangerButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.dangerButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.proposal { margin: 0; font-size: var(--fs-sm); color: var(--warning); }
+
+.inspector {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.inspectorTitle { margin: 0; font-size: var(--fs-md); }
+.empty { margin: 0; color: var(--text-subtle); font-size: var(--fs-sm); }
+
+.issue {
+  display: grid;
+  gap: var(--sp-1);
+  text-align: left;
+  padding: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.issue:hover { border-color: var(--border-control); }
+.issue:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+.issueSelected { border-color: var(--primary); background: var(--surface-raised); }
+.issueTop { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); }
+.issueText { font-size: var(--fs-md); color: var(--text); overflow-wrap: anywhere; }
+.issueSegment { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+
+.footer { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+
+.repairBar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+.repairHint { color: var(--text-subtle); font-size: var(--fs-sm); }
+.repairRow {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.repairActions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
+.repairAccepted { color: var(--success); font-weight: 600; font-size: var(--fs-sm); }
+.repairRejected { color: var(--text-subtle); font-size: var(--fs-sm); }
+
+.success { margin: 0; color: var(--success); font-weight: 600; }
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+.warning { color: var(--warning); font-weight: 600; font-size: var(--fs-sm); }
+
+@media (max-width: 1023px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .cells { grid-template-columns: minmax(0, 1fr); }
+}

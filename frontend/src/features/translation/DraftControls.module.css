@@ -1,0 +1,79 @@
+/*
+ * Draft toolbar (DraftControls.tsx).
+ *
+ * The conflict block keeps the local text and shows the server diff; the two
+ * resolution buttons are the only way out of it. Nothing here is colour-alone:
+ * every state that tints also says what it is.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.revision { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); font-family: var(--font-mono); }
+
+.primaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.primaryButton:hover:not(:disabled) { background: var(--primary-hover); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.secondaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover { background: var(--surface); }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.success { margin: 0; color: var(--success); font-weight: 600; }
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+
+.conflict {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+
+.conflictTitle { margin: 0; font-weight: 600; color: var(--warning); }
+
+.diff {
+  margin: 0;
+  padding-left: var(--sp-5);
+  color: var(--text-muted);
+  font-size: var(--fs-md);
+  line-height: var(--lh-read);
+}
+
+.disabled { margin: 0; color: var(--text-subtle); font-size: var(--fs-md); }

@@ -1,0 +1,64 @@
+/*
+ * Context inspector (ContextInspector.tsx) — what the last run was allowed to
+ * use: glossary, approved story memory, active characters, staleness.
+ *
+ * The first block is the locked inspector design from the redesign brief; the
+ * values in it are fixed. Raw identifiers stay inside the details drawer
+ * (`.rawId`), never inline in the working view.
+ */
+
+/* --- locked inspector groups -------------------------------------------- */
+.group { border-bottom: 1px solid var(--border-subtle); padding: var(--sp-3) var(--sp-4); min-width: 0; }
+.groupTitle { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--sp-2); }
+.entry { font-size: var(--fs-md); color: var(--text); padding: var(--sp-1) 0; min-width: 0; overflow-wrap: anywhere; }
+.stale { color: var(--warning); font-size: var(--fs-sm); }
+.rawId { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+
+/* --- inspector surface -------------------------------------------------- */
+.shell {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); }
+
+.note { margin: 0; padding: var(--sp-2) var(--sp-4); font-size: var(--fs-md); color: var(--text-muted); overflow-wrap: anywhere; }
+
+.ok { margin: 0; padding: var(--sp-2) var(--sp-4); font-size: var(--fs-md); color: var(--success); font-weight: 600; }
+
+.list { margin: 0; padding-left: var(--sp-5); min-width: 0; }
+
+.secondaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover { background: var(--surface); }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-sm);
+}
