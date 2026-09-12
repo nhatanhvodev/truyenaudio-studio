@@ -145,12 +145,30 @@ async function fillGuardsAndQueue() {
   await screen.findByText(/Queued \d+ jobs/);
 }
 
+/**
+ * The stream the queue opens - waited for, never assumed.
+ *
+ * `fillGuardsAndQueue` drives the user actions that LEAD to the stream being
+ * constructed, but it returns as soon as the "Queued N jobs" text appears. Those
+ * two are not ordered: under parallel CPU load the text can be on screen before
+ * the stream exists, and `StubStream.instances[0]` then hands back `undefined`.
+ * That surfaces as `TypeError: Cannot read properties of undefined (reading
+ * 'emitJob')`, which points at the emit rather than at the missing wait.
+ *
+ * Every caller goes through here so one place owns the wait. Four tests used to
+ * call `fillGuardsAndQueue` directly and index the array themselves, which is
+ * exactly how they lost the wait that `enqueueAndGetStream` already had.
+ */
+async function queuedStream(): Promise<StubStream> {
+  await fillGuardsAndQueue();
+  await waitFor(() => expect(StubStream.instances).toHaveLength(1));
+  return StubStream.instances[0];
+}
+
 async function enqueueAndGetStream(props: { store: JobEventStore; batchJobIds?: string[] } = { store: makeStore() }) {
   mockFetch({ batchJobIds: props.batchJobIds });
   const view = render(<BatchQueue projectId="p1" store={props.store} />);
-  await fillGuardsAndQueue();
-  await waitFor(() => expect(StubStream.instances).toHaveLength(1));
-  return { view, stream: StubStream.instances[0] };
+  return { view, stream: await queuedStream() };
 }
 
 function postCalls(calls: Call[], suffix: string) {
@@ -225,8 +243,7 @@ describe('BatchQueue (U07 round 3 - theo dõi batch)', () => {
   it('retry POST đúng endpoint và "thử lại tất cả" bỏ qua job non-retryable', async () => {
     const calls = mockFetch({ batchJobIds: ['job-1', 'job-2', 'job-3'] });
     render(<BatchQueue projectId="p1" store={makeStore()} />);
-    await fillGuardsAndQueue();
-    const stream = StubStream.instances[0];
+    const stream = await queuedStream();
 
     act(() => {
       stream.emitJob(event(1, 'job-1', 'FAILED', 'HTTP_500'));
@@ -250,8 +267,7 @@ describe('BatchQueue (U07 round 3 - theo dõi batch)', () => {
   it('cancel gọi đúng endpoint, nhãn CANCEL_REQUESTED, ẩn nút hủy khi job kết thúc', async () => {
     const calls = mockFetch({ batchJobIds: ['job-1', 'job-2'] });
     render(<BatchQueue projectId="p1" store={makeStore()} />);
-    await fillGuardsAndQueue();
-    const stream = StubStream.instances[0];
+    const stream = await queuedStream();
 
     act(() => stream.emitJob(event(1, 'job-1', 'RUNNING')));
     fireEvent.click(await screen.findByRole('button', { name: 'Hủy' }));
@@ -276,8 +292,7 @@ describe('BatchQueue (U07 round 3 - theo dõi batch)', () => {
     const calls = mockFetch({ batchJobIds: ['job-1', 'job-2', 'job-3', 'job-4'] });
     const store = makeStore();
     const view = render(<BatchQueue projectId="p1" store={store} />);
-    await fillGuardsAndQueue();
-    const stream = StubStream.instances[0];
+    const stream = await queuedStream();
 
     act(() => {
       stream.emitJob(event(1, 'job-1', 'SUCCEEDED'));
@@ -361,8 +376,7 @@ describe('BatchQueue (giữ hành vi cũ)', () => {
   it('BILLING_UNKNOWN không bao giờ nhận nút thử lại', async () => {
     const calls = mockFetch({ batchJobIds: ['job-1', 'job-2'] });
     render(<BatchQueue projectId="p1" store={makeStore()} />);
-    await fillGuardsAndQueue();
-    const stream = StubStream.instances[0];
+    const stream = await queuedStream();
 
     act(() => {
       stream.emitJob(event(1, 'job-1', 'RUNNING'));
