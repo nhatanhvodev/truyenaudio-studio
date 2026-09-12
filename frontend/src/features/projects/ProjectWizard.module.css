@@ -1,0 +1,259 @@
+/*
+ * The project library the nav calls "Thư viện" (ProjectWizard.tsx, mounted at
+ * the `/` index route and at `projects/new`).
+ *
+ * The first block is the task brief's Step 1 block verbatim. Everything below
+ * it mirrors the inline `styles` object this file replaced: same layout intent,
+ * colour on tokens, radius zero, and a focus ring on every focusable control.
+ */
+
+/* --- Step 1 block: the library rows ------------------------------------- */
+.rows { border-top: 1px solid var(--border-control); }
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto; /* minmax(0,1fr): the 320px fix */
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: var(--density-row);
+  padding: var(--density-pad) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.row:hover { background: var(--surface); }
+.title { color: var(--text); font-size: var(--fs-md); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.search { display: flex; gap: var(--sp-2); align-items: flex-end; padding: var(--sp-4); min-width: 0; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); }
+.pageCount { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-muted); }
+
+/* --- Page shell (was the inline `panel` / `title` / `subtitle`) ---------- */
+.panel {
+  display: grid;
+  /* `minmax(0, 1fr)` keeps the single column from being floored by its
+     widest child's intrinsic width, so the wizard reflows on 320/390px
+     viewports instead of forcing a horizontal scrollbar (G-UX responsive). */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-5);
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--sp-5);
+  box-sizing: border-box;
+}
+.pageHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+.pageHeadMain { min-width: 0; }
+.pageTitle { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.subtitle { margin: var(--sp-2) 0 0; color: var(--text-muted); }
+.toggleButton { display: flex; align-items: center; gap: var(--sp-1); }
+
+/* --- The library list ---------------------------------------------------- */
+.list { display: grid; gap: var(--sp-4); min-width: 0; }
+.listHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.field { display: grid; gap: var(--sp-1); font-size: var(--fs-sm); font-weight: 600; min-width: 0; }
+.loadingNote { margin: 0; color: var(--text-muted); font-style: italic; }
+.emptyBox {
+  padding: var(--sp-5);
+  text-align: center;
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-control);
+  border-radius: var(--radius);
+}
+.emptyText { margin: 0 0 var(--sp-3); color: var(--text-muted); }
+
+/* One project. `.row` is the grid container, so the header block takes the
+   flexible first column and the chapter panel spans the full width. */
+.rowMain {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.rowTitle { min-width: 0; }
+.badges { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-1); }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+/* Chapter count and rights status; both are also spelled out in the label. */
+.badgeDone { color: var(--success); border-color: var(--success); }
+.badgeMuted { color: var(--text-muted); }
+.rowWide { grid-column: 1 / -1; min-width: 0; }
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+
+/* --- Chapter list inside an expanded project ---------------------------- */
+.expandButton {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.expandButton:hover { color: var(--primary-hover); }
+.chapters {
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  display: grid;
+  gap: var(--sp-1);
+  max-height: 17.5rem;
+  overflow-y: auto;
+}
+.chapterRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+.chapterTitle { font-weight: 600; min-width: 0; }
+.chapterActions { display: flex; gap: var(--sp-2); align-items: center; }
+.chapterState {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.chapterStateApproved { color: var(--success); border-color: var(--success); }
+.chapterStateMuted { color: var(--text-muted); }
+.chapterLink { color: var(--primary); text-decoration: none; font-weight: 600; font-size: var(--fs-sm); }
+
+/* The `Tải thêm dự án` control: the brief's `.pager` block plus the centring
+   the pre-change inline `justifySelf: 'center'` gave it. */
+.pagerButton { justify-self: center; }
+
+/* --- The create form ---------------------------------------------------- */
+.createPanel {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.sectionTitle { margin: 0; font-size: var(--fs-lg); color: var(--text); }
+.form {
+  display: grid;
+  /* Same reason as `panel`: an implicit `auto` column is floored by the
+     widest control's max-content width (the source/rights `<select>`s), so
+     pin the column to the available width instead. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.label { display: grid; gap: var(--sp-1); font-weight: 600; min-width: 0; }
+.input {
+  min-height: 2.5rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+.inputCompact { min-height: var(--density-row); font-size: var(--fs-sm); }
+.fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+.legend { font-weight: 600; }
+.checkboxLabel { display: flex; align-items: center; gap: var(--sp-2); font-weight: 600; }
+.error { margin: var(--sp-3) 0 0; color: var(--danger); font-weight: 600; }
+.result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--success);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.link { color: var(--primary); font-weight: 600; text-decoration: none; }
+
+/* --- Buttons ------------------------------------------------------------ */
+.primaryButton {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.primaryButton:hover { background: var(--primary-hover); }
+.secondaryButton {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.secondaryButton:hover { border-color: var(--primary); }
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Every focusable element, no exceptions. */
+.input:focus-visible,
+.expandButton:focus-visible,
+.link:focus-visible,
+.chapterLink:focus-visible,
+.primaryButton:focus-visible,
+.secondaryButton:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

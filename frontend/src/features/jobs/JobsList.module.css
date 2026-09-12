@@ -1,0 +1,92 @@
+/*
+ * Jobs list (JobsList.tsx). The job-row block is the task brief's Step 2 block
+ * verbatim; the rest mirrors the inline `styles` object this file replaced.
+ *
+ * Colour is never the only signal: every `.state*` class sits on a cell that
+ * already renders the Vietnamese status label (`STATUS_LABEL`), and the stream
+ * state is spelled out next to its label.
+ */
+
+/* --- Step 2 block: the job row ------------------------------------------ */
+.state { font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+.stateRunning { color: var(--text); }
+.stateFailed { color: var(--danger); }
+.stateDone { color: var(--success); }
+.stateCanceled { color: var(--text-subtle); }
+/* Not in the brief's block: the two statuses the list also renders. Both are
+   always paired with their Vietnamese label. */
+.stateQueued { color: var(--text-muted); }
+.stateBlocked { color: var(--warning); }
+.jobId { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.actions { display: flex; gap: var(--sp-2); }
+
+/* --- Shell -------------------------------------------------------------- */
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); flex-wrap: wrap; }
+.title { margin: 0; font-size: var(--fs-lg); }
+.streamState { font-size: var(--fs-sm); font-weight: 600; color: var(--text-muted); }
+.note { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
+
+/* --- Table -------------------------------------------------------------- */
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+.th {
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase; /* interface label only */
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-control);
+  padding: var(--sp-2) var(--sp-3);
+}
+.td {
+  padding: var(--sp-3) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle); /* decorative separator, exempt from 1.4.11 */
+  vertical-align: middle;
+  min-width: 0;
+}
+.jobLink { text-decoration: none; }
+.jobLink:hover { color: var(--text); }
+.progress { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.error { color: var(--danger); font-weight: 600; }
+
+/* --- Row controls ------------------------------------------------------- */
+.primary {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary:hover:not(:disabled) { background: var(--primary-hover); }
+.secondary {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.secondary:hover:not(:disabled) { border-color: var(--primary); }
+.primary:disabled,
+.secondary:disabled { cursor: not-allowed; opacity: 0.55; }
+
+.primary:focus-visible,
+.secondary:focus-visible,
+.jobLink:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

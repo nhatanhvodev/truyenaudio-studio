@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 
+import styles from './JobsList.module.css';
 import { retryableFailures, useJobEvents, type JobEvent, type JobEventStore } from './jobStore';
 
 const STATUS_ORDER = ['RUNNING', 'CANCEL_REQUESTED', 'QUEUED', 'FAILED', 'BILLING_UNKNOWN', 'SUCCEEDED', 'CANCELED'];
@@ -18,6 +19,20 @@ const STATE_LABEL: Record<string, string> = {
   offline: 'Ngoại tuyến',
   connecting: 'Đang kết nối',
   connected: 'Trực tuyến',
+};
+
+/**
+ * Status colour, never carried alone: every class below lands on a cell that
+ * already renders the Vietnamese `STATUS_LABEL` for the same status.
+ */
+const STATUS_CLASS: Record<string, string> = {
+  QUEUED: styles.stateQueued,
+  RUNNING: styles.stateRunning,
+  CANCEL_REQUESTED: styles.stateRunning,
+  CANCELED: styles.stateCanceled,
+  SUCCEEDED: styles.stateDone,
+  FAILED: styles.stateFailed,
+  BILLING_UNKNOWN: styles.stateBlocked,
 };
 
 /** Latest event per job: the list shows one row per job, not one per event. */
@@ -53,55 +68,55 @@ export default function JobsList({ onRetry, onCancel, store }: Props) {
   const retryable = new Set(retryableFailures(events).map((event) => event.jobId));
 
   return (
-    <section aria-label="Danh sách job" style={styles.shell}>
-      <header style={styles.header}>
-        <h2 style={styles.title}>Job</h2>
-        <span style={styles.state} aria-label="Trạng thái luồng">
+    <section aria-label="Danh sách job" className={styles.shell}>
+      <header className={styles.header}>
+        <h2 className={styles.title}>Job</h2>
+        <span className={styles.streamState} aria-label="Trạng thái luồng">
           {STATE_LABEL[state] ?? state}
         </span>
       </header>
 
       {truncated ? (
-        <p role="status" style={styles.note}>
+        <p role="status" className={styles.note}>
           Chỉ giữ 1.000 sự kiện gần nhất; job cũ hơn không còn trong danh sách.
         </p>
       ) : null}
 
-      {jobs.length === 0 ? <p style={styles.note}>Chưa có job nào.</p> : null}
+      {jobs.length === 0 ? <p className={styles.note}>Chưa có job nào.</p> : null}
 
       {jobs.length > 0 ? (
-        <table style={styles.table}>
+        <table className={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>Job</th>
-              <th style={styles.th}>Trạng thái</th>
-              <th style={styles.th}>Tiến độ</th>
-              <th style={styles.th}>Hành động</th>
+              <th className={styles.th}>Job</th>
+              <th className={styles.th}>Trạng thái</th>
+              <th className={styles.th}>Tiến độ</th>
+              <th className={styles.th}>Hành động</th>
             </tr>
           </thead>
           <tbody>
             {jobs.map((job) => (
               <tr key={job.jobId}>
-                <td style={styles.td}>
-                  <Link to={`/jobs/${job.jobId}/draft`} style={styles.link}>
+                <td className={styles.td}>
+                  <Link to={`/jobs/${job.jobId}/draft`} className={`${styles.jobId} ${styles.jobLink}`}>
                     {job.jobId}
                   </Link>
                 </td>
-                <td style={styles.td}>
+                <td className={`${styles.td} ${styles.state} ${STATUS_CLASS[job.status] ?? styles.stateQueued}`}>
                   {STATUS_LABEL[job.status] ?? job.status}
-                  {job.errorCode ? <span style={styles.error}> · {job.errorCode}</span> : null}
+                  {job.errorCode ? <span className={styles.error}> · {job.errorCode}</span> : null}
                 </td>
-                <td style={styles.td}>
+                <td className={`${styles.td} ${styles.progress}`}>
                   {job.total > 0 ? `${job.current}/${job.total}` : '—'}
                 </td>
-                <td style={styles.td}>
+                <td className={`${styles.td} ${styles.actions}`}>
                   {job.status === 'RUNNING' || job.status === 'QUEUED' ? (
-                    <button type="button" onClick={() => void onCancel?.(job)} style={styles.secondary}>
+                    <button type="button" onClick={() => void onCancel?.(job)} className={styles.secondary}>
                       Hủy job
                     </button>
                   ) : null}
                   {retryable.has(job.jobId) ? (
-                    <button type="button" onClick={() => void onRetry?.(job)} style={styles.primary}>
+                    <button type="button" onClick={() => void onRetry?.(job)} className={styles.primary}>
                       Thử lại
                     </button>
                   ) : null}
@@ -114,18 +129,3 @@ export default function JobsList({ onRetry, onCancel, store }: Props) {
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: { display: 'grid', gap: 10, padding: 16, border: '1px solid #d9e1ea', borderRadius: 8, background: '#ffffff' },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  title: { margin: 0, fontSize: 18 },
-  state: { fontSize: 13, fontWeight: 700, color: '#475467' },
-  note: { margin: 0, fontSize: 13, color: '#667085' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
-  th: { textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid #e2e8f0', color: '#475467' },
-  td: { padding: '6px 8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'middle' },
-  link: { color: '#155eef', fontWeight: 700, textDecoration: 'none' },
-  error: { color: '#9a3412', fontWeight: 700 },
-  primary: { padding: '6px 10px', border: 0, borderRadius: 6, background: '#155eef', color: '#ffffff', fontWeight: 700 },
-  secondary: { padding: '6px 10px', marginRight: 6, border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff', fontWeight: 700 },
-};

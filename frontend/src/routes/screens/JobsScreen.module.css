@@ -1,0 +1,17 @@
+/*
+ * Jobs screen shell (JobsScreen.tsx) — the panel the jobs list and the overlay
+ * are mounted in. Mirrors the inline `styles` object this file replaced; the
+ * list and overlay keep their own modules.
+ */
+.panel {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 57.5rem;
+  margin: 0 auto;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }

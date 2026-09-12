@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiJson } from '../../shared/api';
 import { retryableFailures, useJobEvents, type JobEvent, type JobEventStore } from '../jobs/jobStore';
 
+import styles from './BatchQueue.module.css';
+
 type ChapterSummary = {
   id: string;
   ordinal: number;
@@ -69,6 +71,20 @@ const STATE_LABEL: Record<string, string> = {
   offline: 'Ngoại tuyến',
   connecting: 'Đang kết nối',
   connected: 'Trực tuyến',
+};
+
+/**
+ * Status colour, never carried alone: every class below lands on a cell that
+ * already renders the Vietnamese `STATUS_LABEL` for the same status.
+ */
+const STATUS_CLASS: Record<string, string> = {
+  QUEUED: styles.stateQueued,
+  RUNNING: styles.stateRunning,
+  CANCEL_REQUESTED: styles.stateRunning,
+  CANCELED: styles.stateCanceled,
+  SUCCEEDED: styles.stateDone,
+  FAILED: styles.stateFailed,
+  BILLING_UNKNOWN: styles.stateBlocked,
 };
 
 /** Chapter states the server accepts for the `status` filter (uppercase enum values). */
@@ -319,61 +335,61 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
   }
 
   return (
-    <section style={styles.shell} aria-label="Batch queue">
-      <header style={styles.header}>
+    <section className={styles.shell} aria-label="Batch queue">
+      <header className={styles.header}>
         <div>
-          <h1 style={styles.title}>Batch queue</h1>
-          <p style={styles.meta}>{selected.size}/{maxSelection} selected</p>
+          <h1 className={styles.title}>Batch queue</h1>
+          <p className={styles.meta}>{selected.size}/{maxSelection} selected</p>
         </div>
         <button
           type="button"
           onClick={() => void queueTranslation()}
           disabled={busy || selected.size === 0}
-          style={styles.primaryButton}
+          className={styles.primaryButton}
         >
           Queue translate
         </button>
       </header>
 
-      <section style={styles.guardBox} aria-label="Cloud batch authorization">
-        <label style={styles.label}>
+      <section className={styles.guardBox} aria-label="Cloud batch authorization">
+        <label className={styles.label}>
           Provider profile ID
-          <input value={providerProfileId} onChange={(event) => setProviderProfileId(event.target.value)} style={styles.input} />
+          <input value={providerProfileId} onChange={(event) => setProviderProfileId(event.target.value)} className={styles.input} />
         </label>
-        <label style={styles.label}>
+        <label className={styles.label}>
           Cloud consent ID
-          <input value={cloudConsentId} onChange={(event) => setCloudConsentId(event.target.value)} style={styles.input} />
+          <input value={cloudConsentId} onChange={(event) => setCloudConsentId(event.target.value)} className={styles.input} />
         </label>
-        <label style={styles.label}>
+        <label className={styles.label}>
           Batch operation ID
-          <input value={quoteId} onChange={(event) => setQuoteId(event.target.value)} style={styles.input} />
+          <input value={quoteId} onChange={(event) => setQuoteId(event.target.value)} className={styles.input} />
         </label>
-        <label style={styles.label}>
+        <label className={styles.label}>
           Budget authorization ID
-          <input value={budgetAuthorizationId} onChange={(event) => setBudgetAuthorizationId(event.target.value)} style={styles.input} />
+          <input value={budgetAuthorizationId} onChange={(event) => setBudgetAuthorizationId(event.target.value)} className={styles.input} />
         </label>
-        <label style={styles.label}>
+        <label className={styles.label}>
           Estimated input tokens
-          <input value={estimatedUnits} onChange={(event) => setEstimatedUnits(event.target.value)} inputMode="numeric" style={styles.input} />
+          <input value={estimatedUnits} onChange={(event) => setEstimatedUnits(event.target.value)} inputMode="numeric" className={styles.input} />
         </label>
       </section>
 
-      <section style={styles.filterBox} aria-label="Bộ lọc chương">
-        <label style={styles.label}>
+      <section className={styles.filterBox} aria-label="Bộ lọc chương">
+        <label className={styles.label}>
           Tìm chương (lọc ở server)
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Tên hoặc tiêu đề chương"
-            style={styles.input}
+            className={styles.input}
           />
         </label>
-        <label style={styles.label}>
+        <label className={styles.label}>
           Trạng thái
           <select
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
-            style={styles.input}
+            className={styles.input}
           >
             <option value="">Tất cả</option>
             {CHAPTER_STATES.map((state) => (
@@ -385,81 +401,81 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
         </label>
       </section>
 
-      <p style={styles.meta} role="status">
+      <p className={styles.meta} role="status">
         {filterQuery ? 'Đang lọc ở server' : 'Không lọc'} · {items.length} chương đã tải
       </p>
 
-      <div style={styles.list}>
+      <div className={styles.list}>
         {items.map((chapter) => (
-          <label key={chapter.id} style={styles.row}>
+          <label key={chapter.id} className={styles.row}>
             <input
               type="checkbox"
               checked={selected.has(chapter.id)}
               onChange={() => toggle(chapter.id)}
-              style={styles.checkbox}
+              className={styles.checkbox}
             />
-            <span style={styles.ordinal}>{chapter.ordinal}</span>
-            <span style={styles.name}>{chapter.sourceTitle ?? chapter.translatedTitle ?? 'Untitled chapter'}</span>
-            <span style={styles.state}>{chapter.state}</span>
-            <span style={styles.progress}>{chapter.progress.current}/{chapter.progress.total}</span>
-            <span style={styles.hash}>{chapter.hashes.sourceSha256?.slice(0, 10) ?? '-'}</span>
+            <span className={styles.ordinal}>{chapter.ordinal}</span>
+            <span className={styles.name}>{chapter.sourceTitle ?? chapter.translatedTitle ?? 'Untitled chapter'}</span>
+            <span className={styles.chapterState}>{chapter.state}</span>
+            <span className={styles.count}>{chapter.progress.current}/{chapter.progress.total}</span>
+            <span className={styles.hash}>{chapter.hashes.sourceSha256?.slice(0, 10) ?? '-'}</span>
           </label>
         ))}
       </div>
 
       {nextCursor ? (
-        <button type="button" onClick={() => void loadMore()} disabled={loading} style={styles.secondaryButton}>
+        <button type="button" onClick={() => void loadMore()} disabled={loading} className={styles.secondaryButton}>
           Load more
         </button>
       ) : null}
-      {batch ? <p role="status" style={styles.success}>Queued {batch.total} jobs from {batch.batchId.slice(0, 12)}</p> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
-      {loading && items.length === 0 ? <p style={styles.meta}>Loading</p> : null}
+      {batch ? <p role="status" className={styles.success}>Queued {batch.total} jobs from {batch.batchId.slice(0, 12)}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
+      {loading && items.length === 0 ? <p className={styles.meta}>Loading</p> : null}
 
       {batch ? (
-        <section aria-label="Tiến độ batch" style={styles.trackBox}>
-          <header style={styles.trackHeader}>
-            <h2 style={styles.trackTitle}>Tiến độ batch</h2>
-            <span aria-label="Trạng thái luồng batch">{STATE_LABEL[state] ?? state}</span>
+        <section aria-label="Tiến độ batch" className={styles.trackBox}>
+          <header className={styles.trackHeader}>
+            <h2 className={styles.trackTitle}>Tiến độ batch</h2>
+            <span className={styles.streamState} aria-label="Trạng thái luồng batch">{STATE_LABEL[state] ?? state}</span>
           </header>
           {truncated ? (
-            <p role="status" style={styles.trackNote}>Chỉ giữ 1.000 sự kiện gần nhất; job cũ hơn không còn trong danh sách.</p>
+            <p role="status" className={styles.trackNote}>Chỉ giữ 1.000 sự kiện gần nhất; job cũ hơn không còn trong danh sách.</p>
           ) : null}
           {pendingCount > 0 && !finished ? (
-            <p role="status" style={styles.trackNote}>Chờ sự kiện cho {pendingCount} job…</p>
+            <p role="status" className={styles.trackNote}>Chờ sự kiện cho {pendingCount} job…</p>
           ) : null}
 
-          <table style={styles.trackTable}>
+          <table className={styles.trackTable}>
             <thead>
               <tr>
-                <th style={styles.trackTh}>Job</th>
-                <th style={styles.trackTh}>Trạng thái</th>
-                <th style={styles.trackTh}>Tiến độ</th>
-                <th style={styles.trackTh}>Hành động</th>
+                <th className={styles.trackTh}>Job</th>
+                <th className={styles.trackTh}>Trạng thái</th>
+                <th className={styles.trackTh}>Tiến độ</th>
+                <th className={styles.trackTh}>Hành động</th>
               </tr>
             </thead>
             <tbody>
               {tracked.map(({ jobId, event }) => (
                 <tr key={jobId}>
-                  <td style={styles.trackTd} title={jobId}>{jobId.slice(0, 12)}</td>
-                  <td style={styles.trackTd}>
+                  <td className={`${styles.trackTd} ${styles.jobId}`} title={jobId}>{jobId.slice(0, 12)}</td>
+                  <td className={`${styles.trackTd} ${styles.state} ${event ? (STATUS_CLASS[event.status] ?? styles.stateQueued) : ''}`}>
                     {event ? STATUS_LABEL[event.status] ?? event.status : 'Chưa có sự kiện'}
-                    {event?.errorCode ? <span style={styles.trackError}> · {event.errorCode}</span> : null}
+                    {event?.errorCode ? <span className={styles.trackError}> · {event.errorCode}</span> : null}
                   </td>
-                  <td style={styles.trackTd}>{event && event.total > 0 ? `${event.current}/${event.total}` : '—'}</td>
-                  <td style={styles.trackTd}>
+                  <td className={`${styles.trackTd} ${styles.count}`}>{event && event.total > 0 ? `${event.current}/${event.total}` : '—'}</td>
+                  <td className={`${styles.trackTd} ${styles.actions}`}>
                     {event && (event.status === 'QUEUED' || event.status === 'RUNNING') ? (
-                      <button type="button" onClick={() => handleCancel(event)} style={styles.secondaryButton}>
+                      <button type="button" onClick={() => handleCancel(event)} className={styles.secondaryButton}>
                         Hủy
                       </button>
                     ) : null}
                     {event && retryable.has(jobId) ? (
-                      <button type="button" onClick={() => handleRetry(event)} style={styles.retryButton}>
+                      <button type="button" onClick={() => handleRetry(event)} className={styles.primaryButton}>
                         Thử lại
                       </button>
                     ) : null}
                     {event?.status === 'FAILED' && !retryable.has(jobId) ? (
-                      <span style={styles.trackNote}>không thể tự thử lại — hãy mở nháp để xử lý thủ công</span>
+                      <span className={styles.trackNote}>không thể tự thử lại — hãy mở nháp để xử lý thủ công</span>
                     ) : null}
                   </td>
                 </tr>
@@ -468,19 +484,19 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
           </table>
 
           {failedRows.length > 0 && batch ? (
-            <div role="alert" style={styles.alert}>
-              <p style={styles.alertTitle}>{failedRows.length}/{batch.jobIds.length} job thất bại</p>
-              <ul style={styles.alertList}>
+            <div role="alert" className={styles.alert}>
+              <p className={styles.alertTitle}>{failedRows.length}/{batch.jobIds.length} job thất bại</p>
+              <ul className={styles.alertList}>
                 {failedRows.map(({ jobId, event }) => (
                   <li key={jobId}>
                     <span title={jobId}>{jobId.slice(0, 12)}</span>
-                    {event?.errorCode ? <span style={styles.trackError}> · {event.errorCode}</span> : null}
-                    {!retryable.has(jobId) ? <span style={styles.trackNote}> — không thể tự thử lại, hãy mở nháp để xử lý thủ công</span> : null}
+                    {event?.errorCode ? <span className={styles.trackError}> · {event.errorCode}</span> : null}
+                    {!retryable.has(jobId) ? <span className={styles.trackNote}> — không thể tự thử lại, hãy mở nháp để xử lý thủ công</span> : null}
                   </li>
                 ))}
               </ul>
               {retryableFailedRows.length > 0 ? (
-                <button type="button" onClick={retryAllRetryable} style={styles.retryButton}>
+                <button type="button" onClick={retryAllRetryable} className={styles.primaryButton}>
                   Thử lại tất cả lỗi retryable
                 </button>
               ) : null}
@@ -488,11 +504,11 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
           ) : null}
 
           {finished ? (
-            <section aria-label="Kết quả batch" style={styles.summaryBox}>
-              <p style={styles.summaryLine}>
+            <section aria-label="Kết quả batch" className={styles.summaryBox}>
+              <p className={styles.summaryLine}>
                 Hoàn tất: {counts.succeeded}/{batch.jobIds.length} thành công · {counts.failed} thất bại · {counts.canceled} đã hủy · {counts.blocked} chưa rõ phí
               </p>
-              <button type="button" onClick={clearTracking} style={styles.secondaryButton}>
+              <button type="button" onClick={clearTracking} className={styles.secondaryButton}>
                 Dọn trạng thái
               </button>
             </section>
@@ -502,216 +518,3 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    display: 'grid',
-    gap: 16,
-    maxWidth: 920,
-    margin: '0 auto',
-    padding: 20,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 16,
-  },
-  title: {
-    margin: 0,
-    fontSize: 26,
-    letterSpacing: 0,
-  },
-  meta: {
-    margin: '4px 0 0',
-    color: '#52606d',
-    fontWeight: 700,
-  },
-  list: {
-    display: 'grid',
-    maxHeight: 520,
-    overflow: 'auto',
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-  },
-  filterBox: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: 12,
-    padding: 12,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  guardBox: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, minmax(180px, 1fr))',
-    gap: 12,
-    padding: 12,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#f8fafc',
-  },
-  label: {
-    display: 'grid',
-    gap: 6,
-    color: '#344054',
-    fontWeight: 800,
-  },
-  input: {
-    width: '100%',
-    minHeight: 38,
-    boxSizing: 'border-box',
-    padding: '8px 10px',
-    border: '1px solid #c9d3df',
-    borderRadius: 6,
-    font: 'inherit',
-  },
-  row: {
-    display: 'grid',
-    gridTemplateColumns: '32px 56px minmax(160px, 1fr) 150px 72px 96px',
-    gap: 10,
-    alignItems: 'center',
-    minHeight: 48,
-    padding: '8px 10px',
-    borderBottom: '1px solid #eef2f6',
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-  },
-  ordinal: {
-    fontWeight: 900,
-  },
-  name: {
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  state: {
-    color: '#344054',
-    fontWeight: 800,
-  },
-  progress: {
-    color: '#475467',
-    fontVariantNumeric: 'tabular-nums',
-  },
-  hash: {
-    color: '#667085',
-    fontFamily: 'Consolas, monospace',
-    fontSize: 12,
-  },
-  primaryButton: {
-    padding: '10px 14px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 900,
-  },
-  secondaryButton: {
-    padding: '9px 12px',
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    background: '#ffffff',
-    color: '#17324d',
-    fontWeight: 900,
-  },
-  retryButton: {
-    padding: '9px 12px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 900,
-  },
-  success: {
-    margin: 0,
-    color: '#166534',
-    fontWeight: 900,
-  },
-  error: {
-    margin: 0,
-    color: '#9a3412',
-    fontWeight: 900,
-  },
-  trackBox: {
-    display: 'grid',
-    gap: 10,
-    padding: 12,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#fbfdff',
-  },
-  trackHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  trackTitle: {
-    margin: 0,
-    fontSize: 18,
-  },
-  trackNote: {
-    margin: 0,
-    fontSize: 13,
-    color: '#667085',
-  },
-  trackTable: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    fontSize: 13,
-  },
-  trackTh: {
-    textAlign: 'left',
-    padding: '6px 8px',
-    borderBottom: '1px solid #e2e8f0',
-    color: '#475467',
-  },
-  trackTd: {
-    padding: '6px 8px',
-    borderBottom: '1px solid #f1f5f9',
-    verticalAlign: 'middle',
-  },
-  trackError: {
-    color: '#9a3412',
-    fontWeight: 700,
-  },
-  alert: {
-    display: 'grid',
-    gap: 8,
-    padding: 12,
-    border: '1px solid #f0c9a8',
-    borderRadius: 8,
-    background: '#fff7ed',
-  },
-  alertTitle: {
-    margin: 0,
-    color: '#9a3412',
-    fontWeight: 900,
-  },
-  alertList: {
-    margin: 0,
-    paddingLeft: 18,
-    color: '#17324d',
-  },
-  summaryBox: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    padding: 12,
-    border: '1px solid #cfe3d2',
-    borderRadius: 8,
-    background: '#f2fbf4',
-  },
-  summaryLine: {
-    margin: 0,
-    color: '#166534',
-    fontWeight: 900,
-  },
-};
