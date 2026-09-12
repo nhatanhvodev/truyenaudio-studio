@@ -1785,7 +1785,13 @@ test('the in-app reduced-motion preference stops transitions on its own', async 
         // offender even though the reduce-motion rule neutralised all of it.
         durations: window.getComputedStyle(el).transitionDuration.split(',').map((part) => part.trim()),
       }))
-      .filter((entry) => entry.durations.some((d) => d !== '0s' && d !== '0.01ms'))
+      // getComputedStyle normalises transition-duration to seconds, so the
+      // reduce-motion rule's 0.01ms arrives here as '1e-05s' (0.00001s). Compare
+      // numerically: an allow-list of literal strings has to guess the spelling and
+      // gets it wrong - an earlier draft compared against '0.01ms' and flagged every
+      // element on the page. Any duration at or below the neutralised value passes;
+      // '0s' covers elements that never transitioned at all.
+      .filter((entry) => entry.durations.some((d) => Number.parseFloat(d) > 0.00001))
       .map((entry) => `${entry.name} [${entry.durations.join(', ')}]`),
   );
   expect(offenders, `still transitioning: ${offenders.slice(0, 5).join(' | ')}`).toEqual([]);
@@ -1812,9 +1818,9 @@ Verified against the component, so do not re-derive: `Theme` is a `<select>` ove
 `THEMES = ['light','dark','system']`, `Cỡ chữ` is a `<select>` over
 `FONT_SCALES = ['small','medium','large']`, and `Giảm chuyển động` is a real
 `<input type="checkbox">` (`uiPreferences.ts:21-23`). The CSS this asserts against is `base.css:70-77` —
-`:root[data-reduce-motion='true'] *` sets `transition-duration: 0.01ms !important`, which is why
-`0.01ms` counts as neutralised above and `0s` covers elements that never transitioned. Do not rename
-any label to make the test pass.
+`:root[data-reduce-motion='true'] *` sets `transition-duration: 0.01ms !important`, which computes to
+`1e-05s`, which is why the check above parses the value and accepts anything at or below `0.00001`
+rather than matching literal spellings. Do not rename any label to make the test pass.
 
 If the reload assertion fails while the first one passes, that is a real finding: it means `index.html`'s
 boot script is not writing the attribute, so the preference is lost on every page load until React mounts.
@@ -2235,8 +2241,17 @@ git commit -m "feat(ui): restyle global nav, project nav and workspace tabs"
 ## Task 18: Library and Jobs — the dense console surfaces
 
 **Files:**
-- Create: `frontend/src/routes/screens/LibraryScreen.module.css` (the library list lives in `Shell` or a screen; put the module beside whichever file renders it — confirm with `grep -rn "Tải thêm" frontend/src`)
-- Modify: the library list component, `JobsScreen.tsx`, `JobProgress`, `JobsList`, `BatchQueue`
+- Create: `frontend/src/features/projects/ProjectWizard.module.css`
+
+**There is no `LibraryScreen`.** The project library the nav calls `Thư viện` (`GlobalNav.tsx:11`) is
+rendered by **`frontend/src/features/projects/ProjectWizard.tsx`**, mounted at the `/` index route
+(`router.tsx:106`) and again at `projects/new`. It owns the project list, the `Tải thêm dự án` pager
+(`ProjectWizard.tsx:406`) and the `Tạo dự án mới` panel (:423). An earlier draft sent the implementer
+looking for a component that does not exist, disambiguated by a `Tải thêm` grep that returns two
+unrelated hits (`ProjectWizard.tsx:406`, `ModelCatalog.tsx:190`). Do not create a `LibraryScreen`.
+- Modify: `frontend/src/features/projects/ProjectWizard.tsx`, `frontend/src/routes/screens/JobsScreen.tsx`,
+  `frontend/src/features/jobs/JobProgress.tsx`, `frontend/src/features/jobs/JobsList.tsx`,
+  `frontend/src/features/batch/BatchQueue.tsx`
 - Test: `frontend/src/App.test.tsx`, `frontend/e2e/batch-recovery.spec.ts`
 
 **Interfaces:**
@@ -2299,7 +2314,9 @@ Expected: PASS, including the 320/390 reflow cases.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/routes/screens/ frontend/src/features/workspace/
+# The Modify list spans four directories; stage all of them or the job and
+# batch changes are silently left out of the commit.
+git add frontend/src/features/projects/ frontend/src/features/jobs/ frontend/src/features/batch/ frontend/src/routes/screens/
 git commit -m "feat(ui): restyle the library list and job rows as dense console surfaces"
 ```
 
@@ -2350,7 +2367,8 @@ Expected: PASS, including the “3 files ⇒ 2 chapters” assertion.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/routes/screens/ frontend/src/features/import/ frontend/src/features/jobs/
+# BatchQueue.tsx lives in features/batch/, not features/jobs/ - stage it too.
+git add frontend/src/routes/screens/ frontend/src/features/import/ frontend/src/features/jobs/ frontend/src/features/batch/
 git commit -m "feat(ui): restyle import review and the batch queue"
 ```
 
@@ -2428,12 +2446,15 @@ Raw diagnostic IDs stay inside the detail drawer only — the screen header show
 - [ ] **Step 4: Apply, preserving every guard**
 
 Do not touch:
-- `ImmE_COMPOSITION_ACTIVE` blocking save during composition. This is the CJK input path — get it wrong and typing Chinese breaks.
+- `IME_COMPOSITION_ACTIVE` (`BilingualEditor.tsx:71,129`; asserted in `BilingualEditor.test.tsx:96`) blocking save during composition.
 - `Ctrl/Cmd+S` saving the active segment with `expectedRunHash`.
 - `CRITICAL` issues blocking approval, with the deliberate `force: true` bypass.
 - The 409 path keeping unsaved text and showing the error code.
 - `data-revealed` and the `scrollIntoView` QA reveal.
-- `Confirm` applying a repair to the local draft only; “Áp dụng đề xuất” calling apply once with `proposalId` + `expectedProposalHash`.
+- The repair accept path - `RepairDiff`'s `onAccept` reaching the `Áp dụng đề xuất` button at
+  `BilingualEditor.tsx:337`. There is no component or function named `Confirm` anywhere in the
+  codebase; the only `Confirm` text is the unrelated `'Confirm import mapping'` button at
+  `ImportPreview.tsx:23`. Do not go looking for one.
 - `RepairDiff`'s offline-generator warning staying visible above the accept button.
 
 - [ ] **Step 5: Run**
@@ -2444,7 +2465,9 @@ Expected: PASS, including the 1024/1366 reflow cases and the CJK/Vietnamese no-m
 - [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/src/routes/screens/TranslationScreen.module.css frontend/src/features/translation/
+# The Modify list also names QualityPlanPanel (features/providers/) and
+# JobDraftPanel (features/jobs/); stage both or their modules are uncommitted.
+git add frontend/src/routes/screens/TranslationScreen.module.css frontend/src/features/translation/ frontend/src/features/providers/ frontend/src/features/jobs/
 git commit -m "feat(ui): build the translation workspace at the locked three-pane geometry"
 ```
 
@@ -2504,10 +2527,10 @@ git commit -m "feat(ui): restyle the voice browser, preview panel and artifact p
 
 ---
 
-## Task 22: Export workflow and the seven settings groups
+## Task 22: Export workflow and the eight settings groups
 
 **Files:**
-- Create: modules for `ExportWorkflow`, `StorageSettings`, `ProfileEditor`, `modelCatalog`, `StyleManager`, `GlossaryManager`, `CharacterManager`, `MemoryManager`, `Diagnostics`
+- Create: modules for `ExportWorkflow`, `StorageSettings`, `ProfileEditor`, `ModelCatalog` (the DIRECTORY is lowerCamel `modelCatalog` at `frontend/src/features/modelCatalog/`, the COMPONENT is PascalCase `ModelCatalog`),
 - Modify: those components
 - Test: `frontend/e2e/export-review.spec.ts`, `frontend/e2e/provider-credentials.spec.ts`, `frontend/src/features/settings/*.test.tsx`
 
@@ -2590,8 +2613,11 @@ Expected: PASS across all 9 specs. `provider-credentials.spec.ts` must still con
 - [ ] **Step 6: Commit**
 
 ```bash
-git add frontend/src/features/exports/ frontend/src/features/settings/ frontend/src/features/glossary/ frontend/src/features/characters/ frontend/src/features/translation/ frontend/src/routes/screens/
-git commit -m "feat(ui): restyle the export workflow and the seven settings groups"
+# The Modify list spans four more directories than this once staged:
+# providers/ (ProfileEditor), modelCatalog/ (ModelCatalog), memory/ (MemoryManager),
+# diagnostics/ (Diagnostics). Stage all of them.
+git add frontend/src/features/providers/ frontend/src/features/modelCatalog/ frontend/src/features/memory/ frontend/src/features/diagnostics/ frontend/src/features/exports/ frontend/src/features/settings/
+git commit -m "feat(ui): restyle the export workflow and the eight settings groups"
 ```
 
 ---
@@ -2697,11 +2723,18 @@ test('reduced motion removes transitions', async ({ browser }) => {
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
   await page.goto('/');
-  const duration = await page.evaluate(() => {
+  const durations = await page.evaluate(() => {
     const target = document.querySelector('button');
-    return target ? window.getComputedStyle(target).transitionDuration : '0s';
+    return target
+      ? window.getComputedStyle(target).transitionDuration.split(',').map((part) => part.trim())
+      : ['0s'];
   });
-  expect(['0s', '0.01ms', '0.00001s']).toContain(duration);
+  // Compare NUMERICALLY, never as strings. Chrome normalises computed durations to
+  // seconds, so the stylesheet's `0.01ms` arrives as `1e-05s`; an allow-list of
+  // literals has to guess the spelling and gets it wrong. An earlier draft listed
+  // ['0s', '0.01ms', '0.00001s'] and missed `1e-05s` - the exact form Chrome emits.
+  // Task 10's stronger in-app test hit this first; see its report.
+  expect(durations.map((d) => Number.parseFloat(d)).every((n) => n <= 1e-5)).toBe(true);
   await context.close();
 });
 ```
