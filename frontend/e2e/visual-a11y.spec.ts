@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 // U01 / U05 / V02 browser-visual evidence on a real system browser (Playwright,
 // channel 'chrome'). These are real-browser layout assertions, not DOM-only unit
@@ -511,4 +511,177 @@ test('the OS reduced-motion media query neutralises transitions document-wide', 
   ).toEqual([]);
 
   await context.close();
+});
+
+/* -------------------------------------------------------------------------
+ * Reachability of controls behind a `display: none` ancestor.
+ *
+ * The redesign added the app's first stylesheet — at the merge base (9ef4fee)
+ * `git ls-tree -r 9ef4fee frontend/src` matched zero `.css` files and the whole
+ * presentation layer was inline `style={{...}}`, so nothing could be hidden at
+ * any viewport. CSS made hiding possible, and two rules used it to delete a
+ * whole rail below 1024px, taking a `<select>` that was the only control
+ * setting a real piece of state with it. `display: none` is not "off-screen":
+ * it removes the element from the tab order, the accessibility tree and
+ * hit-testing, so the state it drives is permanently dead.
+ *
+ * The class was structurally invisible to this file before: ROUTES above is
+ * ['/', '/jobs', '/settings/appearance'] — neither affected route is ever
+ * visited — and the media queries are `max-width: 1023px`, which never applies
+ * at the 1024px breakpoint the overflow tests use.
+ * ---------------------------------------------------------------------- */
+
+/** Everything a user can operate. If one of these is in the DOM it must be usable. */
+const CONTROL_SELECTOR = 'select, input, textarea, button, a[href]';
+
+/**
+ * Controls that are in the DOM but hidden from every user by a `display: none`
+ * ancestor.
+ *
+ * Ancestors are walked with `getComputedStyle(...).display`, deliberately NOT
+ * `offsetParent`: `offsetParent` is also null for `position: fixed` elements,
+ * so it reports a visible sticky/fixed control as hidden, and it is unreliable
+ * outside a real layout engine.
+ */
+async function controlsHiddenByDisplayNone(page: Page): Promise<string[]> {
+  return page.evaluate((selector) => {
+    const offenders: string[] = [];
+    document.querySelectorAll<HTMLElement>(selector).forEach((el) => {
+      let node: HTMLElement | null = el;
+      while (node) {
+        if (window.getComputedStyle(node).display === 'none') {
+          const label = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 30);
+          const where = `${node.tagName.toLowerCase()}${node.className ? `.${String(node.className).split(' ')[0]}` : ''}`;
+          offenders.push(`${el.tagName}("${label}") inside ${where}`);
+          return;
+        }
+        node = node.parentElement;
+      }
+    });
+    return offenders;
+  }, CONTROL_SELECTOR);
+}
+
+/** How many controls the sweep above actually examined (the non-vacuity guard). */
+async function countControls(page: Page): Promise<number> {
+  return page.evaluate((selector) => document.querySelectorAll(selector).length, CONTROL_SELECTOR);
+}
+
+/**
+ * A chapter with a completed (fake, offline) translation run.
+ *
+ * The e2e server seeds only the fake voice preset, so `/chapters/<id>/translation`
+ * is unreachable without creating a project, granting rights and importing a
+ * chapter first — the same setup `e2e/single-voice.spec.ts` uses. The route
+ * renders an empty shell until a run exists (`current_translation` 404s with
+ * TRANSLATION_RUN_NOT_FOUND), so the seeding includes the run.
+ */
+async function seedTranslatedChapter(request: APIRequestContext): Promise<string> {
+  const bootstrap = await request.get('/api/security/bootstrap');
+  const { csrfToken } = (await bootstrap.json()) as { csrfToken: string };
+  const headers = { Origin: 'http://127.0.0.1:8765', 'X-CSRF-Token': csrfToken };
+
+  const projectResponse = await request.post('/api/projects', {
+    headers,
+    data: {
+      title: 'Kiếm hiệp mẫu',
+      slug: `kiem-hiep-mau-a11y-${Date.now()}`,
+      source_type: 'SELF_AUTHORED',
+      rights_status: 'CLEARED',
+    },
+  });
+  expect(projectResponse.ok()).toBeTruthy();
+  const project = (await projectResponse.json()) as { id: string };
+
+  for (const scope of ['TRANSLATE_VI', 'CREATE_AUDIO', 'PUBLIC_STREAM']) {
+    const grantResponse = await request.post(`/api/projects/${project.id}/rights/grants`, {
+      headers,
+      data: {
+        scope,
+        territory: 'VN',
+        allows_ai_processing: true,
+        allows_third_party_cloud: false,
+        valid_from: new Date(Date.now() - 60_000).toISOString(),
+        evidence_id: null,
+      },
+    });
+    expect(grantResponse.ok()).toBeTruthy();
+  }
+
+  const importResponse = await request.post(`/api/projects/${project.id}/chapters/import`, {
+    headers,
+    data: {
+      kind: 'PASTE',
+      items: [{ ordinal: 1, title: '第一章', text: '第一章\n林动说：“你好。”' }],
+    },
+  });
+  expect(importResponse.ok()).toBeTruthy();
+  const imported = (await importResponse.json()) as { chapters: { id: string }[] };
+  return imported.chapters[0].id;
+}
+
+test('the project settings group nav stays reachable at 390px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto('/projects/p1/settings/tts');
+  await expect(page.locator('main')).toBeVisible();
+
+  // The invariant first, before the route-specific assertions below: it is the
+  // one that generalises, and putting it ahead of them keeps its teeth
+  // demonstrable (revert the `display: none` rule and this is what fails).
+  //
+  // Guard against a vacuous pass: a page that failed to render would satisfy the
+  // sweep below and prove nothing. Measured 24 controls here (five group links,
+  // the global nav, the breadcrumb and the TTS panel's own fields), so 5 is the
+  // same floor the tab-sequence test uses and sits well clear of the real count.
+  const examined = await countControls(page);
+  expect(examined, 'the sweep must examine real controls at 390px').toBeGreaterThanOrEqual(5);
+  expect(
+    await controlsHiddenByDisplayNone(page),
+    'no control in the DOM may sit inside a display: none subtree',
+  ).toEqual([]);
+
+  // The five group links are the only route into the settings groups and the
+  // breadcrumb is the only way back up. `ProjectNav` reaches `translation` and
+  // nothing else, so deleting this nav strands four of the five groups. The base
+  // layout rendered it unconditionally.
+  const groupNav = page.getByRole('navigation', { name: 'Nhóm cài đặt dự án' });
+  for (const label of ['Translation', 'TTS', 'Storage', 'Appearance', 'Advanced']) {
+    await expect(groupNav.getByRole('link', { name: label })).toBeVisible();
+  }
+});
+
+test('the translation workspace keeps its rails and QA filter reachable at 390px', async ({ page, request }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const chapterId = await seedTranslatedChapter(request);
+  await page.goto(`/chapters/${chapterId}/translation`);
+
+  // Produce a run so the navigator renders at all, then wait for the state the
+  // navigator's controls depend on.
+  await page.getByRole('button', { name: 'Dịch convert nội bộ' }).click();
+  await expect(page.getByText('Đã dịch hoàn tất')).toBeVisible();
+
+  // The invariant first, before the control-specific assertions below: it is the
+  // one that generalises, and putting it ahead of them keeps its teeth
+  // demonstrable (revert the `display: none` rule and this is what fails).
+  //
+  // Guard against a vacuous pass, then the sweep over every control. Measured 27
+  // controls here (the QA filter, the two segment textareas, the translate and
+  // approve buttons, the Gemini links, plus the global nav).
+  const examined = await countControls(page);
+  expect(examined, 'the sweep must examine real controls at 390px').toBeGreaterThanOrEqual(5);
+  expect(
+    await controlsHiddenByDisplayNone(page),
+    'no control in the DOM may sit inside a display: none subtree',
+  ).toEqual([]);
+
+  // The QA filter is the ONLY control that sets `filter`, and it lives in the
+  // navigator rail. It must be present, laid out and keyboard reachable — not
+  // merely in the DOM.
+  const filter = page.locator('section[aria-label="Dịch và duyệt"] select');
+  await expect(filter).toBeVisible();
+  const box = await filter.boundingBox();
+  expect(box?.width ?? 0, `QA filter must have a real width (measured ${box?.width}px)`).toBeGreaterThan(0);
+  expect(box?.height ?? 0, `QA filter must have a real height (measured ${box?.height}px)`).toBeGreaterThan(0);
+  await filter.focus();
+  await expect(filter).toBeFocused();
 });

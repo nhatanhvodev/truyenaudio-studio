@@ -59,7 +59,10 @@
   line-height: 1.5;
 }
 
+/* Below 1024px the nav stops fitting beside the body, so it stacks above it
+   instead. The group links stay rendered and reachable — they are the only route
+   into the five settings groups, and the base layout rendered them at every
+   width. */
 @media (max-width: 1023px) {
   .groups { grid-template-columns: minmax(0, 1fr); }
-  .groupNav { display: none; }
 }

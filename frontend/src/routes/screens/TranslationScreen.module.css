@@ -25,10 +25,14 @@
 .pane { min-width: 0; overflow-y: auto; padding: var(--sp-4); }
 .paneSource { border-right: 1px solid var(--border-subtle); color: var(--text-muted); }
 
-/* Below 1024px: inspector becomes a drawer, source/translation become tabs. */
+/* Below 1024px the three columns stop fitting side by side, so the workspace
+   reflows to a single column and the rails stack vertically instead. It is a
+   REFLOW only: the navigator and inspector stay rendered and reachable at every
+   width. There is no drawer and no tab strip on this screen — the QA filter
+   select lives in the navigator and is the only control that sets `filter`, so
+   hiding either rail would make real state permanently unreachable. */
 @media (max-width: 1023px) {
   .workspace { grid-template-columns: minmax(0, 1fr); }
-  .navigator, .inspector { display: none; }
   .split { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -269,7 +273,12 @@
   background: var(--surface-raised);
   min-width: 0;
 }
-.blockersHead { display: flex; align-items: center; gap: var(--sp-2); color: var(--warning); font-weight: 600; font-size: var(--fs-sm); letter-spacing: 0.06em; text-transform: uppercase; }
+/* The head is a full interpolated sentence ("Phát hiện N vấn đề QA nghiêm trọng
+   (Blocker)"), not an interface label, so it is never uppercased — the same rule
+   `base.css` states for `.reading` prose. The 0.06em tracking went with it: that
+   value is this codebase's convention for uppercased labels only (see
+   `.navTitle` above), and it reads as noise on sentence case. */
+.blockersHead { display: flex; align-items: center; gap: var(--sp-2); color: var(--warning); font-weight: 600; font-size: var(--fs-sm); }
 .blockersText { margin: 0; font-size: var(--fs-md); color: var(--text-muted); line-height: var(--lh-read); overflow-wrap: anywhere; }
 .blockersActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-2); }
 
