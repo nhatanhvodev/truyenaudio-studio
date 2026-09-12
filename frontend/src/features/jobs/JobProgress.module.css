@@ -118,7 +118,11 @@
   height: 100%;
   width: 40%;
   background: linear-gradient(90deg, transparent, var(--success), transparent);
-  animation: wenku-shimmer 1.5s linear infinite;
+  /* The gradient has to be wider than the band for background-position to
+     travel: without a size it is exactly as wide as the element and the
+     animation moves nothing. */
+  background-size: 25rem 100%;
+  animation: jobShimmer 1.5s linear infinite;
 }
 
 /* --- Regular job rows --------------------------------------------------- */
@@ -133,4 +137,16 @@
 .jobLink:focus-visible {
   outline: var(--focus-ring) solid var(--focus);
   outline-offset: calc(-1 * var(--focus-offset));
+}
+
+/* The keyframes must be defined in THIS module and referenced by their local
+   name here. postcss-modules-scope rewrites animation names to the scope of the
+   module that defines them, so a name with no local @keyframes — the old
+   `wenku-shimmer`, whose definition was a global runtime <style> tag injected by
+   WenkuImport.tsx — was rewritten to a scoped name nothing defined, and the bar
+   silently stopped moving. Definition and reference in one file scope to the
+   same hash, which is what makes it animate. */
+@keyframes jobShimmer {
+  0% { background-position: -25rem 0; }
+  100% { background-position: 25rem 0; }
 }

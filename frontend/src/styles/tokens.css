@@ -27,6 +27,11 @@
   --success: #4ADE80;
   --warning: #FBBF24;
   --focus: #7DD3FC;
+
+  /* Overlay scrim (Modal, Drawer). Translucent, so it is the one colour that is
+     not a hex pair — and the contrast gate only parses `--name: #rrggbb;`, so it
+     is deliberately outside that gate. */
+  --scrim: rgb(0 0 0 / 0.6);
 }
 
 [data-theme='light'] {
@@ -51,4 +56,7 @@
   --success: #166534;
   --warning: #92400E;
   --focus: #1D4ED8;
+
+  /* Same overlay, lighter: the surface behind it is already near-white. */
+  --scrim: rgb(0 0 0 / 0.5);
 }
