@@ -10,6 +10,17 @@
   --font-mono: Consolas, ui-monospace, SFMono-Regular, 'Courier New', monospace;
   --font-read: var(--font-ui), 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
 
+  /* The spacing scale is declared WHOLE — six steps, per CONVENTIONS.md
+     ("Scale tokens"). A step that no rule consumes today is still part of the
+     agreed scale, so it is not dead code and must not be deleted: the largest
+     step currently has no consumer, and that is the expected state of a scale,
+     not a defect. `styles.test.ts` pins all six against this file precisely so
+     a future cleanup cannot quietly shrink the scale. Deleting one to "tidy up"
+     would make the next screen that needs that step invent a magic number
+     instead. (The names are deliberately left unquoted here: the test counts
+     declarations with a `<token>:` regex over this whole file, comments
+     included, so a token name followed by a colon in a comment would read as a
+     second declaration.) */
   --sp-1: 0.25rem;
   --sp-2: 0.5rem;
   --sp-3: 0.75rem;

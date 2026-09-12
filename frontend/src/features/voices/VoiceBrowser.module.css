@@ -5,11 +5,20 @@
  *
  * The availability badge pairs a token colour with the literal state word
  * ("ready" / "missing"), so status is never carried by colour alone.
+ *
+ * NOTE: this surface is never a top-level screen. It is rendered inside a
+ * settings panel, which is itself inside `Shell` — and `Shell.module.css:9`
+ * already carries `min-height: 100vh` for the whole app. A second
+ * `min-height: 100vh` here forced THIS box to be at least one viewport tall
+ * *inside* the already-padded outer shell, so a short catalogue scrolled by
+ * roughly the outer padding and left dead space under the last row. The
+ * viewport floor belongs to the outermost shell; an inner surface sizes to
+ * its content. (A percentage height would not have been the fix either —
+ * the parent is auto-height, so a percentage would resolve against nothing.)
  */
 
 .shell {
   box-sizing: border-box;
-  min-height: 100vh;
   padding: var(--sp-5);
   color: var(--text);
   background: var(--bg);
