@@ -99,3 +99,81 @@ test('Vietnamese diacritics render unbroken and inputs take real keyboard focus'
   await input.fill('Kiếm hiệp mẫu — 林动');
   await expect(input).toHaveValue('Kiếm hiệp mẫu — 林动');
 });
+
+test('appearance preferences reach the document', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => window.localStorage.clear());
+  await page.reload();
+
+  // Dark is the default, regardless of the host OS preference.
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  await page.goto('/settings/appearance');
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('light');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+  await page.getByRole('combobox', { name: 'Cỡ chữ' }).selectOption('large');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
+  // fontScale reaches the DOM as the ROOT FONT SIZE, not as density. An earlier
+  // draft asserted data-density here, which was decorative: it is 'comfortable'
+  // or 'compact' no matter what the font select did, so the assertion passed
+  // even if the save wrote nothing. 112.5% is ROOT_FONT_SIZE.large
+  // (themeRuntime.ts) - assert the value applyPreferences actually writes.
+  await expect(page.locator('html')).toHaveAttribute('style', /font-size:\s*112\.5%/);
+});
+
+test('system theme follows the OS and is overridden by an explicit choice', async ({ browser }) => {
+  const context = await browser.newContext({ colorScheme: 'light' });
+  const page = await context.newPage();
+  await page.goto('/settings/appearance');
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('system');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+
+  await page.goto('/settings/appearance');
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('dark');
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await context.close();
+});
+
+test('the in-app reduced-motion preference stops transitions on its own', async ({ browser }) => {
+  // Explicitly no OS-level reduced motion: the only thing that can stop the
+  // transitions below is the preference written to data-reduce-motion.
+  const context = await browser.newContext({ reducedMotion: 'no-preference' });
+  const page = await context.newPage();
+
+  await page.goto('/settings/appearance');
+  await page.getByRole('checkbox', { name: 'Giảm chuyển động' }).check();
+  await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-reduce-motion', 'true');
+
+  // Every transition must be neutralised. Collect the offenders rather than
+  // counting them, so a failure names the rule that leaked.
+  const offenders = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('*'))
+      .map((el) => ({
+        name: `${el.tagName.toLowerCase()}${el.className ? `.${String(el.className).split(' ')[0]}` : ''}`,
+        // transitionDuration is a LIST when an element transitions more than one
+        // property ('width 1s, color 1s' computes to '1s, 1s'). Compare every
+        // entry, not the raw string, or a multi-property transition reports as an
+        // offender even though the reduce-motion rule neutralised all of it.
+        durations: window.getComputedStyle(el).transitionDuration.split(',').map((part) => part.trim()),
+      }))
+      // getComputedStyle normalises transition-duration to seconds, so the
+      // reduce-motion rule's 0.01ms arrives here as '1e-05s' (0.00001s). Any
+      // duration at or below that is neutralised; '0s' covers elements that
+      // never transitioned at all.
+      .filter((entry) => entry.durations.some((d) => Number.parseFloat(d) > 0.00001))
+      .map((entry) => `${entry.name} [${entry.durations.join(', ')}]`),
+  );
+  expect(offenders, `still transitioning: ${offenders.slice(0, 5).join(' | ')}`).toEqual([]);
+
+  // And it must survive a reload, i.e. the boot script writes it too — not just
+  // the React effect that ran after the first mount.
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-reduce-motion', 'true');
+
+  await context.close();
+});
