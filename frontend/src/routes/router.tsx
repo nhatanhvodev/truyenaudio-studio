@@ -1,7 +1,8 @@
 import { createBrowserRouter, Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Shell } from './Shell';
-import { BatchQueue } from '../features/batch/BatchQueue';
+import { ImportScreen } from './screens/ImportScreen';
+import { BatchScreen } from './screens/BatchScreen';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
@@ -13,24 +14,13 @@ import JobsList from '../features/jobs/JobsList';
 import { defaultJobEventStore, type JobEvent } from '../features/jobs/jobStore';
 import BilingualEditor from '../features/translation/BilingualEditor';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
-import { WenkuImport } from '../features/import/WenkuImport';
-import { apiForm, apiJson } from '../shared/api';
+import { apiJson } from '../shared/api';
 import ArtifactPlayer from '../features/audio/ArtifactPlayer';
 import VoicePreviewPanel, { type VoiceOption } from '../features/voices/VoicePreviewPanel';
-import ImportPreview, { type ImportCandidate } from '../features/import/ImportPreview';
 import MultiVoiceCloudDemo from '../features/voices/MultiVoiceCloudDemo';
 
 const fakePresetId = '018f0000-0000-7000-8000-000000000001';
 const fakeAudioEnabled = ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_STUDIO_FAKE_AUDIO) === '1';
-
-type Chapter = {
-  id: string;
-  project_id?: string;
-  projectId?: string;
-  ordinal: number;
-  source_title?: string | null;
-  sourceTitle?: string | null;
-};
 
 type TranslationIssue = {
   id: string;
@@ -121,152 +111,6 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-
-function ImportScreen() {
-  const { projectId } = useParams();
-  const navigate = useNavigate();
-  const [folderPath, setFolderPath] = useState('');
-  const [bookFile, setBookFile] = useState<File | null>(null);
-  const [candidates, setCandidates] = useState<ImportCandidate[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  if (!projectId) {
-    return <Navigate to="/" replace />;
-  }
-
-  async function previewFolder() {
-    if (!projectId || !folderPath.trim()) {
-      return;
-    }
-    const form = new FormData();
-    form.set('kind', 'LOCAL_FOLDER');
-    form.set('localFolderPath', folderPath.trim());
-    await preview(form);
-  }
-
-  async function previewBook(kind: 'EPUB' | 'DOCX') {
-    if (!bookFile || !projectId) {
-      return;
-    }
-    const form = new FormData();
-    form.set('kind', kind);
-    form.set('file', bookFile);
-    await preview(form);
-  }
-
-  async function preview(form: FormData) {
-    if (!projectId) {
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const payload = await apiForm<{ candidates: ImportCandidate[] }>(
-        `/api/projects/${projectId}/chapters/import/preview`,
-        form,
-      );
-      setCandidates(payload.candidates);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'IMPORT_PREVIEW_FAILED');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmPreview(nextCandidates: ImportCandidate[]) {
-    if (!projectId) {
-      return;
-    }
-    const items = nextCandidates.map((candidate) => ({
-      ordinal: candidate.ordinal,
-      title: candidate.title ?? `Chuong ${candidate.ordinal}`,
-      text: candidate.text,
-    }));
-    if (items.some((item) => item.ordinal === null || item.ordinal <= 0 || !item.text.trim())) {
-      setError('IMPORT_MAPPING_REQUIRED');
-      return;
-    }
-    setBusy(true);
-    setError('');
-    try {
-      const payload = await apiJson<{ chapters: Chapter[] }>(`/api/projects/${projectId}/chapters/import`, {
-        method: 'POST',
-        body: {
-          kind: 'PASTE',
-          items,
-        },
-      });
-      navigate(`/chapters/${payload.chapters[0].id}/translation`);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'IMPORT_CONFIRM_FAILED');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section style={styles.panel} aria-label="Nhập nội dung">
-      <h1 style={styles.title}>Nhập nội dung</h1>
-      <WenkuImport
-        projectId={projectId}
-        onImportSuccess={(firstChapterId) => {
-          navigate(`/chapters/${firstChapterId}/translation`);
-        }}
-      />
-
-      <div style={{ marginTop: 24, borderTop: '1px solid #e2e8f0', paddingTop: 20 }}>
-        <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#334155' }}>Hoặc nhập từ File / Thư mục máy tính</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-          <section style={styles.guardBox} aria-label="Folder import preview">
-            <label style={styles.label}>
-              Local folder path
-              <input value={folderPath} onChange={(event) => setFolderPath(event.target.value)} style={styles.input} />
-            </label>
-            <button type="button" onClick={() => void previewFolder()} disabled={busy || !folderPath.trim()} style={styles.secondaryButton}>
-              Preview folder
-            </button>
-          </section>
-
-          <section style={styles.guardBox} aria-label="Book import preview">
-            <label style={styles.label}>
-              EPUB or DOCX file
-              <input
-                type="file"
-                accept=".epub,.docx,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                onChange={(event) => setBookFile(event.target.files?.[0] ?? null)}
-                style={styles.input}
-              />
-            </label>
-            <div style={styles.actions}>
-              <button type="button" onClick={() => void previewBook('EPUB')} disabled={busy || !bookFile} style={styles.secondaryButton}>
-                Preview EPUB
-              </button>
-              <button type="button" onClick={() => void previewBook('DOCX')} disabled={busy || !bookFile} style={styles.secondaryButton}>
-                Preview DOCX
-              </button>
-            </div>
-          </section>
-        </div>
-
-        {candidates.length > 0 ? <ImportPreview candidates={candidates} onConfirm={(mapped) => void confirmPreview(mapped)} /> : null}
-        {error ? <p role="alert" style={styles.error}>{error}</p> : null}
-      </div>
-    </section>
-  );
-}
-
-function BatchScreen() {
-  const { projectId } = useParams();
-  if (!projectId) {
-    return <Navigate to="/" replace />;
-  }
-  // BatchQueue already posts to the per-job cancel/retry routes itself (the routes
-  // were the missing half until U07) and shows the refusal reason inline, so it is
-  // deliberately NOT rewired through jobActions: doing so would swallow the reason
-  // behind a silent snapshot refresh.
-  return <BatchQueue projectId={projectId} />;
-}
 
 function TranslationScreen() {
   const { chapterId } = useParams();
