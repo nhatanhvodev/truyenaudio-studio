@@ -1,14 +1,11 @@
-import { createBrowserRouter, Link, Navigate, Outlet, useLocation, useMatch, useNavigate, useParams } from 'react-router-dom';
+import { createBrowserRouter, Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import { Shell } from './Shell';
 import { BatchQueue } from '../features/batch/BatchQueue';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
-import { GlobalNav } from '../features/workspace/GlobalNav';
-import { ProjectNav } from '../features/workspace/ProjectNav';
 import { QualityPlanPanel } from '../features/providers/QualityPlanPanel';
-import { WorkspaceTabs } from '../features/workspace/WorkspaceTabs';
-import { describeRoute, projectIdForRoute } from '../features/workspace/workspaceRoutes';
 import { ExportWorkflow } from '../features/exports/ExportWorkflow';
 import { JobProgress } from '../features/jobs/JobProgress';
 import JobDraftPanel from '../features/jobs/JobDraftPanel';
@@ -17,7 +14,6 @@ import { defaultJobEventStore, type JobEvent } from '../features/jobs/jobStore';
 import BilingualEditor from '../features/translation/BilingualEditor';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
 import { WenkuImport } from '../features/import/WenkuImport';
-import { WenkuCrawlProvider } from '../features/import/WenkuCrawlContext';
 import { apiForm, apiJson } from '../shared/api';
 import ArtifactPlayer from '../features/audio/ArtifactPlayer';
 import VoicePreviewPanel, { type VoiceOption } from '../features/voices/VoicePreviewPanel';
@@ -125,55 +121,6 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-
-function Shell() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  // The project id comes from the URL, so deep links and Back always stay inside
-  // the same project (U02); the shell only needs the match, not the child route.
-  //
-  // Both hooks must be called on EVERY render: `useMatch(a) ?? useMatch(b)`
-  // short-circuits, so navigating from a project route to a chapter route changed
-  // the hook count mid-app and crashed React ("Cannot read properties of undefined
-  // (reading 'length')" inside areHookInputsEqual). Found by the U03 browser E2E.
-  const projectWildcardMatch = useMatch('/projects/:projectId/*');
-  const projectExactMatch = useMatch('/projects/:projectId');
-  const projectId =
-    projectWildcardMatch?.params.projectId ?? projectExactMatch?.params.projectId ?? null;
-  const [visited, setVisited] = useState<string[]>([location.pathname]);
-
-  useEffect(() => {
-    setVisited((current) =>
-      current.includes(location.pathname) ? current : [...current, location.pathname],
-    );
-  }, [location.pathname]);
-
-  const openTabs = visited.map(describeRoute);
-  const currentTabId = openTabs.some((tab) => tab.id === location.pathname) ? location.pathname : null;
-  const layoutProjectId = projectIdForRoute(location.pathname) ?? 'local';
-
-  return (
-    <WenkuCrawlProvider>
-      <main style={styles.shell}>
-        <GlobalNav />
-        <nav style={styles.nav} aria-label="Workflow">
-          <Link to="/" style={styles.navLink}>Dự án</Link>
-          <Link to="/jobs" style={styles.navLink}>Jobs</Link>
-          <Link to="/diagnostics" style={styles.navLink}>Diagnostics</Link>
-        </nav>
-        {projectId ? <ProjectNav projectId={projectId} /> : null}
-        <WorkspaceTabs
-          projectId={layoutProjectId}
-          openTabs={openTabs}
-          currentTabId={currentTabId}
-          onNavigate={(to) => navigate(to)}
-        />
-        <Outlet />
-        <JobProgress />
-      </main>
-    </WenkuCrawlProvider>
-  );
-}
 
 function ImportScreen() {
   const { projectId } = useParams();
