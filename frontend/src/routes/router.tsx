@@ -1,22 +1,18 @@
-import { createBrowserRouter, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { Shell } from './Shell';
 import { ImportScreen } from './screens/ImportScreen';
 import { BatchScreen } from './screens/BatchScreen';
 import { TranslationScreen } from './screens/TranslationScreen';
 import { VoiceScreen } from './screens/VoiceScreen';
 import { AudioScreen } from './screens/AudioScreen';
+import { ExportScreen } from './screens/ExportScreen';
+import { JobsScreen } from './screens/JobsScreen';
+import { BilingualScreen } from './screens/BilingualScreen';
+import { JobDraftScreen } from './screens/JobDraftScreen';
 import { Diagnostics } from '../features/diagnostics/Diagnostics';
 import { settingsGroupRoutes } from '../features/settings/SettingsRoutes';
 import { projectSettingsRoutes } from '../features/settings/ProjectSettingsRoutes';
-import { QualityPlanPanel } from '../features/providers/QualityPlanPanel';
-import { ExportWorkflow } from '../features/exports/ExportWorkflow';
-import { JobProgress } from '../features/jobs/JobProgress';
-import JobDraftPanel from '../features/jobs/JobDraftPanel';
-import JobsList from '../features/jobs/JobsList';
-import { defaultJobEventStore, type JobEvent } from '../features/jobs/jobStore';
-import BilingualEditor from '../features/translation/BilingualEditor';
 import { ProjectWizard } from '../features/projects/ProjectWizard';
-import { apiJson } from '../shared/api';
 import MultiVoiceCloudDemo from '../features/voices/MultiVoiceCloudDemo';
 
 
@@ -60,78 +56,6 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-
-function ExportScreen() {
-  const { chapterId } = useParams();
-  if (!chapterId) {
-    return <Navigate to="/" replace />;
-  }
-  return (
-    <section style={styles.panel} aria-label="Xuất bản">
-      {/* ExportWorkflow sở hữu tiêu đề "Xuất bản"; không render thêm heading trùng. */}
-      <ExportWorkflow chapterId={chapterId} />
-    </section>
-  );
-}
-
-/**
- * U07: cancel/retry actions shared by the jobs list and the batch queue.
- *
- * Both actions are real API calls; the durable snapshot is re-read afterwards on
- * success *and* failure, so the UI never displays a status the backend did not
- * confirm. A refused action (409/404) is therefore not an error dialog: the job
- * simply shows its real state again.
- */
-function jobActions(store = defaultJobEventStore) {
-  const act = (suffix: 'cancel' | 'retry') => async (event: JobEvent) => {
-    try {
-      await apiJson(`/api/jobs/${encodeURIComponent(event.jobId)}/${suffix}`, { method: 'POST' });
-    } catch {
-      // Refused (e.g. JOB_RETRY_NOT_RETRYABLE) — refresh() below reconciles.
-    }
-    await store.refresh();
-  };
-  return { onCancel: act('cancel'), onRetry: act('retry') };
-}
-
-function JobsScreen() {
-  const { onCancel, onRetry } = jobActions();
-  return (
-    <section style={styles.panel}>
-      <h1 style={styles.title}>Jobs</h1>
-      <JobsList onRetry={onRetry} onCancel={onCancel} />
-      <JobProgress />
-    </section>
-  );
-}
-
-function BilingualScreen() {
-  const { chapterId } = useParams();
-  const navigate = useNavigate();
-  if (!chapterId) {
-    return <Navigate to="/" replace />;
-  }
-  return (
-    <section style={styles.panel} aria-label="Editor song ngữ">
-      <BilingualEditor
-        chapterId={chapterId}
-        onApproved={() => navigate(`/chapters/${chapterId}/voice`)}
-      />
-    </section>
-  );
-}
-
-function JobDraftScreen() {  const { jobId } = useParams();
-  if (!jobId) {
-    return <Navigate to="/jobs" replace />;
-  }
-  return (
-    <section style={styles.panel} aria-label="Nháp job">
-      <h1 style={styles.title}>Nháp đang dịch</h1>
-      <JobDraftPanel jobId={jobId} />
-    </section>
-  );
-}
 
 const styles: Record<string, React.CSSProperties> = {
   shell: {
