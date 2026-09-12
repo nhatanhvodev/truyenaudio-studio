@@ -35,8 +35,21 @@ describe('AppearanceSettings (U10)', () => {
     render(<AppearanceSettings />);
 
     expect(screen.getByLabelText('Theme')).toHaveValue('light');
-    expect(screen.getByText(/Đã bỏ các khóa không hợp lệ/)).toBeVisible();
+    const notice = screen.getByText(/Đã bỏ các khóa không hợp lệ/);
+    expect(notice).toBeVisible();
+    // The count is the whole message; it is what the user gets instead of a list.
+    expect(notice).toHaveTextContent('2 khóa');
     expect(screen.getByLabelText('Giá trị đang lưu')).toHaveTextContent('"theme":"light"');
+
+    // The assertions BELOW are the ones this test was missing. Its title has
+    // always claimed the keys are reported "without echoing them", but only the
+    // VALUES were ever checked - so the screen could list `apiKey` and
+    // `styleGuide` by name, and did, while this test stayed green. The names come
+    // from the stored document, so anyone who can write this origin's
+    // localStorage chooses them; they belong in `rejectedKeys` for the parser's
+    // callers, not in the DOM.
+    expect(document.body.textContent).not.toContain('apiKey');
+    expect(document.body.textContent).not.toContain('styleGuide');
     expect(document.body.textContent).not.toContain('sk-live-secret');
     expect(document.body.textContent).not.toContain('Giọng cổ trang');
   });

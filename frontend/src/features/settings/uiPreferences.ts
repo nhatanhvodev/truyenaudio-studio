@@ -6,7 +6,9 @@
  * allowed to keep state (plan C07: project data stays on the server).
  *
  * The parser is deliberately strict and *lossy on purpose*:
- * - unknown keys are dropped and reported (never echoed back);
+ * - unknown keys are dropped from `preferences` and their NAMES are reported to
+ *   the caller in `rejectedKeys`. The parser reports names because a caller may
+ *   need to log or assert on them; it never reports a VALUE from a rejected key.
  * - keys that look like content or secrets (`text`, `content`, `prompt`,
  *   `styleGuide`, `apiKey`, `token`, `secret`, …) are dropped even if their value
  *   is a plain string, so a pasted draft or a credential can never be persisted
@@ -14,6 +16,16 @@
  * - invalid values fall back to the default and are reported;
  * - `serializePreferences` writes only the known keys, so the stored document
  *   can never contain anything else.
+ *
+ * `rejectedKeys` holds key NAMES read straight out of the stored JSON, so they
+ * are attacker-influenceable strings: anyone who can write to this origin's
+ * localStorage chooses them, and a stored document may carry any number of them.
+ * They are therefore kept OUT of the DOM. `AppearanceSettings` renders the count
+ * and nothing else. This paragraph used to claim the keys were "never echoed
+ * back" while the settings screen listed every one of them by name - the code
+ * did not do what the comment said, and the test that covered it could not see
+ * the difference (`AppearanceSettings.test.tsx` checked the values, and only the
+ * values, never appeared). The count is what makes the claim true.
  */
 
 export const UI_PREFERENCES_VERSION = 1;

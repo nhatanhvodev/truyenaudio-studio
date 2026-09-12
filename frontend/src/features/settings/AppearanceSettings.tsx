@@ -150,7 +150,7 @@ export function AppearanceSettings() {
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
       {rejectedKeys.length > 0 ? (
         <p role="status" className={styles.warning}>
-          Đã bỏ các khóa không hợp lệ khi khôi phục: {rejectedKeys.join(', ')}.
+          Đã bỏ các khóa không hợp lệ khi khôi phục: {rejectedKeys.length} khóa.
         </p>
       ) : null}
       {migrated ? <p role="status" className={styles.warning}>Tùy chọn cũ đã được chuyển sang phiên bản hiện tại.</p> : null}
