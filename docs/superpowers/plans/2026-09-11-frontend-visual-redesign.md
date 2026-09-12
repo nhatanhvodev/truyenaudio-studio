@@ -1843,6 +1843,19 @@ git commit -m "test(e2e): prove appearance preferences reach the document, not j
 
 Every task in G4 is **behaviour-neutral**: no visual change, no logic change. The gate is that the 9 e2e specs pass identically before and after. Run them before starting.
 
+## Read this before the first cut: every line number in G4 is a G4-START coordinate
+
+The ranges in Tasks 11–15 were measured once, at the start of G4, and they drift immediately. Task 11
+alone removes ~48 lines from the top of `router.tsx`; Task 12 removes another ~130; each extraction
+shifts everything below it. By Task 15 the numbers in the briefs are wrong by hundreds of lines.
+
+**So locate every range by symbol name, never by the number.** Find `function <Name>() {`, `const
+<name> =`, or `type <Name> = {`, read to where the declaration ends, and cut what you find. The numbers
+in the task text are a cross-check hint. If a grep range returns a count different from the one the
+task predicts, you are reading the wrong lines — re-derive the range from the symbol and re-run the
+grep. Report the count you actually got; never adjust the code to match a number in this document.
+
+
 - [ ] **Record the e2e baseline**
 
 Run: `cd frontend && npx playwright test`
