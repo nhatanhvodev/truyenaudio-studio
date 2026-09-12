@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useWorkspaceLayout } from './useWorkspaceLayout';
+import styles from './WorkspaceTabs.module.css';
 import { MAX_TABS_PER_PANE, type TabKind, type WorkspaceTab } from './workspaceLayout';
 
 export type WorkspaceTabDefinition = {
@@ -204,13 +205,13 @@ export function WorkspaceTabs({
   }
 
   return (
-    <section style={styles.shell} aria-label="Không gian làm việc">
-      <div style={styles.row}>
-        <div role="tablist" aria-label="Tab đang mở" onKeyDown={onKeyDown} style={styles.tablist}>
+    <section className={styles.shell} aria-label="Không gian làm việc">
+      <div className={styles.row}>
+        <div role="tablist" aria-label="Tab đang mở" onKeyDown={onKeyDown} className={styles.tablist}>
           {tabs.map((tab, index) => {
             const selected = tab.id === currentTabId;
             return (
-              <span key={tab.id} style={styles.tabShell}>
+              <span key={tab.id} className={styles.tabShell}>
                 <button
                   type="button"
                   role="tab"
@@ -222,7 +223,7 @@ export function WorkspaceTabs({
                     tabRefs.current[tab.id] = node;
                   }}
                   onClick={() => activate(tab.id)}
-                  style={{ ...styles.tab, ...(selected ? styles.tabActive : {}) }}
+                  className={styles.tab}
                 >
                   {tab.title}
                 </button>
@@ -230,18 +231,18 @@ export function WorkspaceTabs({
                   type="button"
                   aria-label={`Đóng tab ${tab.title}`}
                   onClick={() => closeTab(tab.id)}
-                  style={styles.close}
+                  className={styles.close}
                 >
                   ×
                 </button>
               </span>
             );
           })}
-          {tabs.length === 0 ? <span style={styles.empty}>Chưa mở tab nào</span> : null}
+          {tabs.length === 0 ? <span className={styles.empty}>Chưa mở tab nào</span> : null}
         </div>
 
-        <div style={styles.row}>
-          <span style={styles.count} aria-label="Số tab">
+        <div className={styles.row}>
+          <span className={styles.count} aria-label="Số tab">
             {tabs.length}/{MAX_TABS_PER_PANE}
           </span>
           <button
@@ -249,7 +250,7 @@ export function WorkspaceTabs({
             onClick={() =>
               dispatch({ type: layout.docked ? 'undock' : 'dock', projectId })
             }
-            style={styles.secondary}
+            className={styles.secondary}
           >
             {layout.docked ? 'Bỏ dock' : 'Dock khung phụ'}
           </button>
@@ -257,7 +258,7 @@ export function WorkspaceTabs({
             type="button"
             onClick={() => void store.save()}
             disabled={store.saving}
-            style={styles.primary}
+            className={styles.primary}
           >
             Lưu layout
           </button>
@@ -265,7 +266,7 @@ export function WorkspaceTabs({
       </div>
 
       {notice || store.error ? (
-        <p role="alert" style={styles.error}>
+        <p role="alert" className={styles.error}>
           {notice || store.error}
           {notice === 'TAB_DIRTY' ? (
             <button
@@ -275,7 +276,7 @@ export function WorkspaceTabs({
                   closeTab(pendingCloseId, true);
                 }
               }}
-              style={{ ...styles.secondary, marginLeft: 8 }}
+              className={`${styles.secondary} ${styles.alertAction}`}
             >
               Đóng và bỏ thay đổi
             </button>
@@ -283,16 +284,16 @@ export function WorkspaceTabs({
         </p>
       ) : null}
 
-      <p role="status" style={styles.meta}>
+      <p role="status" className={styles.meta}>
         Nháp layout: {store.revision === null ? 'chưa lưu' : `bản ${store.revision}`}
         {store.migrated ? ' · đã chuyển đổi từ phiên bản cũ' : ''}
         {store.dirty ? ' · có thay đổi chưa lưu' : ''}
       </p>
 
       {layout.docked ? (
-        <section aria-label="Khung phụ" style={styles.dock}>
+        <section aria-label="Khung phụ" className={styles.dock}>
           {secondaryTabs.length === 0 ? (
-            <p style={styles.empty}>Khung phụ trống — dock một tab để xem song song.</p>
+            <p className={styles.empty}>Khung phụ trống — dock một tab để xem song song.</p>
           ) : (
             secondaryTabs.map((tab) => {
               const definition = definitionFor(tab.id);
@@ -307,7 +308,7 @@ export function WorkspaceTabs({
         </section>
       ) : null}
 
-      <div style={styles.actions}>
+      <div className={styles.actions}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -319,7 +320,7 @@ export function WorkspaceTabs({
                 setNotice('');
               }
             }}
-            style={styles.link}
+            className={styles.link}
           >
             Dock “{tab.title}”
           </button>
@@ -343,22 +344,3 @@ function toWorkspaceTab(
     dirty,
   };
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: { display: 'grid', gap: 8, padding: 12, border: '1px solid #d9e1ea', borderRadius: 8, background: '#ffffff' },
-  row: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  tablist: { display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' },
-  tabShell: { display: 'inline-flex', alignItems: 'center', border: '1px solid #c8d1dc', borderRadius: 6, overflow: 'hidden' },
-  tab: { border: 0, background: '#ffffff', padding: '6px 10px', fontWeight: 700, color: '#344054', cursor: 'pointer' },
-  tabActive: { background: '#e8f0ff', color: '#155eef' },
-  close: { border: 0, background: 'transparent', padding: '6px 8px', cursor: 'pointer', color: '#7a8699' },
-  count: { fontSize: 12, fontWeight: 700, color: '#667085' },
-  primary: { padding: '6px 12px', border: 0, borderRadius: 6, background: '#155eef', color: '#fff', fontWeight: 700 },
-  secondary: { padding: '6px 12px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#fff', color: '#18212f', fontWeight: 700 },
-  link: { border: 0, background: 'transparent', color: '#155eef', fontWeight: 700, cursor: 'pointer', padding: 0 },
-  error: { margin: 0, color: '#9a3412', fontWeight: 700 },
-  meta: { margin: 0, fontSize: 12, color: '#667085' },
-  empty: { color: '#667085', fontWeight: 700 },
-  dock: { display: 'grid', gap: 8, padding: 10, border: '1px dashed #98a2b3', borderRadius: 6, background: '#f8fafc' },
-  actions: { display: 'flex', flexWrap: 'wrap', gap: 12 },
-};

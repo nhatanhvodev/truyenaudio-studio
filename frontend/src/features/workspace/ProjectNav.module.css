@@ -1,0 +1,47 @@
+.wrapper {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--sp-2) var(--sp-4);
+  min-width: 0;
+}
+.breadcrumb {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-subtle);
+  margin-bottom: var(--sp-2);
+}
+.areas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+.area {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  padding-bottom: var(--sp-1);
+  border-bottom: 2px solid transparent;
+}
+.area:hover { color: var(--text); }
+.area[aria-current='page'] { color: var(--text); border-bottom-color: var(--primary); }
+.area:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+/*
+ * Mirrored from the pre-change inline `crumbLink`, `crumbCurrent` and `context`
+ * keys (the breadcrumb link, its current item and the project-context line).
+ * The focus ring is required on the breadcrumb link: it is focusable.
+ */
+.crumbLink {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+.crumbLink:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+.crumbCurrent { color: var(--text); font-weight: 600; }
+.context {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-subtle);
+}
+/* The project id is an identifier: mono, unlike the sentence around it. */
+.context code { font-family: var(--font-mono); }

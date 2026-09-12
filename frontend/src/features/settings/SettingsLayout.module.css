@@ -1,0 +1,23 @@
+.shell {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  align-items: flex-start;
+  min-width: 0;
+}
+.nav { min-width: 14rem; }
+.heading { font-size: var(--fs-md); margin: 0 0 var(--sp-3); }
+.groups { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
+.item {
+  display: block;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius); /* zero */
+  text-decoration: none;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.item:hover { color: var(--text); background: var(--surface); }
+.item[aria-current='page'] { color: var(--text); font-weight: 600; background: var(--surface); }
+.item:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+.main { flex: 1; min-width: 0; }
+.crumb { margin: 0 0 var(--sp-3); color: var(--text-subtle); font-size: var(--fs-sm); font-family: var(--font-mono); }

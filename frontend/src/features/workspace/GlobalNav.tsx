@@ -1,5 +1,7 @@
 import { NavLink } from 'react-router-dom';
 
+import styles from './GlobalNav.module.css';
+
 interface Area {
   to: string;
   label: string;
@@ -15,18 +17,14 @@ const AREAS: readonly Area[] = [
 
 export function GlobalNav() {
   return (
-    <nav aria-label="Khu vực" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+    <nav aria-label="Khu vực" className={styles.nav}>
       {AREAS.map((area) => (
         <NavLink
           key={area.to}
           to={area.to}
           end={area.end}
           title={area.hint}
-          style={({ isActive }) => ({
-            textDecoration: 'none',
-            fontWeight: isActive ? 600 : 400,
-            color: isActive ? '#1d4ed8' : '#4b5563',
-          })}
+          className={styles.link}
         >
           {area.label}
         </NavLink>

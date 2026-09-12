@@ -1,5 +1,7 @@
 import { Link, NavLink } from 'react-router-dom';
 
+import styles from './ProjectNav.module.css';
+
 type Props = {
   projectId: string;
   /** Project title when known; the id is used as a stable fallback. */
@@ -22,29 +24,26 @@ const AREAS = [
  */
 export function ProjectNav({ projectId, projectTitle }: Props) {
   return (
-    <nav aria-label="Dự án" style={styles.shell}>
-      <p style={styles.breadcrumb} aria-label="Đường dẫn">
-        <Link to="/" style={styles.crumbLink}>
+    <nav aria-label="Dự án" className={styles.wrapper}>
+      <p className={styles.breadcrumb} aria-label="Đường dẫn">
+        <Link to="/" className={styles.crumbLink}>
           Thư viện
         </Link>
         <span aria-hidden="true"> / </span>
-        <span aria-current="page" style={styles.crumbCurrent}>
+        <span aria-current="page" className={styles.crumbCurrent}>
           {projectTitle?.trim() ? projectTitle : projectId}
         </span>
       </p>
-      <ul style={styles.list}>
+      <ul className={styles.areas}>
         {AREAS.map((area) => (
           <li key={area.slug}>
-            <NavLink
-              to={`/projects/${projectId}/${area.slug}`}
-              style={({ isActive }) => ({ ...styles.link, ...(isActive ? styles.linkActive : {}) })}
-            >
+            <NavLink to={`/projects/${projectId}/${area.slug}`} className={styles.area}>
               {area.label}
             </NavLink>
           </li>
         ))}
       </ul>
-      <p style={styles.context} aria-label="Ngữ cảnh dự án">
+      <p className={styles.context} aria-label="Ngữ cảnh dự án">
         Đang ở dự án <code>{projectId}</code>
       </p>
     </nav>
@@ -52,14 +51,3 @@ export function ProjectNav({ projectId, projectTitle }: Props) {
 }
 
 export default ProjectNav;
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: { display: 'grid', gap: 6, margin: '0 auto 12px', maxWidth: 920 },
-  breadcrumb: { margin: 0, fontSize: 13, color: '#475467' },
-  crumbLink: { color: '#155eef', fontWeight: 700, textDecoration: 'none' },
-  crumbCurrent: { fontWeight: 700, color: '#18212f' },
-  list: { display: 'flex', gap: 12, listStyle: 'none', margin: 0, padding: 0 },
-  link: { color: '#475467', fontWeight: 600, textDecoration: 'none' },
-  linkActive: { color: '#1d4ed8', fontWeight: 800, textDecoration: 'underline' },
-  context: { margin: 0, fontSize: 12, color: '#667085' },
-};

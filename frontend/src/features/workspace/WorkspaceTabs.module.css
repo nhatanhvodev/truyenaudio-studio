@@ -1,0 +1,96 @@
+.tablist {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-control);
+  overflow-x: auto;
+  min-width: 0;
+}
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 14rem;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab[aria-selected='true'] { background: var(--bg); color: var(--text); border-bottom-color: var(--primary); }
+.tab:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: calc(-1 * var(--focus-offset)); }
+.dirty { color: var(--warning); } /* always paired with a text label, never colour alone */
+.close { font-family: var(--font-mono); color: var(--text-subtle); padding: 0 var(--sp-1); }
+
+/*
+ * Mirrored from the pre-change inline keys the rest of this component read
+ * (`shell` … `actions`). Same layout, colours on tokens, radius zero.
+ */
+.shell {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+/* One tab plus its close button; the close button cannot nest inside the tab. */
+.tabShell { display: inline-flex; align-items: center; min-width: 0; }
+.count { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.primary {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary:hover:not(:disabled) { background: var(--primary-hover); }
+.primary:disabled { cursor: not-allowed; opacity: 0.55; }
+.secondary {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.secondary:hover { border-color: var(--primary); }
+.link { border: 0; background: transparent; color: var(--primary); font-weight: 600; cursor: pointer; padding: 0; }
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+.meta { margin: 0; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.empty { color: var(--text-subtle); font-weight: 600; }
+.dock {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px dashed var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+/* The confirm button inside the dirty-tab alert: same as `.secondary` plus its
+   own offset from the message text (the pre-change inline `marginLeft: 8`). */
+.alertAction { margin-left: var(--sp-2); }
+.close:focus-visible,
+.primary:focus-visible,
+.secondary:focus-visible,
+.link:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
