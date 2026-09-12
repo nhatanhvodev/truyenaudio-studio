@@ -1585,10 +1585,15 @@ import { ThemeProvider } from './ThemeProvider';
   });
 ```
 
-The label and button strings above are the ones actually rendered (`AppearanceSettings.tsx:128` and `:137`) — confirm them against the component before using them, and never rename a label to make a test pass.
+The label and button strings used above are the ones actually rendered at `AppearanceSettings.tsx:129` and `:138`.
 
-Read `AppearanceSettings.tsx` and use the checkbox's **actual** label text in the pattern — the one
-above is a guess. Do not rename the label to make the test pass.
+These strings are verified, not guessed. In `AppearanceSettings.tsx` the reduced-motion control is a
+real `<input type="checkbox">` whose `aria-label` is the rendered label text (:127-132), and the save
+button at :138 carries the rendered button text. Never rename a label to make a test pass.
+
+`getByLabelText` here is jsdom testing-library, which resolves each control once, so the
+wrapper-label-plus-`aria-label` duplication that complicates the Playwright locators in Task 10 does
+not bite in this test.
 
 - [ ] **Step 3: Run both to verify they fail**
 
@@ -1715,11 +1720,11 @@ test('appearance preferences reach the document', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
 
   await page.goto('/settings/appearance');
-  await page.getByLabel('Theme').selectOption('light');
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('light');
   await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
-  await page.getByLabel('Cỡ chữ').selectOption('large');
+  await page.getByRole('combobox', { name: 'Cỡ chữ' }).selectOption('large');
   await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   // fontScale reaches the DOM as the ROOT FONT SIZE, not as density. An earlier
   // draft asserted data-density here, which was decorative: it is 'comfortable'
@@ -1733,12 +1738,12 @@ test('system theme follows the OS and is overridden by an explicit choice', asyn
   const context = await browser.newContext({ colorScheme: 'light' });
   const page = await context.newPage();
   await page.goto('/settings/appearance');
-  await page.getByLabel('Theme').selectOption('system');
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('system');
   await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
 
   await page.goto('/settings/appearance');
-  await page.getByLabel('Theme').selectOption('dark');
+  await page.getByRole('combobox', { name: 'Theme' }).selectOption('dark');
   await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await context.close();
@@ -1764,7 +1769,7 @@ test('the in-app reduced-motion preference stops transitions on its own', async 
   const page = await context.newPage();
 
   await page.goto('/settings/appearance');
-  await page.getByLabel('Giảm chuyển động').check();
+  await page.getByRole('checkbox', { name: 'Giảm chuyển động' }).check();
   await page.getByRole('button', { name: 'Lưu tùy chọn hiển thị' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-reduce-motion', 'true');
 
@@ -1774,10 +1779,14 @@ test('the in-app reduced-motion preference stops transitions on its own', async 
     Array.from(document.querySelectorAll<HTMLElement>('*'))
       .map((el) => ({
         name: `${el.tagName.toLowerCase()}${el.className ? `.${String(el.className).split(' ')[0]}` : ''}`,
-        duration: window.getComputedStyle(el).transitionDuration,
+        // transitionDuration is a LIST when an element transitions more than one
+        // property ('width 1s, color 1s' computes to '1s, 1s'). Compare every
+        // entry, not the raw string, or a multi-property transition reports as an
+        // offender even though the reduce-motion rule neutralised all of it.
+        durations: window.getComputedStyle(el).transitionDuration.split(',').map((part) => part.trim()),
       }))
-      .filter((entry) => entry.duration !== '0s' && entry.duration !== '0.01ms')
-      .map((entry) => `${entry.name} [${entry.duration}]`),
+      .filter((entry) => entry.durations.some((d) => d !== '0s' && d !== '0.01ms'))
+      .map((entry) => `${entry.name} [${entry.durations.join(', ')}]`),
   );
   expect(offenders, `still transitioning: ${offenders.slice(0, 5).join(' | ')}`).toEqual([]);
 
@@ -1790,9 +1799,22 @@ test('the in-app reduced-motion preference stops transitions on its own', async 
 });
 ```
 
-Read the checkbox's actual label in `AppearanceSettings.tsx` and use its exact text; the pattern above
-is a guess. Use `.check()` only if the control is a checkbox — if it is a `<Select>` or a button, use the
-matching interaction instead. Do not rename the label to make the test pass.
+**Why the locators are `getByRole(...)` and not `getByLabel(...)`.** Every control in
+`AppearanceSettings` has BOTH a wrapping `<label>` whose text is the name AND an `aria-label` carrying
+the same string — `AppearanceSettings.tsx:74-88`, same shape at :90-106 and :108-124; the
+reduced-motion control is the same pattern at :126-134. `getByLabel` pulls matches from both the label
+association and the `aria-label` attribute, so it can return the SAME element twice and fail with a
+Playwright strict-mode violation that looks like "two controls matched" and sends you hunting for a
+duplicate that does not exist. The role locators match once. If you do hit a strict-mode error, that is
+this duplication — switch to the role locator, do not add `.first()`.
+
+Verified against the component, so do not re-derive: `Theme` is a `<select>` over
+`THEMES = ['light','dark','system']`, `Cỡ chữ` is a `<select>` over
+`FONT_SCALES = ['small','medium','large']`, and `Giảm chuyển động` is a real
+`<input type="checkbox">` (`uiPreferences.ts:21-23`). The CSS this asserts against is `base.css:70-77` —
+`:root[data-reduce-motion='true'] *` sets `transition-duration: 0.01ms !important`, which is why
+`0.01ms` counts as neutralised above and `0s` covers elements that never transitioned. Do not rename
+any label to make the test pass.
 
 If the reload assertion fails while the first one passes, that is a real finding: it means `index.html`'s
 boot script is not writing the attribute, so the preference is lost on every page load until React mounts.
