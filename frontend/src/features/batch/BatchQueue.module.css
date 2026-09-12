@@ -9,9 +9,22 @@
  *
  * Every `.state*` class sits on a cell that already renders the Vietnamese
  * `STATUS_LABEL` for the same status, so colour is never the only signal.
+ *
+ * Task 19 added the block below (`.table`/`.summary`/`.failure`/`.notRetryable`)
+ * to the job row above: `.trackTable` was the same rule under another name, and
+ * the two "không thể tự thử lại" notes were sharing `.trackNote` with the
+ * unrelated status notes. `.summary` and `.summaryBox` stack on the finished
+ * batch panel — `.summaryBox`'s border shorthand comes later in the file, so
+ * the panel keeps one uniform border while `.summary` supplies the row layout.
  */
 
-/* --- Step 2 block: the job row ------------------------------------------ */
+/* --- Task 19 Step 2 block: the batch table ------------------------------ */
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+.summary { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border-control); display: flex; justify-content: space-between; gap: var(--sp-3); align-items: center; }
+.failure { color: var(--danger); font-size: var(--fs-sm); }
+.notRetryable { color: var(--text-subtle); font-size: var(--fs-sm); }
+
+/* --- Task 18 Step 2 block: the job row ---------------------------------- */
 .state { font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
 .stateRunning { color: var(--text); }
 .stateFailed { color: var(--danger); }
@@ -119,7 +132,6 @@
 .trackTitle { margin: 0; font-size: var(--fs-md); font-weight: 600; }
 .streamState { font-size: var(--fs-sm); color: var(--text-subtle); font-weight: 600; }
 .trackNote { margin: 0; font-size: var(--fs-sm); color: var(--text-muted); }
-.trackTable { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
 .trackTh {
   text-align: left;
   font-size: var(--fs-sm);
@@ -136,7 +148,8 @@
   vertical-align: middle;
   min-width: 0;
 }
-.trackError { color: var(--danger); font-weight: 600; }
+/* Weight only: `.failure` (Step 2 block) carries the colour and size. */
+.trackError { font-weight: 600; }
 
 /* --- Alerts and summary ------------------------------------------------- */
 .alert {
@@ -149,13 +162,9 @@
 }
 .alertTitle { margin: 0; color: var(--danger); font-weight: 600; }
 .alertList { margin: 0; padding-left: 1.125rem; color: var(--text); }
+/* Layout comes from `.summary` (Step 2 block); this adds the panel chrome. */
 .summaryBox {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
   flex-wrap: wrap;
-  padding: var(--sp-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   background: var(--surface-raised);

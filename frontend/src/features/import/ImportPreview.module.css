@@ -1,0 +1,54 @@
+/*
+ * Import preview (ImportPreview.tsx). The first block is the task brief's
+ * Step 1 block verbatim; the rest mirrors the inline `styles` object this file
+ * replaced.
+ *
+ * Each candidate stays an <article>: e2e/import-preview.spec.ts locates the
+ * duplicate-ordinal warning per article, so the per-file grouping is load
+ * bearing and the Step 1 grid reads ordinal | body | warnings.
+ */
+
+/* --- Step 1 block: the import candidate -------------------------------- */
+.section { padding: var(--sp-4); border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.sectionTitle { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: var(--sp-2); }
+.candidate { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--sp-3); align-items: baseline; padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.ordinal { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.sourcePath { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-muted); overflow-wrap: anywhere; }
+.warning { color: var(--warning); font-size: var(--fs-sm); display: flex; gap: var(--sp-1); align-items: baseline; }
+
+/* --- Header ------------------------------------------------------------- */
+.header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-4); flex-wrap: wrap; }
+.heading { min-width: 0; }
+.meta { margin: var(--sp-1) 0 0; color: var(--text-muted); }
+.confirmButton {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.confirmButton:hover:not(:disabled) { background: var(--primary-hover); }
+.confirmButton:disabled { cursor: not-allowed; opacity: 0.55; }
+
+/* --- Candidate list ----------------------------------------------------- */
+.list { display: grid; margin-top: var(--sp-2); }
+.body { display: grid; gap: var(--sp-1); min-width: 0; }
+.itemTitle { margin: 0; font-size: var(--fs-md); font-weight: 600; color: var(--text); letter-spacing: 0; }
+/* The excerpt is chapter SOURCE text: reading font, never uppercased. */
+.excerpt {
+  margin: 0;
+  font-family: var(--font-read);
+  color: var(--text-muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.warnings { display: flex; flex-wrap: wrap; gap: var(--sp-1); justify-content: flex-end; min-width: 0; }
+
+.confirmButton:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

@@ -1,0 +1,78 @@
+/*
+ * Import screen shell (ImportScreen.tsx). Mirrors the inline `styles` object
+ * this file replaced - including the three ad-hoc objects that were written
+ * directly in the JSX (the "or import from a file" block).
+ *
+ * The folder/book grid uses minmax(min(100%, 18.75rem), 1fr) so a 300px track
+ * can still collapse inside a 320px viewport instead of forcing a horizontal
+ * scrollbar.
+ */
+.panel {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 57.5rem;
+  margin: 0 auto;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.fileSection {
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+.fileTitle { margin: 0 0 var(--sp-3); font-size: var(--fs-md); font-weight: 600; }
+.fileGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18.75rem), 1fr));
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.guardBox {
+  display: grid;
+  gap: var(--sp-3);
+  align-content: start;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.label { display: grid; gap: var(--sp-1); font-weight: 600; color: var(--text-muted); min-width: 0; }
+.input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.secondaryButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.secondaryButton:hover:not(:disabled) { border-color: var(--primary); }
+.secondaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+
+.input:focus-visible,
+.secondaryButton:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

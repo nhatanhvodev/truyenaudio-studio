@@ -1,0 +1,359 @@
+/*
+ * Wenku import surface (WenkuImport.tsx). Mirrors the inline `styles` object
+ * this file replaced, plus the three animation helpers that file used to inject
+ * into <head> from JS (`injectCrawlCss`): they are ordinary classes and
+ * @keyframes here instead, so the crawl animation costs no runtime <style> tag
+ * and every colour comes from a token.
+ *
+ * Colour is never the only signal: the crawl row always spells out
+ * "Đang cào N/M chương", the percentage and the remaining time; the cover
+ * placeholder and the chapter/rank badges all carry text.
+ */
+
+/* --- Page column -------------------------------------------------------- */
+.container { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+
+/* --- Restored-crawl banner --------------------------------------------- */
+.restoreBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.restoreIcon { font-size: 1.25rem; flex-shrink: 0; }
+.restoreText { flex: 1; min-width: 12.5rem; color: var(--text); }
+.restoreTime { color: var(--text-subtle); font-size: var(--fs-sm); }
+.restoreActions { display: flex; gap: var(--sp-2); }
+.restoreBtn {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.restoreBtn:hover:not(:disabled) { background: var(--primary-hover); }
+.dismissBtn {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.dismissBtn:hover:not(:disabled) { border-color: var(--primary); }
+
+/* --- Link / book-ID card ------------------------------------------------ */
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.cardTitle { margin: 0 0 var(--sp-2); font-size: var(--fs-lg); font-weight: 600; }
+.cardSubtitle { margin: 0 0 var(--sp-4); color: var(--text-muted); line-height: 1.5; }
+.inputRow { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.textInput {
+  flex: 1;
+  min-width: 17.5rem;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+.primaryBtn {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.primaryBtn:hover:not(:disabled) { background: var(--primary-hover); }
+.secondaryBtn {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+}
+.secondaryBtn:hover:not(:disabled) { border-color: var(--primary); }
+.primaryBtn:disabled,
+.secondaryBtn:disabled { cursor: not-allowed; opacity: 0.55; }
+
+/* --- Rankings ----------------------------------------------------------- */
+.rankingsBox {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.rankTabs { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-3); flex-wrap: wrap; }
+.rankTabBtn {
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.rankTabBtnActive { background: var(--primary); color: var(--on-primary); border-color: var(--primary); font-weight: 600; }
+.loadingText { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); font-style: italic; }
+.rankGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13.75rem, 1fr));
+  gap: var(--sp-2);
+  max-height: 13.75rem;
+  overflow-y: auto;
+}
+/* A book in the ranking is a control, not a div: it must stay keyboard
+   reachable and show a focus ring. */
+.rankItem {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.rankItem:hover { border-color: var(--primary); }
+.rankBadge {
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.rankTitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- Novel info card ---------------------------------------------------- */
+.novelCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.novelHeader { display: flex; gap: var(--sp-5); flex-wrap: wrap; }
+.novelCover { width: 8.125rem; height: 10.9375rem; object-fit: cover; border: 1px solid var(--border-subtle); }
+.coverPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 8.125rem;
+  height: 10.9375rem;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-subtle);
+  font-size: var(--fs-sm);
+}
+.novelMeta { flex: 1; min-width: 17.5rem; display: flex; flex-direction: column; gap: var(--sp-1); }
+.novelTitle { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+.metaRow { margin: 0; display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; color: var(--text-muted); }
+.metaDivider { margin: 0 var(--sp-1); color: var(--text-subtle); }
+.authorBadge { color: var(--text); font-weight: 600; }
+.chapterBadge {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.descBox {
+  margin-top: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+/* The synopsis is prose: reading font, never uppercased. */
+.descText {
+  margin: var(--sp-1) 0 0;
+  font-family: var(--font-read);
+  line-height: 1.5;
+  max-height: 5rem;
+  overflow-y: auto;
+}
+
+/* --- Crawl range -------------------------------------------------------- */
+.crawlConfig {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+}
+.rangeRow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.rangeLabel { font-weight: 600; color: var(--text-muted); }
+.numLabel { display: flex; align-items: center; gap: var(--sp-1); color: var(--text-muted); font-size: var(--fs-sm); }
+.numberInput {
+  width: 5rem;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+}
+.presetButtons { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+.presetBtn {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.presetBtn:hover:not(:disabled) { border-color: var(--primary); }
+.presetBtn:disabled { cursor: not-allowed; opacity: 0.55; }
+
+/* --- Crawl progress ----------------------------------------------------- */
+.progressWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.progressHeader { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.progressLabel { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.progressPercent {
+  min-width: 2.625rem;
+  text-align: right;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+.progressTrack { position: relative; height: 0.75rem; border: 1px solid var(--border-subtle); background: var(--surface); overflow: hidden; }
+.progressFill { position: absolute; left: 0; top: 0; height: 100%; min-width: 0.5rem; background: var(--primary); transition: width 1s linear; }
+.progressNote { margin: 0; display: flex; align-items: center; gap: var(--sp-1); color: var(--text-muted); font-size: var(--fs-sm); }
+.pulseDot { color: var(--success); margin-right: var(--sp-1); animation: wenkuPulse 1.2s ease-in-out infinite; }
+.spinIcon { display: inline-block; margin-right: var(--sp-1); animation: wenkuSpin 1.5s linear infinite; }
+.shimmerOverlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--text) 45%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 25rem 100%;
+  animation: wenkuShimmer 1.5s linear infinite;
+}
+.crawlBtn {
+  width: 100%;
+  padding: var(--sp-3) var(--sp-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+.crawlBtn:hover:not(:disabled) { background: var(--primary-hover); }
+.crawlBtn:disabled { cursor: not-allowed; opacity: 0.55; }
+
+/* --- Error and preview -------------------------------------------------- */
+.errorBox {
+  padding: var(--sp-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--danger);
+  font-weight: 600;
+}
+.previewContainer { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.previewBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+.confirmBtn {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.confirmBtn:hover:not(:disabled) { background: var(--primary-hover); }
+.confirmBtn:disabled { cursor: not-allowed; opacity: 0.55; }
+
+/* --- Focus rings: every control, raw <button> included ------------------ */
+.restoreBtn:focus-visible,
+.dismissBtn:focus-visible,
+.textInput:focus-visible,
+.primaryBtn:focus-visible,
+.secondaryBtn:focus-visible,
+.rankTabBtn:focus-visible,
+.rankItem:focus-visible,
+.numberInput:focus-visible,
+.presetBtn:focus-visible,
+.crawlBtn:focus-visible,
+.confirmBtn:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+@keyframes wenkuShimmer {
+  0% { background-position: -25rem 0; }
+  100% { background-position: 25rem 0; }
+}
+@keyframes wenkuPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
+}
+@keyframes wenkuSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

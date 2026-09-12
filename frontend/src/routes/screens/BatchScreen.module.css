@@ -1,0 +1,6 @@
+/*
+ * Batch screen shell (BatchScreen.tsx). The screen itself is one component -
+ * BatchQueue owns its own surface, table and controls - so this is only the
+ * page-level container around it.
+ */
+.screen { display: grid; gap: var(--sp-4); min-width: 0; }

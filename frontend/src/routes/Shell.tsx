@@ -7,6 +7,8 @@ import { describeRoute, projectIdForRoute } from '../features/workspace/workspac
 import { WenkuCrawlProvider } from '../features/import/WenkuCrawlContext';
 import { JobProgress } from '../features/jobs/JobProgress';
 
+import styles from './Shell.module.css';
+
 export function Shell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -35,12 +37,12 @@ export function Shell() {
 
   return (
     <WenkuCrawlProvider>
-      <main style={styles.shell}>
+      <main className={styles.shell}>
         <GlobalNav />
-        <nav style={styles.nav} aria-label="Workflow">
-          <Link to="/" style={styles.navLink}>Dự án</Link>
-          <Link to="/jobs" style={styles.navLink}>Jobs</Link>
-          <Link to="/diagnostics" style={styles.navLink}>Diagnostics</Link>
+        <nav className={styles.nav} aria-label="Workflow">
+          <Link to="/" className={styles.navLink}>Dự án</Link>
+          <Link to="/jobs" className={styles.navLink}>Jobs</Link>
+          <Link to="/diagnostics" className={styles.navLink}>Diagnostics</Link>
         </nav>
         {projectId ? <ProjectNav projectId={projectId} /> : null}
         <WorkspaceTabs
@@ -56,28 +58,3 @@ export function Shell() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    minHeight: '100vh',
-    boxSizing: 'border-box',
-    padding: 24,
-    paddingBottom: 150,
-    color: '#17202a',
-    background: '#f6f8fb',
-    fontFamily: 'Inter, Segoe UI, Arial, sans-serif',
-  },
-  nav: {
-    display: 'flex',
-    // Wrap so the workflow links reflow at 320/390px and at 200% text size
-    // instead of forcing a horizontal scrollbar (G-UX responsive).
-    flexWrap: 'wrap',
-    gap: 12,
-    maxWidth: 920,
-    margin: '0 auto 16px',
-  },
-  navLink: {
-    color: '#0b5cad',
-    fontWeight: 900,
-    textDecoration: 'none',
-  },
-};

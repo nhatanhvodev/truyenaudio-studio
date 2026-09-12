@@ -445,7 +445,7 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
             <p role="status" className={styles.trackNote}>Chờ sự kiện cho {pendingCount} job…</p>
           ) : null}
 
-          <table className={styles.trackTable}>
+          <table className={styles.table}>
             <thead>
               <tr>
                 <th className={styles.trackTh}>Job</th>
@@ -460,7 +460,7 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
                   <td className={`${styles.trackTd} ${styles.jobId}`} title={jobId}>{jobId.slice(0, 12)}</td>
                   <td className={`${styles.trackTd} ${styles.state} ${event ? (STATUS_CLASS[event.status] ?? styles.stateQueued) : ''}`}>
                     {event ? STATUS_LABEL[event.status] ?? event.status : 'Chưa có sự kiện'}
-                    {event?.errorCode ? <span className={styles.trackError}> · {event.errorCode}</span> : null}
+                    {event?.errorCode ? <span className={`${styles.failure} ${styles.trackError}`}> · {event.errorCode}</span> : null}
                   </td>
                   <td className={`${styles.trackTd} ${styles.count}`}>{event && event.total > 0 ? `${event.current}/${event.total}` : '—'}</td>
                   <td className={`${styles.trackTd} ${styles.actions}`}>
@@ -475,7 +475,7 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
                       </button>
                     ) : null}
                     {event?.status === 'FAILED' && !retryable.has(jobId) ? (
-                      <span className={styles.trackNote}>không thể tự thử lại — hãy mở nháp để xử lý thủ công</span>
+                      <span className={styles.notRetryable}>không thể tự thử lại — hãy mở nháp để xử lý thủ công</span>
                     ) : null}
                   </td>
                 </tr>
@@ -490,8 +490,8 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
                 {failedRows.map(({ jobId, event }) => (
                   <li key={jobId}>
                     <span title={jobId}>{jobId.slice(0, 12)}</span>
-                    {event?.errorCode ? <span className={styles.trackError}> · {event.errorCode}</span> : null}
-                    {!retryable.has(jobId) ? <span className={styles.trackNote}> — không thể tự thử lại, hãy mở nháp để xử lý thủ công</span> : null}
+                    {event?.errorCode ? <span className={`${styles.failure} ${styles.trackError}`}> · {event.errorCode}</span> : null}
+                    {!retryable.has(jobId) ? <span className={styles.notRetryable}> — không thể tự thử lại, hãy mở nháp để xử lý thủ công</span> : null}
                   </li>
                 ))}
               </ul>
@@ -504,7 +504,7 @@ export function BatchQueue({ projectId, store, onRetry, onCancel }: Props) {
           ) : null}
 
           {finished ? (
-            <section aria-label="Kết quả batch" className={styles.summaryBox}>
+            <section aria-label="Kết quả batch" className={`${styles.summary} ${styles.summaryBox}`}>
               <p className={styles.summaryLine}>
                 Hoàn tất: {counts.succeeded}/{batch.jobIds.length} thành công · {counts.failed} thất bại · {counts.canceled} đã hủy · {counts.blocked} chưa rõ phí
               </p>

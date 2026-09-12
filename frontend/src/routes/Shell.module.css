@@ -1,0 +1,31 @@
+/*
+ * App shell (Shell.tsx). Mirrors the inline `styles` object this file replaced:
+ * the shell/panel surface, the workflow nav and its links.
+ *
+ * The nav wraps so the three workflow links reflow at 320/390px and at 200%
+ * text size instead of forcing a horizontal scrollbar.
+ */
+.shell {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: var(--sp-4);
+  /* Room for the job-progress overlay so it never covers the last row. */
+  padding-bottom: 9.375rem;
+  color: var(--text);
+  background: var(--bg);
+  font-family: var(--font-ui);
+}
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  max-width: 57.5rem;
+  margin: 0 auto var(--sp-4);
+}
+.navLink { color: var(--text-muted); font-weight: 600; text-decoration: none; }
+.navLink:hover { color: var(--text); }
+
+.navLink:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}

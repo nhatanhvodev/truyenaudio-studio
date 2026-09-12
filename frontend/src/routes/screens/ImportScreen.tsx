@@ -4,6 +4,8 @@ import { WenkuImport } from '../../features/import/WenkuImport';
 import ImportPreview, { type ImportCandidate } from '../../features/import/ImportPreview';
 import { apiForm, apiJson } from '../../shared/api';
 
+import styles from './ImportScreen.module.css';
+
 type Chapter = {
   id: string;
   project_id?: string;
@@ -97,8 +99,8 @@ export function ImportScreen() {
   }
 
   return (
-    <section style={styles.panel} aria-label="Nhập nội dung">
-      <h1 style={styles.title}>Nhập nội dung</h1>
+    <section className={styles.panel} aria-label="Nhập nội dung">
+      <h1 className={styles.title}>Nhập nội dung</h1>
       <WenkuImport
         projectId={projectId}
         onImportSuccess={(firstChapterId) => {
@@ -106,34 +108,34 @@ export function ImportScreen() {
         }}
       />
 
-      <div style={{ marginTop: 24, borderTop: '1px solid #e2e8f0', paddingTop: 20 }}>
-        <h2 style={{ margin: '0 0 12px', fontSize: 18, color: '#334155' }}>Hoặc nhập từ File / Thư mục máy tính</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-          <section style={styles.guardBox} aria-label="Folder import preview">
-            <label style={styles.label}>
+      <div className={styles.fileSection}>
+        <h2 className={styles.fileTitle}>Hoặc nhập từ File / Thư mục máy tính</h2>
+        <div className={styles.fileGrid}>
+          <section className={styles.guardBox} aria-label="Folder import preview">
+            <label className={styles.label}>
               Local folder path
-              <input value={folderPath} onChange={(event) => setFolderPath(event.target.value)} style={styles.input} />
+              <input value={folderPath} onChange={(event) => setFolderPath(event.target.value)} className={styles.input} />
             </label>
-            <button type="button" onClick={() => void previewFolder()} disabled={busy || !folderPath.trim()} style={styles.secondaryButton}>
+            <button type="button" onClick={() => void previewFolder()} disabled={busy || !folderPath.trim()} className={styles.secondaryButton}>
               Preview folder
             </button>
           </section>
 
-          <section style={styles.guardBox} aria-label="Book import preview">
-            <label style={styles.label}>
+          <section className={styles.guardBox} aria-label="Book import preview">
+            <label className={styles.label}>
               EPUB or DOCX file
               <input
                 type="file"
                 accept=".epub,.docx,application/epub+zip,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 onChange={(event) => setBookFile(event.target.files?.[0] ?? null)}
-                style={styles.input}
+                className={styles.input}
               />
             </label>
-            <div style={styles.actions}>
-              <button type="button" onClick={() => void previewBook('EPUB')} disabled={busy || !bookFile} style={styles.secondaryButton}>
+            <div className={styles.actions}>
+              <button type="button" onClick={() => void previewBook('EPUB')} disabled={busy || !bookFile} className={styles.secondaryButton}>
                 Preview EPUB
               </button>
-              <button type="button" onClick={() => void previewBook('DOCX')} disabled={busy || !bookFile} style={styles.secondaryButton}>
+              <button type="button" onClick={() => void previewBook('DOCX')} disabled={busy || !bookFile} className={styles.secondaryButton}>
                 Preview DOCX
               </button>
             </div>
@@ -141,67 +143,9 @@ export function ImportScreen() {
         </div>
 
         {candidates.length > 0 ? <ImportPreview candidates={candidates} onConfirm={(mapped) => void confirmPreview(mapped)} /> : null}
-        {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+        {error ? <p role="alert" className={styles.error}>{error}</p> : null}
       </div>
     </section>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  panel: {
-    display: 'grid',
-    gap: 16,
-    maxWidth: 920,
-    margin: '0 auto',
-    padding: 20,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  title: {
-    margin: 0,
-    fontSize: 26,
-    letterSpacing: 0,
-  },
-  label: {
-    display: 'grid',
-    gap: 8,
-    fontWeight: 900,
-  },
-  input: {
-    width: '100%',
-    minHeight: 40,
-    boxSizing: 'border-box',
-    padding: '8px 10px',
-    border: '1px solid #c9d3df',
-    borderRadius: 6,
-    font: 'inherit',
-  },
-  secondaryButton: {
-    justifySelf: 'start',
-    padding: '10px 14px',
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    background: '#ffffff',
-    color: '#17324d',
-    fontWeight: 900,
-  },
-  actions: {
-    display: 'flex',
-    gap: 10,
-    flexWrap: 'wrap',
-  },
-  guardBox: {
-    display: 'grid',
-    gap: 12,
-    padding: 12,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#f8fafc',
-  },
-  error: {
-    margin: 0,
-    color: '#9a3412',
-    fontWeight: 900,
-  },
-};
