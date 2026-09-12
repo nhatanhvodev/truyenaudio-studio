@@ -1,0 +1,78 @@
+/*
+ * Audio review (AudioReview.tsx) — the render/approve surface with the advisory
+ * ASR panel. Mirrors the inline `styles` object it replaced, on tokens only
+ * (ADR-0002).
+ *
+ * The ASR block is advisory by design: it never disables Approve, so it wears
+ * the warning token and says so in words.
+ */
+
+.shell {
+  box-sizing: border-box;
+  padding: var(--sp-5);
+  color: var(--text);
+  background: var(--bg);
+  font-family: var(--font-ui);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.meta { margin: var(--sp-1) 0 0; color: var(--text-muted); overflow-wrap: anywhere; }
+
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+.button {
+  min-width: 6rem;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) { background: var(--primary-hover); }
+.button:disabled { cursor: not-allowed; opacity: 0.55; }
+.button:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.success { margin: 0; color: var(--success); font-weight: 600; }
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+  gap: var(--sp-3);
+  margin: var(--sp-5) 0 0;
+  min-width: 0;
+}
+.metrics dt { font-size: var(--fs-sm); color: var(--text-subtle); }
+.metrics dd { margin: 0; font-family: var(--font-mono); font-size: var(--fs-md); color: var(--text); overflow-wrap: anywhere; }
+
+.asrBox {
+  margin-top: var(--sp-5);
+  padding: var(--sp-4);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+
+.asrTitle { margin: 0; font-size: var(--fs-md); color: var(--warning); }
+
+.issueList {
+  display: grid;
+  gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+  padding-left: var(--sp-5);
+  min-width: 0;
+}

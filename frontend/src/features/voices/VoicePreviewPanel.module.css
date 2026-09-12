@@ -1,0 +1,179 @@
+/*
+ * Voice preview panel (VoicePreviewPanel.tsx) — A02.
+ *
+ * The block below is the "voice row module" from the redesign brief, verbatim.
+ * A voice with no model or licence renders the guidance cell (`.unavailable`)
+ * and no control cell at all — that is the A02 behaviour, not a layout choice.
+ * Everything is on tokens (ADR-0002).
+ */
+
+.voice { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: var(--sp-3); align-items: center; min-height: var(--density-row); padding: var(--density-pad) var(--sp-4); border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.name { color: var(--text); font-size: var(--fs-md); min-width: 0; }
+.locale { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.unavailable { color: var(--text-subtle); font-size: var(--fs-sm); }
+.actions { display: flex; gap: var(--sp-2); }
+
+/* --- the rest of the panel's own surface --------------------------------- */
+
+/* Continuation of the brief's row module. The control cell holds four controls,
+   so it wraps rather than forcing the row wider than its column; the guidance
+   cell is a <p>, so the browser margin has to go. */
+.actions { flex-wrap: wrap; align-items: center; min-width: 0; }
+.unavailable { margin: 0; }
+
+/* The last row in a list does not need its trailing divider. */
+.voice:last-child { border-bottom: 0; }
+
+/* Name and locale share the row's first cell, on one baseline. */
+.identity { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+
+/* The job status line belongs to the whole row, not to the control column. */
+.jobLine {
+  grid-column: 1 / -1;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+/* Job status / compare-entry metadata: an identifier plus a state code. */
+.status { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-muted); }
+
+.shell {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--sp-3);
+  margin: 0;
+  min-width: 0;
+}
+
+/* Interface label only — never prose. */
+.legend {
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.radios { display: flex; gap: var(--sp-4); flex-wrap: wrap; min-width: 0; }
+.radio { display: inline-flex; gap: var(--sp-2); align-items: center; font-size: var(--fs-md); color: var(--text); }
+
+.textField { display: grid; gap: var(--sp-1); font-size: var(--fs-md); color: var(--text-muted); }
+
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.textarea:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+/* The sample is the prose being auditioned: a reading surface, never uppercased. */
+.sample {
+  margin: 0;
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  color: var(--text-muted);
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+/* "421/420 ký tự" is a counter, not prose. */
+.counter { margin: 0; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+
+.list { display: grid; gap: 0; list-style: none; margin: 0; padding: 0; min-width: 0; }
+
+.selectedBadge {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  color: var(--primary);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cachedBadge {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.primaryButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primaryButton:hover:not(:disabled) { background: var(--primary-hover); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.secondaryButton {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover:not(:disabled) { background: var(--surface); }
+.secondaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+/* Cancel / retry read as inline text actions on the status line. */
+.link {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 var(--sp-1);
+}
+.link:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.compareBox {
+  display: grid;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+/* role="alert" — the backend code is the signal, the colour only reinforces it. */
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+/* role="status" — a confirmation, not a failure. */
+.notice { margin: 0; color: var(--success); font-weight: 600; }

@@ -1,0 +1,107 @@
+/*
+ * Voice browser (VoiceBrowser.tsx) — the catalogue surface reached from the
+ * project and app settings. Mirrors the inline `styles` object it replaced,
+ * on tokens only (ADR-0002).
+ *
+ * The availability badge pairs a token colour with the literal state word
+ * ("ready" / "missing"), so status is never carried by colour alone.
+ */
+
+.shell {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: var(--sp-5);
+  color: var(--text);
+  background: var(--bg);
+  font-family: var(--font-ui);
+}
+
+.header { max-width: 61.25rem; margin: 0 auto var(--sp-4); }
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+
+/* The shared preview sentence is prose, not chrome. */
+.previewText {
+  max-width: 45rem;
+  margin: var(--sp-2) 0 0;
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  color: var(--text-muted);
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+.success { max-width: 61.25rem; margin: 0 auto var(--sp-3); color: var(--success); font-weight: 600; }
+.error { max-width: 61.25rem; margin: 0 auto var(--sp-3); color: var(--danger); font-weight: 600; }
+
+.list { max-width: 61.25rem; margin: 0 auto; display: grid; gap: var(--sp-3); min-width: 0; }
+
+.voice {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.topLine { display: flex; justify-content: space-between; gap: var(--sp-4); align-items: start; min-width: 0; }
+.voiceName { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+
+/* provider · model · locale is an identifier line, so it is mono. */
+.meta { margin: var(--sp-1) 0 0; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+
+.readyBadge {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--success);
+  border-radius: var(--radius);
+  color: var(--success);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.blockedBadge {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  color: var(--warning);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: var(--sp-2); margin: 0; min-width: 0; }
+.facts dt { font-size: var(--fs-sm); color: var(--text-subtle); }
+.facts dd { margin: 0; font-size: var(--fs-md); color: var(--text); }
+
+.hint { margin: 0; color: var(--text-subtle); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+
+.button {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) { background: var(--primary-hover); }
+.button:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+/* Disabled because the model or licence is missing: the row's guidance text is
+   what says why, so this is never colour alone. */
+.disabledButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text-subtle);
+  font: inherit;
+  font-weight: 600;
+  cursor: not-allowed;
+}

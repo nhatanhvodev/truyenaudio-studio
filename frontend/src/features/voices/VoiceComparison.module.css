@@ -1,0 +1,68 @@
+/*
+ * Voice comparison (VoiceComparison.tsx) — the A/B candidate grid used by the
+ * multi-voice cloud demo. Mirrors the inline `styles` object it replaced, on
+ * tokens only (ADR-0002).
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.meta { margin: var(--sp-1) 0 0; color: var(--text-muted); font-size: var(--fs-md); }
+
+/* The bounded sample is the prose both candidates are asked to read, so it is a
+   reading surface — never uppercased. */
+.sample {
+  margin: 0;
+  padding: var(--sp-3);
+  border-left: var(--sp-1) solid var(--primary);
+  background: var(--surface-raised);
+  font-family: var(--font-read);
+  font-size: var(--fs-read);
+  line-height: var(--lh-read);
+  color: var(--text);
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+/* role="alert" — the consent sentence is the signal. */
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11.875rem, 1fr));
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.card {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.button {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) { background: var(--primary-hover); }
+.button:disabled { cursor: not-allowed; opacity: 0.55; }
+.button:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }

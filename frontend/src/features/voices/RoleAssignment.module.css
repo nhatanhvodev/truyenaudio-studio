@@ -1,0 +1,108 @@
+/*
+ * Role assignment (RoleAssignment.tsx) — the multi-voice role/segment mapping.
+ * Mirrors the inline `styles` object it replaced, on tokens only (ADR-0002).
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  align-items: start;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+.note { margin: var(--sp-1) 0 0; color: var(--text-muted); font-size: var(--fs-md); }
+
+.badge {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* role="alert" — the sentence itself carries the state. */
+.error { margin: 0; color: var(--danger); font-weight: 600; }
+
+.roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.roleCard {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+/* Applied on top of `.roleCard`, the way `.badgeBlocker` sits on `.badge` in
+   the translation workspace: the narrator is the default role, so it is the
+   one card with the accent border. */
+.narratorCard { border-color: var(--primary); background: var(--surface-raised); }
+
+.segmentList { display: grid; gap: var(--sp-2); min-width: 0; }
+
+.segment {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(9.375rem, 13.75rem);
+  gap: var(--sp-3);
+  align-items: center;
+  min-width: 0;
+}
+
+/* Below 640px the select drops under its segment text rather than squeezing it. */
+@media (max-width: 639px) {
+  .segment { grid-template-columns: minmax(0, 1fr); }
+}
+
+.segmentText { color: var(--text-muted); min-width: 0; overflow-wrap: anywhere; }
+
+.select {
+  width: 100%;
+  min-height: 2.25rem;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.select:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.button {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.button:hover:not(:disabled) { background: var(--primary-hover); }
+.button:disabled { cursor: not-allowed; opacity: 0.55; }
+.button:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }

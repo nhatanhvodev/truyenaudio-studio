@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { apiJson } from '../../shared/api';
 import ArtifactPlayer from '../../features/audio/ArtifactPlayer';
+import styles from './AudioScreen.module.css';
 
 export type RenderedAudio = {
   masterArtifactId: string;
@@ -137,21 +138,21 @@ export function AudioScreen() {
   }
 
   return (
-    <section style={styles.panel} aria-label="Duyệt audio">
-      <h1 style={styles.title}>Audio</h1>
+    <section className={styles.panel} aria-label="Duyệt audio">
+      <h1 className={styles.title}>Audio</h1>
       {rendered ? (
         <>
-          <p style={styles.success}>Master {rendered.masterSha256.slice(0, 12)} sẵn sàng duyệt</p>
+          <p className={styles.success}>Master {rendered.masterSha256.slice(0, 12)} sẵn sàng duyệt</p>
           <ArtifactPlayer
             chapterId={chapterId ?? ''}
             artifactId={rendered.masterArtifactId}
             sha256={rendered.masterSha256}
           />
           {masterIsStale ? (
-            <p role="alert" style={styles.error}>
+            <p role="alert" className={styles.error}>
               Bản master trên máy chủ đã thay đổi ({(serverMaster?.masterSha256 ?? '').slice(0, 12)}). Hãy nghe lại
               bản mới trước khi phê duyệt.
-              <button type="button" onClick={useServerMaster} style={styles.secondaryButton}>
+              <button type="button" onClick={useServerMaster} className={styles.secondaryButton}>
                 Nghe bản mới
               </button>
             </p>
@@ -160,67 +161,16 @@ export function AudioScreen() {
             type="button"
             onClick={() => void approveAudio()}
             disabled={busy || masterIsStale}
-            style={styles.primaryButton}
+            className={styles.primaryButton}
           >
             Phê duyệt audio
           </button>
         </>
       ) : (
-        <Link to={`/chapters/${chapterId}/voice`} style={styles.navLink}>Render lại audio</Link>
+        <Link to={`/chapters/${chapterId}/voice`} className={styles.navLink}>Render lại audio</Link>
       )}
-      {notice ? <p role="status" style={styles.success}>{notice}</p> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {notice ? <p role="status" className={styles.success}>{notice}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  error: {
-    margin: 0,
-    color: '#9a3412',
-    fontWeight: 900,
-  },
-  navLink: {
-    color: '#0b5cad',
-    fontWeight: 900,
-    textDecoration: 'none',
-  },
-  panel: {
-    display: 'grid',
-    gap: 16,
-    maxWidth: 920,
-    margin: '0 auto',
-    padding: 20,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  primaryButton: {
-    justifySelf: 'start',
-    padding: '10px 14px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 900,
-  },
-  secondaryButton: {
-    justifySelf: 'start',
-    padding: '10px 14px',
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    background: '#ffffff',
-    color: '#17324d',
-    fontWeight: 900,
-  },
-  success: {
-    margin: 0,
-    color: '#166534',
-    fontWeight: 900,
-  },
-  title: {
-    margin: 0,
-    fontSize: 26,
-    letterSpacing: 0,
-  },
-};

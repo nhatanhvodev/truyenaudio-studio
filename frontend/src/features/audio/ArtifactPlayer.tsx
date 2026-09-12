@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import styles from './ArtifactPlayer.module.css';
 
 export type AudioMarker = {
   id: string;
@@ -199,25 +200,40 @@ export default function ArtifactPlayer({
       aria-label="Nghe master"
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      style={styles.shell}
+      className={styles.player}
       data-artifact-id={artifactId}
     >
       {/* controls: trình phát gốc của trình duyệt, dùng chính URL artifact ở trên (Range request). */}
-      <audio ref={audioRef} src={url} preload="metadata" controls data-testid="master-audio" />
+      <audio
+        ref={audioRef}
+        src={url}
+        preload="metadata"
+        controls
+        data-testid="master-audio"
+        className={styles.audio}
+      />
 
-      <header style={styles.header}>
-        <strong style={styles.heading}>Nghe master</strong>
-        <span style={styles.checksum}>checksum {sha256.slice(0, 12)}</span>
+      <header className={styles.header}>
+        <strong className={styles.heading}>Nghe master</strong>
+        <span className={styles.hash}>checksum {sha256.slice(0, 12)}</span>
       </header>
 
-      <div style={styles.controls}>
-        <button type="button" onClick={() => void togglePlay()} style={styles.button}>
+      <div className={styles.row}>
+        <button type="button" onClick={() => void togglePlay()} className={styles.primaryButton}>
           {playing ? 'Tạm dừng' : 'Phát'}
         </button>
-        <button type="button" onClick={() => seekTo(currentSeconds - SEEK_STEP_SECONDS)} style={styles.secondaryButton}>
+        <button
+          type="button"
+          onClick={() => seekTo(currentSeconds - SEEK_STEP_SECONDS)}
+          className={styles.secondaryButton}
+        >
           Lùi 5 giây
         </button>
-        <button type="button" onClick={() => seekTo(currentSeconds + SEEK_STEP_SECONDS)} style={styles.secondaryButton}>
+        <button
+          type="button"
+          onClick={() => seekTo(currentSeconds + SEEK_STEP_SECONDS)}
+          className={styles.secondaryButton}
+        >
           Tới 5 giây
         </button>
         {orderedMarkers.length > 0 ? (
@@ -230,7 +246,7 @@ export default function ArtifactPlayer({
                   seekTo(marker.seconds);
                 }
               }}
-              style={styles.secondaryButton}
+              className={styles.secondaryButton}
             >
               Đoạn trước
             </button>
@@ -242,7 +258,7 @@ export default function ArtifactPlayer({
                   seekTo(marker.seconds);
                 }
               }}
-              style={styles.secondaryButton}
+              className={styles.secondaryButton}
             >
               Đoạn sau
             </button>
@@ -250,8 +266,8 @@ export default function ArtifactPlayer({
         ) : null}
       </div>
 
-      <label style={styles.scrubber}>
-        <span style={styles.scrubberLabel}>Tua âm thanh</span>
+      <label className={styles.scrubber}>
+        <span className={styles.scrubberLabel}>Tua âm thanh</span>
         <input
           type="range"
           aria-label="Tua âm thanh"
@@ -260,22 +276,22 @@ export default function ArtifactPlayer({
           step={0.5}
           value={currentSeconds}
           onChange={(event) => seekTo(Number(event.target.value))}
-          style={styles.range}
+          className={styles.scrub}
         />
       </label>
 
-      <p style={styles.time} aria-live="off">
+      <p className={styles.time} aria-live="off">
         <span data-testid="playback-position">{formatTime(currentSeconds)}</span>
         {' / '}
         <span data-testid="playback-duration">{formatTime(knownDuration)}</span>
       </p>
 
-      <p style={styles.hint}>
+      <p className={styles.hint}>
         Phím tắt: Space/K phát hoặc dừng, ←/→ tua 5 giây, PageUp/PageDown nhảy đoạn, Home/End về đầu hoặc cuối.
       </p>
 
-      {reloadNotice ? <p role="status" style={styles.notice}>{reloadNotice}</p> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {reloadNotice ? <p role="status" className={styles.warning}>{reloadNotice}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </section>
   );
 }
@@ -289,85 +305,3 @@ export function formatTime(seconds: number): string {
   const remainder = whole % 60;
   return `${minutes}:${String(remainder).padStart(2, '0')}`;
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    boxSizing: 'border-box',
-    display: 'grid',
-    gap: 10,
-    marginTop: 18,
-    padding: 16,
-    border: '1px solid #d5dbe5',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  heading: {
-    fontSize: 16,
-  },
-  checksum: {
-    color: '#52606d',
-    fontFamily: 'ui-monospace, Consolas, monospace',
-  },
-  controls: {
-    display: 'flex',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  button: {
-    minWidth: 96,
-    padding: '9px 14px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 800,
-  },
-  secondaryButton: {
-    minWidth: 96,
-    padding: '9px 14px',
-    border: '1px solid #b9c2d0',
-    borderRadius: 6,
-    background: '#ffffff',
-    color: '#17202a',
-    fontWeight: 700,
-  },
-  scrubber: {
-    display: 'grid',
-    gap: 4,
-  },
-  scrubberLabel: {
-    color: '#52606d',
-    fontSize: 13,
-  },
-  range: {
-    width: '100%',
-  },
-  time: {
-    margin: 0,
-    fontVariantNumeric: 'tabular-nums',
-    color: '#17202a',
-    fontWeight: 700,
-  },
-  hint: {
-    margin: 0,
-    color: '#52606d',
-    fontSize: 13,
-  },
-  notice: {
-    margin: 0,
-    color: '#92400e',
-    fontWeight: 700,
-  },
-  error: {
-    margin: 0,
-    color: '#9a3412',
-    fontWeight: 700,
-  },
-};

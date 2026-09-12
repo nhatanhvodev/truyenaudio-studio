@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import styles from './VoicePreviewPanel.module.css';
 
 export const PREVIEW_TEXT_LIMIT = 420;
 export const DEFAULT_SAMPLE_TEXT = 'Xin chào, đây là bản nghe thử giọng đọc tiếng Việt.';
@@ -239,13 +240,13 @@ export default function VoicePreviewPanel({
   }
 
   return (
-    <section aria-label="Nghe thử và chọn giọng" style={styles.shell}>
+    <section aria-label="Nghe thử và chọn giọng" className={styles.shell}>
       <audio ref={audioRef} preload="none" data-testid="preview-audio" />
 
-      <fieldset style={styles.fieldset}>
-        <legend style={styles.legend}>Văn bản nghe thử</legend>
-        <div style={styles.radios}>
-          <label style={styles.radio}>
+      <fieldset className={styles.fieldset}>
+        <legend className={styles.legend}>Văn bản nghe thử</legend>
+        <div className={styles.radios}>
+          <label className={styles.radio}>
             <input
               type="radio"
               name="preview-text-kind"
@@ -254,7 +255,7 @@ export default function VoicePreviewPanel({
             />
             Văn bản mẫu
           </label>
-          <label style={styles.radio}>
+          <label className={styles.radio}>
             <input
               type="radio"
               name="preview-text-kind"
@@ -265,61 +266,62 @@ export default function VoicePreviewPanel({
           </label>
         </div>
         {textKind === 'CUSTOM' ? (
-          <label style={styles.textField}>
+          <label className={styles.textField}>
             <span>Văn bản nghe thử</span>
             <textarea
               aria-label="Văn bản nghe thử"
               value={customText}
               rows={3}
               onChange={(event) => setCustomText(event.target.value)}
+              className={styles.textarea}
             />
           </label>
         ) : (
-          <p style={styles.sample}>{sampleText}</p>
+          <p className={styles.sample}>{sampleText}</p>
         )}
-        <p role="status" style={tooLong ? styles.error : styles.counter}>
+        <p role="status" className={tooLong ? styles.error : styles.counter}>
           {trimmed.length}/{PREVIEW_TEXT_LIMIT} ký tự
         </p>
       </fieldset>
 
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
-      {notice ? <p role="status" style={styles.notice}>{notice}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
+      {notice ? <p role="status" className={styles.notice}>{notice}</p> : null}
 
-      <ul style={styles.list}>
+      <ul className={styles.list}>
         {voices.map((voice) => {
           const job = jobs[voice.id];
           return (
-            <li key={voice.id} style={styles.voice}>
-              <div style={styles.voiceHead}>
-                <span>
-                  <strong>{voice.name}</strong> <span style={styles.meta}>{voice.locale}</span>
-                </span>
-                {selectedVoiceId === voice.id ? (
-                  <span style={styles.selectedBadge}>Đang chọn</span>
-                ) : null}
+            <li key={voice.id} className={styles.voice}>
+              <div className={styles.identity}>
+                <strong className={styles.name}>{voice.name}</strong>
+                <span className={styles.locale}>{voice.locale}</span>
               </div>
 
+              {selectedVoiceId === voice.id ? (
+                <span className={styles.selectedBadge}>Đang chọn</span>
+              ) : null}
+
               {voice.available ? (
-                <div style={styles.actions}>
+                <div className={styles.actions}>
                   <button
                     type="button"
                     onClick={() => void createPreview(voice)}
                     disabled={busy || Boolean(textError)}
-                    style={styles.button}
+                    className={styles.primaryButton}
                   >
                     Nghe thử
                   </button>
                   <button
                     type="button"
                     onClick={() => void playOrRetry(voice, job, play, createPreview)}
-                    style={styles.secondaryButton}
+                    className={styles.secondaryButton}
                   >
                     {playingJobId === job?.jobId ? 'Tạm dừng' : 'Phát'}
                   </button>
-                  <button type="button" onClick={() => select(voice)} style={styles.secondaryButton}>
+                  <button type="button" onClick={() => select(voice)} className={styles.secondaryButton}>
                     Chọn giọng này
                   </button>
-                  <label style={styles.radio}>
+                  <label className={styles.radio}>
                     <input
                       type="checkbox"
                       checked={compareIds.includes(voice.id)}
@@ -329,21 +331,23 @@ export default function VoicePreviewPanel({
                   </label>
                 </div>
               ) : (
-                <p style={styles.hint}>{voice.activationHint ?? 'Cần cài model và license trước khi nghe thử.'}</p>
+                <p className={styles.unavailable}>
+                  {voice.activationHint ?? 'Cần cài model và license trước khi nghe thử.'}
+                </p>
               )}
 
               {job ? (
-                <p style={styles.jobLine}>
-                  <span style={styles.meta}>Trạng thái: {job.status}</span>
-                  {job.fromCache ? <span style={styles.cachedBadge}>Lấy từ cache</span> : null}
-                  {job.reason ? <span style={styles.error}> {job.reason}</span> : null}
+                <p className={styles.jobLine}>
+                  <span className={styles.status}>Trạng thái: {job.status}</span>
+                  {job.fromCache ? <span className={styles.cachedBadge}>Lấy từ cache</span> : null}
+                  {job.reason ? <span className={styles.error}> {job.reason}</span> : null}
                   {job.status === 'QUEUED' ? (
-                    <button type="button" onClick={() => void cancelPreview(voice)} style={styles.link}>
+                    <button type="button" onClick={() => void cancelPreview(voice)} className={styles.link}>
                       Hủy
                     </button>
                   ) : null}
                   {job.status === 'FAILED' || job.status === 'CANCELLED' ? (
-                    <button type="button" onClick={() => void retryPreview(voice)} style={styles.link}>
+                    <button type="button" onClick={() => void retryPreview(voice)} className={styles.link}>
                       Thử lại
                     </button>
                   ) : null}
@@ -354,19 +358,19 @@ export default function VoicePreviewPanel({
         })}
       </ul>
 
-      <div style={styles.compareBox} aria-label="So sánh giọng">
-        <button type="button" onClick={() => void compareSelected()} disabled={busy} style={styles.primaryButton}>
+      <div className={styles.compareBox} aria-label="So sánh giọng">
+        <button type="button" onClick={() => void compareSelected()} disabled={busy} className={styles.primaryButton}>
           So sánh A/B ({compareIds.length})
         </button>
         {compareJobs.length > 0 ? (
-          <ul style={styles.list}>
+          <ul className={styles.list}>
             {compareJobs.map((job) => (
-              <li key={job.jobId} style={styles.voice}>
-                <span>
+              <li key={job.jobId} className={styles.voice}>
+                <span className={styles.status}>
                   {job.presetId} — {job.status}
                   {job.fromCache ? ' · cache' : ''}
                 </span>
-                <button type="button" onClick={() => void play(job)} style={styles.secondaryButton}>
+                <button type="button" onClick={() => void play(job)} className={styles.secondaryButton}>
                   {playingJobId === job.jobId ? 'Tạm dừng' : 'Phát' }
                 </button>
               </li>
@@ -389,30 +393,3 @@ function playOrRetry(
   }
   void createPreview(voice);
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: { display: 'grid', gap: 14, padding: 16, border: '1px solid #d9e1e8', borderRadius: 8, background: '#ffffff' },
-  fieldset: { display: 'grid', gap: 8, border: '1px solid #e4e7ec', borderRadius: 8, padding: 12, margin: 0 },
-  legend: { fontWeight: 800, padding: '0 6px' },
-  radios: { display: 'flex', gap: 16, flexWrap: 'wrap' },
-  radio: { display: 'inline-flex', gap: 6, alignItems: 'center', fontWeight: 600 },
-  textField: { display: 'grid', gap: 4 },
-  sample: { margin: 0, color: '#344054' },
-  counter: { margin: 0, fontSize: 13, color: '#667085' },
-  list: { display: 'grid', gap: 10, listStyle: 'none', margin: 0, padding: 0 },
-  voice: { display: 'grid', gap: 8, padding: 12, border: '1px solid #e4e7ec', borderRadius: 8 },
-  voiceHead: { display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
-  meta: { color: '#667085' },
-  selectedBadge: { padding: '3px 8px', borderRadius: 999, background: '#e8f0ff', color: '#1d4ed8', fontWeight: 800, fontSize: 12 },
-  cachedBadge: { marginLeft: 8, padding: '3px 8px', borderRadius: 999, background: '#eef2f6', color: '#344054', fontSize: 12 },
-  actions: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' },
-  button: { padding: '7px 12px', border: 0, borderRadius: 6, background: '#155eef', color: '#ffffff', fontWeight: 700 },
-  primaryButton: { justifySelf: 'start', padding: '8px 14px', border: 0, borderRadius: 6, background: '#155eef', color: '#ffffff', fontWeight: 800 },
-  secondaryButton: { padding: '7px 12px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff', color: '#18212f', fontWeight: 700 },
-  link: { marginLeft: 8, border: 0, background: 'transparent', color: '#155eef', fontWeight: 700, cursor: 'pointer' },
-  hint: { margin: 0, color: '#7a4b00' },
-  jobLine: { margin: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  error: { margin: 0, color: '#9a3412', fontWeight: 700 },
-  notice: { margin: 0, color: '#166534', fontWeight: 700 },
-  compareBox: { display: 'grid', gap: 10, paddingTop: 8, borderTop: '1px solid #e4e7ec' },
-};

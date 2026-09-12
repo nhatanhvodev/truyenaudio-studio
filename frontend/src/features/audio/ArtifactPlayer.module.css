@@ -1,0 +1,78 @@
+/*
+ * Master-audio player (ArtifactPlayer.tsx) — A05.
+ *
+ * The block below is the "player module" from the redesign brief, verbatim.
+ * The <audio> element keeps pointing straight at the artifact content route (the
+ * browser issues the HTTP Range requests itself); nothing here loads the master
+ * into a Blob. Everything is on tokens (ADR-0002).
+ */
+
+.player { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border-control); border-radius: var(--radius); min-width: 0; }
+.audio { width: 100%; }
+.scrub { width: 100%; accent-color: var(--primary); }
+.row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.hash { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.warning { color: var(--warning); font-size: var(--fs-sm); }
+
+/* --- the rest of the player's own surface -------------------------------- */
+
+/* Continuation of the brief's `.warning`: it is a <p>, so the browser margin
+   has to go, and a status line reads as a statement rather than body copy. */
+.warning { margin: 0; font-weight: 600; }
+
+/* The section is focusable (it owns the keyboard shortcut map), so it needs a
+   visible focus ring of its own. */
+.player:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+.heading { font-size: var(--fs-md); font-weight: 600; color: var(--text); }
+
+.primaryButton {
+  min-width: 6rem;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primaryButton:hover:not(:disabled) { background: var(--primary-hover); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.secondaryButton {
+  min-width: 6rem;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover:not(:disabled) { background: var(--surface); }
+.secondaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.scrubber { display: grid; gap: var(--sp-1); min-width: 0; }
+.scrubberLabel { color: var(--text-muted); font-size: var(--fs-sm); }
+
+/* The playhead is a diagnostic readout, so it is mono + tabular so the digits
+   do not jitter as the seconds roll. */
+.time {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.hint { margin: 0; color: var(--text-subtle); font-size: var(--fs-sm); }
+
+/* role="alert" — the literal A05 code is the signal; the colour only reinforces
+   it. Never colour alone. */
+.error { margin: 0; color: var(--danger); font-size: var(--fs-md); font-weight: 600; }

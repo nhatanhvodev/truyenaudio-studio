@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ProviderSettings from '../providers/ProviderSettings';
 import RoleAssignment from './RoleAssignment';
 import VoiceComparison from './VoiceComparison';
+import styles from './MultiVoiceCloudDemo.module.css';
 
 type Props = {
   panelStyle?: React.CSSProperties;
@@ -34,19 +35,34 @@ export default function MultiVoiceCloudDemo({
       : []),
   ];
   return (
-    <section style={panelStyle ?? styles.panel} aria-label="Multi voice cloud demo">
-      <h1 style={titleStyle ?? styles.title}>Multi-voice cloud demo</h1>
-      <button type="button" onClick={() => setEnabled(true)} style={primaryButtonStyle ?? styles.primaryButton}>
+    <section className={styles.panel} style={panelStyle} aria-label="Multi voice cloud demo">
+      <h1 className={styles.title} style={titleStyle}>Multi-voice cloud demo</h1>
+      <button
+        type="button"
+        onClick={() => setEnabled(true)}
+        className={styles.primaryButton}
+        style={primaryButtonStyle}
+      >
         Đa giọng có hỗ trợ
       </button>
       {enabled ? (
         <>
-          <button type="button" onClick={() => setRoleName('Nữ chính')} style={secondaryButtonStyle ?? styles.secondaryButton}>
+          <button
+            type="button"
+            onClick={() => setRoleName('Nữ chính')}
+            className={styles.secondaryButton}
+            style={secondaryButtonStyle}
+          >
             Thêm vai
           </button>
-          <label style={labelStyle ?? styles.label}>
+          <label className={styles.label} style={labelStyle}>
             Tên vai
-            <input value={roleName} onChange={(event) => setRoleName(event.target.value)} style={inputStyle ?? styles.input} />
+            <input
+              value={roleName}
+              onChange={(event) => setRoleName(event.target.value)}
+              className={styles.input}
+              style={inputStyle}
+            />
           </label>
           <ProviderSettings
             provider="google"
@@ -84,67 +100,19 @@ export default function MultiVoiceCloudDemo({
             ]}
             onSave={() => setRenderSummary('Tái sử dụng 2 đoạn; render lại 1 đoạn')}
           />
-          <button type="button" onClick={() => setRenderSummary('Tái sử dụng 2 đoạn; render lại 1 đoạn')} style={primaryButtonStyle ?? styles.primaryButton}>
+          <button
+            type="button"
+            onClick={() => setRenderSummary('Tái sử dụng 2 đoạn; render lại 1 đoạn')}
+            className={styles.primaryButton}
+            style={primaryButtonStyle}
+          >
             Đổi giọng hero và render
           </button>
-          {renderSummary ? <p role="status" style={successStyle ?? styles.success}>{renderSummary}</p> : null}
+          {renderSummary ? (
+            <p role="status" className={styles.success} style={successStyle}>{renderSummary}</p>
+          ) : null}
         </>
       ) : null}
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  panel: {
-    display: 'grid',
-    gap: 16,
-    maxWidth: 920,
-    margin: '0 auto',
-    padding: 20,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  title: {
-    margin: 0,
-    fontSize: 26,
-    letterSpacing: 0,
-  },
-  label: {
-    display: 'grid',
-    gap: 8,
-    fontWeight: 900,
-  },
-  input: {
-    width: '100%',
-    minHeight: 40,
-    boxSizing: 'border-box',
-    padding: '8px 10px',
-    border: '1px solid #c9d3df',
-    borderRadius: 6,
-    font: 'inherit',
-  },
-  primaryButton: {
-    justifySelf: 'start',
-    padding: '10px 14px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 900,
-  },
-  secondaryButton: {
-    justifySelf: 'start',
-    padding: '10px 14px',
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    background: '#ffffff',
-    color: '#17324d',
-    fontWeight: 900,
-  },
-  success: {
-    margin: 0,
-    color: '#166534',
-    fontWeight: 900,
-  },
-};

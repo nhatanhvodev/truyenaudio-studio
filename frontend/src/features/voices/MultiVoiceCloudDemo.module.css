@@ -1,0 +1,77 @@
+/*
+ * Multi-voice cloud demo (MultiVoiceCloudDemo.tsx) — the `multivoice-cloud`
+ * route. Mirrors the inline `styles` object it replaced, on tokens only
+ * (ADR-0002).
+ *
+ * The component still accepts per-slot style overrides from its parent; those
+ * are applied on top of these classes, so an unset slot falls back to the
+ * module exactly as it fell back to the inline default before.
+ */
+
+.panel {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 57.5rem;
+  margin: 0 auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); letter-spacing: 0; }
+
+.label {
+  display: grid;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.input {
+  width: 100%;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.input:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.primaryButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primaryButton:hover:not(:disabled) { background: var(--primary-hover); }
+.primaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.primaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.secondaryButton {
+  justify-self: start;
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondaryButton:hover:not(:disabled) { background: var(--surface); }
+.secondaryButton:disabled { cursor: not-allowed; opacity: 0.55; }
+.secondaryButton:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.success { margin: 0; color: var(--success); font-weight: 600; }

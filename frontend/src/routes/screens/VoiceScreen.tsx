@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { apiJson } from '../../shared/api';
 import VoicePreviewPanel, { type VoiceOption } from '../../features/voices/VoicePreviewPanel';
 import type { RenderedAudio } from './AudioScreen';
+import styles from './VoiceScreen.module.css';
 
 const fakePresetId = '018f0000-0000-7000-8000-000000000001';
 const fakeAudioEnabled = ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_STUDIO_FAKE_AUDIO) === '1';
@@ -85,9 +86,9 @@ export function VoiceScreen() {
   }
 
   return (
-    <section style={styles.panel} aria-label="Chọn giọng">
-      <h1 style={styles.title}>Giọng đọc</h1>
-      <p style={styles.quote}>
+    <section className={styles.panel} aria-label="Chọn giọng">
+      <h1 className={styles.title}>Giọng đọc</h1>
+      <p className={styles.quote}>
         {presetId ? `Preset ${presetId}` : 'Chưa có giọng local đã verify để render.'}
       </p>
       <VoicePreviewPanel
@@ -95,47 +96,15 @@ export function VoiceScreen() {
         selectedVoiceId={presetId || null}
         onSelect={(voiceId) => setPresetId(voiceId)}
       />
-      <button type="button" onClick={() => void renderAudio()} disabled={busy || !presetId} style={styles.primaryButton}>
+      <button
+        type="button"
+        onClick={() => void renderAudio()}
+        disabled={busy || !presetId}
+        className={styles.primaryButton}
+      >
         Render một giọng
       </button>
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  error: {
-    margin: 0,
-    color: '#9a3412',
-    fontWeight: 900,
-  },
-  panel: {
-    display: 'grid',
-    gap: 16,
-    maxWidth: 920,
-    margin: '0 auto',
-    padding: 20,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  primaryButton: {
-    justifySelf: 'start',
-    padding: '10px 14px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 900,
-  },
-  quote: {
-    margin: 0,
-    color: '#475467',
-    fontWeight: 700,
-  },
-  title: {
-    margin: 0,
-    fontSize: 26,
-    letterSpacing: 0,
-  },
-};
