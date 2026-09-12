@@ -1,3 +1,45 @@
+/*
+ * NOT DEAD BY ACCIDENT — DO NOT DELETE, AND DO NOT RESTYLE.
+ *
+ * This component has zero importers: it is referenced nowhere under `src/`
+ * except its own module and stylesheet. The `cloudConsentId` state in
+ * `TranslationScreen` and `BatchQueue` is unrelated — that is a free-text box
+ * where the user pastes an id by hand, not this card.
+ *
+ * It is not leftover. It is the frontend half of a gate the BACKEND ALREADY
+ * ENFORCES:
+ * - `backend/app/api/cloud_consents.py:40` serves
+ *   `POST /api/projects/{project_id}/cloud-consents`, which is exactly the URL
+ *   this file posts to (see `grantConsent` below) with the policy text and the
+ *   accepted sha256;
+ * - `backend/app/modules/compliance/cloud.py:231` refuses cloud work unless a
+ *   `CloudProcessingConsent` is `GRANTED`.
+ *
+ * So the server will reject a paid cloud translation until a consent row
+ * exists, and this card is the only UI that creates one. Deleting it would
+ * remove the intended way for a user to satisfy a gate that stays switched on.
+ * `docs/research/product-validation-research-v2.md:142` tracks precisely this
+ * as a product GAP, naming this component and `RightsEditor` together: the
+ * main route has no complete onboarding rights flow yet, so a user meets the
+ * gate reason late — after doing translation/render work. Both components are
+ * waiting to be wired into that flow.
+ *
+ * That research line names this file alongside `RightsEditor`, which DOES carry
+ * a do-not-delete header. This one did not, which made it read as accidental
+ * dead code to anyone doing a cleanup pass — the asymmetry was the only thing
+ * protecting it, and it protected the wrong way round. Do not "fix" the
+ * asymmetry in the other direction by deleting this file.
+ *
+ * Unlike `RightsEditor` this file is fully on ADR-0002 tokens (see
+ * `CloudConsent.module.css`), so it is NOT an exception to the colour gate and
+ * needs no special handling there.
+ *
+ * Restyling it is not the fix either: it is unreachable, so a restyle would
+ * have no user-visible effect and no test could cover it. When it is finally
+ * wired into the onboarding flow, convert it then — in the same change that
+ * makes it reachable, where a test can see the result.
+ */
+
 import { useMemo, useState } from 'react';
 
 import { Button } from '../../shared/ui';

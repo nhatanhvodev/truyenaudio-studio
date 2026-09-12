@@ -70,6 +70,19 @@ test('50 chapter batch list stays paged and fake recovery path exports clean dia
   await expect(page.getByRole('heading', { name: 'Audio' })).toBeVisible();
   await page.getByRole('button', { name: 'Phê duyệt audio' }).click();
   await expect(page.getByTestId('export-workflow')).toBeVisible();
+  // If this assertion ever fails, it is NOT a timeout, and raising the timeout
+  // will not fix it. Measured on 2026-09-12 with a probe around exactly these
+  // two lines: this step costs 136ms idle, 412ms under six busy-loop node
+  // processes, and 444ms during the full 27-spec suite under eight of them -
+  // roughly 11x headroom against Playwright's 5000ms default. The 5s budget is
+  // not the binding constraint.
+  //
+  // The trap is that BOTH failure modes report the same text, "element(s) not
+  // found": a genuinely slow step, and a POST that FAILED. They need opposite
+  // responses. `ExportWorkflow.tsx:209-220` only sets this notice on success; on
+  // error it sets `error` instead (`:220`) and this text never appears at all.
+  // So read the workflow's own error before touching any timeout - a larger
+  // budget would turn a clear failure into a slow one and hide a real defect.
   await page.getByRole('button', { name: 'Tạo archive riêng tư' }).click();
   await expect(page.getByText('Đã tạo archive riêng tư.')).toBeVisible();
   await page.getByLabel('Tiêu đề tập').fill('Tập 1');

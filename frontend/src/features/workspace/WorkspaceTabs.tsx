@@ -33,8 +33,18 @@ type Props = {
  * { name })` in the unit and E2E suites both match on it exactly), so appending
  * a marker to the name would rename every tab that has unsaved work.
  *
- * The same string already reaches the DOM from the layout status line below, so
- * this adds no new user-visible wording.
+ * Scope of the copy claim, stated precisely. No NEW STRING is authored here: the
+ * same literal already reaches the DOM from the layout status line below, and it
+ * predates this work. But it would be wrong to conclude "nothing user-visible
+ * changed" - this span makes that string reach the ACCESSIBILITY TREE as the
+ * description of every dirty tab, where it was not before, so a screen-reader
+ * user now hears "có thay đổi chưa lưu" once per dirty tab. That is the point of
+ * the element (it closes the carried finding that a dirty tab had no
+ * non-visual cue at all), and it is the reason this is announced on the
+ * DESCRIPTION rather than appended to the accessible name above. An earlier
+ * version of this comment said it "adds no new user-visible wording", which is
+ * only true if "visible" means "sighted" - the same trap as reading a
+ * screenshot and calling it the interface.
  */
 const DIRTY_HINT_ID = 'workspace-tab-dirty-hint';
 const DIRTY_HINT_TEXT = 'có thay đổi chưa lưu';
