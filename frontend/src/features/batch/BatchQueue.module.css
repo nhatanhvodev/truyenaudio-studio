@@ -116,7 +116,7 @@
 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .chapterState { color: var(--text-muted); font-weight: 600; }
 .count { color: var(--text-subtle); font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: var(--fs-sm); }
-.hash { color: var(--text-subtle); font-family: var(--font-mono); font-size: var(--fs-sm); }
+.hash { color: var(--text-subtle); font-family: var(--font-mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 
 /* --- Batch progress panel ----------------------------------------------- */
 .trackBox {

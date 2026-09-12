@@ -17,7 +17,9 @@
    always paired with their Vietnamese label. */
 .stateQueued { color: var(--text-muted); }
 .stateBlocked { color: var(--warning); }
-.jobId { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+/* The cell holds a raw job UUID: no spaces, so it must be allowed to break or
+   the table's min-content width pushes the whole document past 320px. */
+.jobId { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); overflow-wrap: anywhere; }
 .actions { display: flex; gap: var(--sp-2); }
 
 /* --- Shell -------------------------------------------------------------- */

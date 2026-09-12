@@ -11,7 +11,7 @@
 .audio { width: 100%; }
 .scrub { width: 100%; accent-color: var(--primary); }
 .row { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
-.hash { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.hash { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); overflow-wrap: anywhere; }
 .warning { color: var(--warning); font-size: var(--fs-sm); }
 
 /* --- the rest of the player's own surface -------------------------------- */

@@ -11,7 +11,7 @@
 .gate { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border-control); border-left: 3px solid var(--text-muted); background: var(--surface); }
 .gateReady { border-left-color: var(--success); }
 .gateBlocked { border-left-color: var(--danger); }
-.hash { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.hash { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); overflow-wrap: anywhere; }
 .fileGroup { border-top: 1px solid var(--border-control); padding: var(--sp-3) 0; }
 .fileKind { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
 .fileRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--border-subtle); min-width: 0; }

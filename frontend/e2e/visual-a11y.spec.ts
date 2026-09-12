@@ -38,30 +38,97 @@ test('project wizard reflows without horizontal overflow at 320/390/1024/1366', 
   }
 });
 
+// Routes a user can reach with no project open. `/` is kept for uniformity: it
+// is the route most likely to regress. The workspace tab strip lives in the
+// shell, so every route renders it.
+//
+// `/jobs` is data-dependent: its job rows only exist once another spec in the
+// run has driven a job to completion, so the populated case (a raw job UUID in
+// a table cell) is exercised by the full-suite run, not by this file alone.
+const ROUTES = ['/', '/jobs', '/settings/appearance'] as const;
+
+for (const width of VIEWPORTS) {
+  test(`app routes reflow without horizontal overflow at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    for (const route of ROUTES) {
+      await page.goto(route);
+      await expectNoHorizontalOverflow(page);
+    }
+  });
+}
+
+test('workspace tab labels stay readable instead of being ellipsised at 320px', async ({ page }) => {
+  // Every visited route opens a tab, so in-app navigation is what fills the
+  // strip — a single `page.goto` never produces more than one. The tab strip is
+  // wider than 320px once three tabs are open, so this is where `.tab`'s
+  // `text-overflow: ellipsis` used to truncate every label to a few characters.
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('/projects/p1/import');
+  await page.getByRole('link', { name: 'Dự án', exact: true }).click();
+  await page.getByRole('link', { name: 'Jobs', exact: true }).click();
+  await page.getByRole('link', { name: 'Diagnostics', exact: true }).click();
+  await expect(page.getByRole('tablist', { name: 'Tab đang mở' })).toBeVisible();
+
+  const truncated = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[role="tab"]'))
+      .filter((tab) => tab.clientWidth > 0 && tab.scrollWidth > tab.clientWidth + 1)
+      .map((tab) => `${(tab.textContent ?? '').trim()} (${tab.clientWidth}<${tab.scrollWidth})`),
+  );
+  expect(truncated, `tab labels truncated at 320px: ${truncated.join(', ')}`).toEqual([]);
+
+  // The strip scrolls; the document must still not.
+  await expectNoHorizontalOverflow(page);
+});
+
+test('the settings body keeps a usable width beside the group nav at 320px', async ({ page }) => {
+  // A fixed-width side nav plus `flex: 1` on the body does NOT overflow the
+  // document (the body carries `min-width: 0`), so the overflow assertions above
+  // cannot see it: the body is silently crushed to a ~48px column instead. This
+  // measures the body itself.
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto('/settings/appearance');
+  const body = page.locator('section[aria-label="Appearance"]');
+  await expect(body).toBeVisible();
+  const box = await body.boundingBox();
+  expect(
+    box?.width ?? 0,
+    `settings body must stay usable at 320px (measured ${box?.width}px)`,
+  ).toBeGreaterThanOrEqual(240);
+});
+
 test('text resized to 200% keeps content readable without clipping (WCAG 1.4.4)', async ({ page }) => {
   // WCAG 1.4.4 (Resize text) is evaluated at a normal desktop viewport: text
   // must survive 200% scaling without loss of content or horizontal scrolling.
+  //
+  // Two routes, because `/` alone never reaches a project screen. The second one
+  // renders a workspace tab whose label is long enough for `.tab`'s
+  // `max-width`/ellipsis to matter.
+  const routes = ['/', '/projects/p1/import'] as const;
   for (const width of [1280, 1024]) {
     await page.setViewportSize({ width, height: 900 });
-    await page.goto('/');
-    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
-    await page.waitForTimeout(150);
+    for (const route of routes) {
+      await page.goto(route);
+      await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+      await page.waitForTimeout(150);
 
-    await expect(page.getByRole('heading', { name: 'Truyện Audio Studio' })).toBeVisible();
-    await expectNoHorizontalOverflow(page);
+      if (route === '/') {
+        await expect(page.getByRole('heading', { name: 'Truyện Audio Studio' })).toBeVisible();
+      }
+      await expectNoHorizontalOverflow(page);
 
-    // No visible text container may clip its own content at 200% text size.
-    const clipped = await page.evaluate(() => {
-      const offenders: string[] = [];
-      document.querySelectorAll<HTMLElement>('p, h1, h2, h3, span, button, label, li').forEach((el) => {
-        if (el.clientWidth === 0 || el.clientHeight === 0) return;
-        if (el.scrollWidth > el.clientWidth + 1) {
-          offenders.push(`${el.tagName}:"${(el.textContent ?? '').trim().slice(0, 30)}"`);
-        }
+      // No visible text container may clip its own content at 200% text size.
+      const clipped = await page.evaluate(() => {
+        const offenders: string[] = [];
+        document.querySelectorAll<HTMLElement>('p, h1, h2, h3, span, button, label, li').forEach((el) => {
+          if (el.clientWidth === 0 || el.clientHeight === 0) return;
+          if (el.scrollWidth > el.clientWidth + 1) {
+            offenders.push(`${el.tagName}:"${(el.textContent ?? '').trim().slice(0, 30)}"`);
+          }
+        });
+        return offenders.slice(0, 5);
       });
-      return offenders.slice(0, 5);
-    });
-    expect(clipped, `clipped text at 200% on ${width}px: ${clipped.join(', ')}`).toEqual([]);
+      expect(clipped, `clipped text at 200% on ${width}px ${route}: ${clipped.join(', ')}`).toEqual([]);
+    }
   }
 });
 

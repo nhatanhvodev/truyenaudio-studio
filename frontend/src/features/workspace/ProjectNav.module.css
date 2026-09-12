@@ -23,7 +23,10 @@
   border-bottom: 2px solid transparent;
 }
 .area:hover { color: var(--text); }
-.area[aria-current='page'] { color: var(--text); border-bottom-color: var(--primary); }
+/* The current area carries a weight as well as colour + border: at narrow widths
+   the areas wrap and the border alone is a weak second cue. Matches the sibling
+   settings nav (SettingsLayout `.item[aria-current='page']`) and `.crumbCurrent`. */
+.area[aria-current='page'] { color: var(--text); font-weight: 600; border-bottom-color: var(--primary); }
 .area:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
 
 /*

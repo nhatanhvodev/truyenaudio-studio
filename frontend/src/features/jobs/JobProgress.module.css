@@ -27,7 +27,9 @@
    always paired with their Vietnamese label. */
 .stateQueued { color: var(--text-muted); }
 .stateBlocked { color: var(--warning); }
-.jobId { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+/* Same raw UUID as the list row: the overlay clips (`overflow: hidden`) rather
+   than scrolling, so an unbreakable id would be silently cut off. */
+.jobId { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); overflow-wrap: anywhere; }
 
 /* The overlay stacks a job's header, progress bar and notes under each other,
    so every child of a job row spans the row. */

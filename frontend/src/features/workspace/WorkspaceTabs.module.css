@@ -49,8 +49,13 @@
   gap: var(--sp-2);
   min-width: 0;
 }
-/* One tab plus its close button; the close button cannot nest inside the tab. */
-.tabShell { display: inline-flex; align-items: center; min-width: 0; }
+/* One tab plus its close button; the close button cannot nest inside the tab.
+   The tab keeps its own width so `.tablist`'s `overflow-x: auto` does the
+   scrolling: with the default `flex-shrink: 1` every tab shrank instead and
+   every label was ellipsised down to a few characters once the strip was
+   narrower than its tabs (measured at 320px with four tabs open). `.tab`'s own
+   `max-width` still caps a single tab. */
+.tabShell { display: inline-flex; align-items: center; min-width: 0; flex: 0 0 auto; }
 .count { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
 .primary {
   padding: var(--sp-2) var(--sp-3);
