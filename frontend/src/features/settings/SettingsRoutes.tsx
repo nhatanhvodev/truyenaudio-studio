@@ -13,6 +13,8 @@ import VoiceBrowser from '../voices/VoiceBrowser';
 import { AppearanceSettings } from './AppearanceSettings';
 import { StorageSettings } from './StorageSettings';
 
+import styles from './SettingsRoutes.module.css';
+
 export interface SettingsGroupPageProps {
   title: string;
   note: string;
@@ -20,11 +22,11 @@ export interface SettingsGroupPageProps {
 
 export function SettingsGroupPending({ title, note }: SettingsGroupPageProps) {
   return (
-    <section aria-labelledby="settings-group-heading">
-      <h2 id="settings-group-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="settings-group-heading" className={styles.panel}>
+      <h2 id="settings-group-heading" className={styles.panelHeading}>
         {title}
       </h2>
-      <p style={{ margin: 0, color: '#4b5563' }}>{note}</p>
+      <p className={styles.panelNote}>{note}</p>
     </section>
   );
 }
@@ -52,9 +54,9 @@ function TranslationSettings() {
 
 function TtsSettings() {
   return (
-    <section aria-label="TTS" style={{ display: 'grid', gap: 12 }}>
-      <h2 style={{ margin: 0, fontSize: 15 }}>TTS</h2>
-      <p style={{ margin: 0, color: '#4b5563', fontSize: 13 }}>
+    <section aria-label="TTS" className={styles.panel}>
+      <h2 className={styles.panelHeading}>TTS</h2>
+      <p className={styles.panelNote}>
         Catalog giọng đọc cục bộ (VieNeu). Giọng chỉ khả dụng khi đã cài model + license trên máy; nếu chưa,
         catalog hiển thị trạng thái “chưa khả dụng” và không thể preview — không có lời gọi mạng nào được thực hiện.
       </p>

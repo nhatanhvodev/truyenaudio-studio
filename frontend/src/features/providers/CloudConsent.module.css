@@ -1,0 +1,50 @@
+/*
+ * Cloud consent card (CloudConsent.tsx). The consent checkbox stays the only
+ * thing that enables the button: this surface is a legal gate, not a convenience.
+ */
+
+.shell {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: var(--sp-4);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); }
+.meta { color: var(--text-muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.region {
+  border: 1px solid var(--border-control);
+  padding: 0 var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.notice { margin: 0 0 var(--sp-4); line-height: 1.45; }
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-4);
+  min-width: 0;
+}
+.facts dt { color: var(--text-muted); font-size: var(--fs-sm); }
+.facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+
+.check { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+.actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+.success { color: var(--success); font-weight: 600; }
+.error { color: var(--danger); font-weight: 600; }

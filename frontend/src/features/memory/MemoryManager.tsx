@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
+
+import styles from './MemoryManager.module.css';
 
 export interface MemoryEntryView {
   id: string;
@@ -146,99 +149,107 @@ export function MemoryManager({ projectId }: MemoryManagerProps) {
   }
 
   return (
-    <section aria-labelledby="memory-manager-heading">
-      <h2 id="memory-manager-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="memory-manager-heading" className={styles.shell}>
+      <h2 id="memory-manager-heading" className={styles.heading}>
         Story memory
       </h2>
-      <p style={{ margin: '0 0 8px', color: '#4b5563' }}>
+      <p className={styles.note}>
         Chỉ summary/fact đã duyệt mới vào context; candidate không bao giờ được dùng làm ngữ cảnh dịch.
       </p>
 
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       ) : null}
       {status ? (
-        <p role="status" style={{ color: '#166534' }}>
+        <p role="status" className={styles.success}>
           {status}
         </p>
       ) : null}
 
-      <h3 style={{ fontSize: 14, margin: '12px 0 4px' }}>Candidate chờ duyệt</h3>
-      {candidates.length === 0 ? <p>Không có candidate nào.</p> : null}
+      <h3 className={styles.subheading}>Candidate chờ duyệt</h3>
+      {candidates.length === 0 ? <p className={styles.meta}>Không có candidate nào.</p> : null}
       {candidates.length > 0 ? (
-        <table>
-          <caption>Candidate summary/fact</caption>
-          <thead>
-            <tr>
-              <th scope="col">Entity</th>
-              <th scope="col">Summary</th>
-              <th scope="col">Hiệu lực</th>
-              <th scope="col">Evidence &amp; duyệt</th>
-            </tr>
-          </thead>
-          <tbody>
-            {candidates.map((candidate) => (
-              <tr key={candidate.id}>
-                <td>{candidate.entity_key}</td>
-                <td>{candidate.summary}</td>
-                <td>
-                  từ chương {candidate.valid_from_ordinal}
-                  {candidate.valid_to_ordinal ? `–${candidate.valid_to_ordinal}` : '+'}
-                </td>
-                <td>
-                  <input
-                    aria-label={`Run id cho ${candidate.entity_key}`}
-                    value={evidence[candidate.id]?.runId ?? ''}
-                    onChange={(event) =>
-                      setEvidence((previous) => ({
-                        ...previous,
-                        [candidate.id]: {
-                          runId: event.target.value,
-                          segmentIds: previous[candidate.id]?.segmentIds ?? '',
-                        },
-                      }))
-                    }
-                  />
-                  <input
-                    aria-label={`Segment ids cho ${candidate.entity_key}`}
-                    value={evidence[candidate.id]?.segmentIds ?? ''}
-                    onChange={(event) =>
-                      setEvidence((previous) => ({
-                        ...previous,
-                        [candidate.id]: {
-                          runId: previous[candidate.id]?.runId ?? '',
-                          segmentIds: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                  <button type="button" disabled={busy} onClick={() => void approve(candidate.id)}>
-                    Duyệt
-                  </button>
-                  <button type="button" disabled={busy} onClick={() => void reject(candidate.id)}>
-                    Loại
-                  </button>
-                </td>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption className={styles.caption}>Candidate summary/fact</caption>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.th}>Entity</th>
+                <th scope="col" className={styles.th}>Summary</th>
+                <th scope="col" className={styles.th}>Hiệu lực</th>
+                <th scope="col" className={styles.th}>Evidence &amp; duyệt</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {candidates.map((candidate) => (
+                <tr key={candidate.id}>
+                  <td className={styles.td}>{candidate.entity_key}</td>
+                  <td className={styles.td}>{candidate.summary}</td>
+                  <td className={styles.td}>
+                    từ chương {candidate.valid_from_ordinal}
+                    {candidate.valid_to_ordinal ? `–${candidate.valid_to_ordinal}` : '+'}
+                  </td>
+                  <td className={styles.td}>
+                    <div className={styles.cellActions}>
+                      <input
+                        className={styles.control}
+                        aria-label={`Run id cho ${candidate.entity_key}`}
+                        value={evidence[candidate.id]?.runId ?? ''}
+                        onChange={(event) =>
+                          setEvidence((previous) => ({
+                            ...previous,
+                            [candidate.id]: {
+                              runId: event.target.value,
+                              segmentIds: previous[candidate.id]?.segmentIds ?? '',
+                            },
+                          }))
+                        }
+                      />
+                      <input
+                        className={styles.control}
+                        aria-label={`Segment ids cho ${candidate.entity_key}`}
+                        value={evidence[candidate.id]?.segmentIds ?? ''}
+                        onChange={(event) =>
+                          setEvidence((previous) => ({
+                            ...previous,
+                            [candidate.id]: {
+                              runId: previous[candidate.id]?.runId ?? '',
+                              segmentIds: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                      <Button variant="primary" disabled={busy} onClick={() => void approve(candidate.id)}>
+                        Duyệt
+                      </Button>
+                      <Button variant="danger" disabled={busy} onClick={() => void reject(candidate.id)}>
+                        Loại
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
 
-      <h3 style={{ fontSize: 14, margin: '12px 0 4px' }}>Tạo candidate</h3>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <label>
+      <h3 className={styles.subheading}>Tạo candidate</h3>
+      <div className={styles.row}>
+        <label className={styles.field}>
           Entity key
           <input
+            className={styles.control}
             value={draft.entityKey}
             onChange={(event) => setDraft({ ...draft, entityKey: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Loại
           <select
+            className={styles.control}
             value={draft.entityType}
             onChange={(event) => setDraft({ ...draft, entityType: event.target.value })}
           >
@@ -247,52 +258,57 @@ export function MemoryManager({ projectId }: MemoryManagerProps) {
             <option value="chapter">chapter</option>
           </select>
         </label>
-        <label>
+        <label className={styles.field}>
           Hiệu lực từ chương
           <input
+            className={styles.control}
             inputMode="numeric"
             value={draft.validFrom}
             onChange={(event) => setDraft({ ...draft, validFrom: event.target.value.replace(/[^0-9]/g, '') })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           đến chương
           <input
+            className={styles.control}
             inputMode="numeric"
             value={draft.validTo}
             onChange={(event) => setDraft({ ...draft, validTo: event.target.value.replace(/[^0-9]/g, '') })}
           />
         </label>
       </div>
-      <label style={{ display: 'block', marginTop: 8 }}>
+      <label className={`${styles.field} ${styles.wideField}`}>
         Summary
         <textarea
+          className={styles.textarea}
           value={draft.summary}
           onChange={(event) => setDraft({ ...draft, summary: event.target.value })}
           rows={2}
-          style={{ width: '100%' }}
         />
       </label>
-      <button type="button" disabled={busy} onClick={() => void createCandidate()}>
-        Tạo candidate
-      </button>
+      <div className={styles.actions}>
+        <Button variant="primary" disabled={busy} onClick={() => void createCandidate()}>
+          Tạo candidate
+        </Button>
+      </div>
 
-      <h3 style={{ fontSize: 14, margin: '12px 0 4px' }}>Context đã duyệt</h3>
-      <label>
+      <h3 className={styles.subheading}>Context đã duyệt</h3>
+      <label className={styles.field}>
         Xem context tại chương
         <input
+          className={styles.control}
           inputMode="numeric"
           value={ordinal}
           onChange={(event) => void loadContext(event.target.value.replace(/[^0-9]/g, ''))}
         />
       </label>
       {contextHash ? (
-        <p>
-          Revision hash: <code>{contextHash.slice(0, 12)}…</code>
+        <p className={styles.meta}>
+          Revision hash: <code className={styles.code}>{contextHash.slice(0, 12)}…</code>
         </p>
       ) : null}
       {contextEntries.length > 0 ? (
-        <ul aria-label="Context đã duyệt">
+        <ul aria-label="Context đã duyệt" className={styles.list}>
           {contextEntries.map((entry) => (
             <li key={entry.id}>
               {entry.entity_key}: {entry.summary}

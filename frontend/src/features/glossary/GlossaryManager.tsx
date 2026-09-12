@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
+
+import styles from './GlossaryManager.module.css';
 
 export interface GlossaryEntryView {
   id: string;
@@ -224,46 +227,52 @@ export function GlossaryManager({ projectId }: GlossaryManagerProps) {
   }
 
   return (
-    <section aria-labelledby="glossary-manager-heading">
-      <h2 id="glossary-manager-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="glossary-manager-heading" className={styles.shell}>
+      <h2 id="glossary-manager-heading" className={styles.heading}>
         Glossary
       </h2>
-      <p style={{ margin: '0 0 8px', color: '#4b5563' }}>
+      <p className={styles.note}>
         Thuật ngữ khóa là QA cứng; forbidden form bị chặn khi xuất hiện trong bản dịch. Sửa glossary chỉ đánh
         stale các chương thực sự chứa thuật ngữ trong scope.
       </p>
 
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       ) : null}
       {status ? (
-        <p role="status" style={{ color: '#166534' }}>
+        <p role="status" className={styles.success}>
           {status}
         </p>
       ) : null}
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <label>
+      <div className={styles.row}>
+        <label className={styles.field}>
           Thuật ngữ gốc
           <input
+            className={styles.control}
             value={draft.sourceTerm}
             onChange={(event) => setDraft({ ...draft, sourceTerm: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Bản dịch chuẩn
           <input
+            className={styles.control}
             value={draft.targetTerm}
             onChange={(event) => setDraft({ ...draft, targetTerm: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Cách đọc
-          <input value={draft.reading} onChange={(event) => setDraft({ ...draft, reading: event.target.value })} />
+          <input
+            className={styles.control}
+            value={draft.reading}
+            onChange={(event) => setDraft({ ...draft, reading: event.target.value })}
+          />
         </label>
-        <label>
+        <label className={`${styles.field} ${styles.inlineField}`}>
           <input
             type="checkbox"
             checked={draft.isLocked}
@@ -271,64 +280,63 @@ export function GlossaryManager({ projectId }: GlossaryManagerProps) {
           />
           Khóa thuật ngữ
         </label>
-        <label>
+        <label className={styles.field}>
           Forbidden form (phẩy)
           <input
+            className={styles.control}
             value={draft.forbiddenForms}
             onChange={(event) => setDraft({ ...draft, forbiddenForms: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Scope từ chương
           <input
+            className={styles.control}
             inputMode="numeric"
             value={draft.scopeFrom}
             onChange={(event) => setDraft({ ...draft, scopeFrom: event.target.value.replace(/[^0-9]/g, '') })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           đến chương
           <input
+            className={styles.control}
             inputMode="numeric"
             value={draft.scopeTo}
             onChange={(event) => setDraft({ ...draft, scopeTo: event.target.value.replace(/[^0-9]/g, '') })}
           />
         </label>
       </div>
-      <label style={{ display: 'block', marginTop: 8 }}>
+      <label className={`${styles.field} ${styles.wideField}`}>
         Mô tả / bằng chứng
         <textarea
+          className={styles.textarea}
           value={draft.description}
           onChange={(event) => setDraft({ ...draft, description: event.target.value })}
           rows={2}
-          style={{ width: '100%' }}
         />
       </label>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" disabled={previewing} onClick={() => void previewScope()}>
+      <div className={styles.actions}>
+        <Button variant="secondary" disabled={previewing} onClick={() => void previewScope()}>
           {previewing ? 'Đang xem…' : 'Xem phạm vi'}
-        </button>
-        <button type="button" disabled={saving} onClick={() => void save()}>
+        </Button>
+        <Button variant="primary" disabled={saving} onClick={() => void save()}>
           {saving ? 'Đang lưu…' : 'Lưu thuật ngữ'}
-        </button>
+        </Button>
       </div>
 
       {preview ? (
-        <div
-          data-testid="scope-preview"
-          role="status"
-          style={{ marginTop: 8, border: '1px solid #d1d5db', padding: 8 }}
-        >
+        <div data-testid="scope-preview" role="status" className={styles.preview}>
           <strong>Phạm vi sẽ bị ảnh hưởng (chưa lưu)</strong>
-          <p style={{ margin: '4px 0' }}>
+          <p className={styles.previewSummary}>
             {preview.affectedCount} segment chứa thuật ngữ · {preview.invalidatedCount} bản dịch sẽ bị
             đánh stale
             {preview.changed ? '' : ' · thuật ngữ không thay đổi'}
           </p>
           {preview.warnings.length > 0 ? (
-            <div>
+            <div className={styles.warnings}>
               Cảnh báo:
-              <ul style={{ margin: '4px 0' }}>
+              <ul className={styles.warningList}>
                 {preview.warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
@@ -336,54 +344,58 @@ export function GlossaryManager({ projectId }: GlossaryManagerProps) {
             </div>
           ) : null}
           {preview.affectedSegments.length > 0 ? (
-            <table>
-              <caption>Segment chứa thuật ngữ ({preview.affectedCount} tổng cộng)</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Chương</th>
-                  <th scope="col">Đoạn trích</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.affectedSegments.slice(0, 5).map((segment) => (
-                  <tr key={segment.segmentId}>
-                    <td>{segment.ordinal}</td>
-                    <td>{segment.excerpt}</td>
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <caption className={styles.caption}>Segment chứa thuật ngữ ({preview.affectedCount} tổng cộng)</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" className={styles.th}>Chương</th>
+                    <th scope="col" className={styles.th}>Đoạn trích</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {preview.affectedSegments.slice(0, 5).map((segment) => (
+                    <tr key={segment.segmentId}>
+                      <td className={styles.td}>{segment.ordinal}</td>
+                      <td className={styles.td}>{segment.excerpt}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : null}
         </div>
       ) : null}
 
-      <h3 style={{ fontSize: 14, margin: '16px 0 4px' }}>Thuật ngữ active</h3>
-      {loading ? <p>Đang tải…</p> : null}
-      {!loading && entries.length === 0 ? <p>Chưa có thuật ngữ nào.</p> : null}
+      <h3 className={styles.subheading}>Thuật ngữ active</h3>
+      {loading ? <p className={styles.meta}>Đang tải…</p> : null}
+      {!loading && entries.length === 0 ? <p className={styles.meta}>Chưa có thuật ngữ nào.</p> : null}
       {entries.length > 0 ? (
-        <table>
-          <caption>Glossary active (revision {revisionHash.slice(0, 8)}…)</caption>
-          <thead>
-            <tr>
-              <th scope="col">Gốc</th>
-              <th scope="col">Bản dịch</th>
-              <th scope="col">Khóa</th>
-              <th scope="col">Scope</th>
-              <th scope="col">Forbidden</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry) => (
-              <tr key={entry.id}>
-                <td>{entry.source_term}</td>
-                <td>{entry.target_term}</td>
-                <td>{entry.is_locked ? 'Có' : '—'}</td>
-                <td>{scopeLabel(entry)}</td>
-                <td>{entry.forbidden_forms.length > 0 ? entry.forbidden_forms.join(', ') : '—'}</td>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption className={styles.caption}>Glossary active (revision {revisionHash.slice(0, 8)}…)</caption>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.th}>Gốc</th>
+                <th scope="col" className={styles.th}>Bản dịch</th>
+                <th scope="col" className={styles.th}>Khóa</th>
+                <th scope="col" className={styles.th}>Scope</th>
+                <th scope="col" className={styles.th}>Forbidden</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id}>
+                  <td className={styles.td}>{entry.source_term}</td>
+                  <td className={styles.td}>{entry.target_term}</td>
+                  <td className={styles.td}>{entry.is_locked ? 'Có' : '—'}</td>
+                  <td className={styles.td}>{scopeLabel(entry)}</td>
+                  <td className={styles.td}>{entry.forbidden_forms.length > 0 ? entry.forbidden_forms.join(', ') : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </section>
   );

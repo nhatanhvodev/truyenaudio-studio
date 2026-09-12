@@ -1,0 +1,43 @@
+/*
+ * Cleanup preview (CleanupPreview.tsx) — the reviewed plan StorageSettings
+ * feeds. Preview only: this surface never deletes by itself, it hands the plan
+ * id and snapshot hash back to the caller.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.header { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+.title { margin: 0; font-size: var(--fs-lg); }
+.meta { color: var(--text-muted); font-size: var(--fs-sm); font-weight: 600; }
+
+/* State travels as a word first ("Preview only" / "No candidates"); the badge
+   colour is the second cue. */
+.reviewBadge { border: 1px solid var(--warning); padding: 0 var(--sp-2); color: var(--warning); font-size: var(--fs-sm); font-weight: 600; }
+.emptyBadge { border: 1px solid var(--success); padding: 0 var(--sp-2); color: var(--success); font-size: var(--fs-sm); font-weight: 600; }
+
+.empty { color: var(--text-muted); font-weight: 600; }
+
+/* reset.css removed the bullet, so each row carries its own border. */
+.list { display: grid; gap: var(--sp-2); min-width: 0; }
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.type { display: block; margin-top: var(--sp-1); color: var(--text-muted); font-size: var(--fs-sm); font-weight: 600; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.bytes { white-space: nowrap; color: var(--text); font-weight: 600; }

@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from 'react';
 
+import styles from './ProjectScopedPanel.module.css';
+
 export interface ProjectScopedPanelProps {
   title: string;
   note: string;
@@ -15,14 +17,15 @@ export function ProjectScopedPanel({ title, note, render }: ProjectScopedPanelPr
   const [projectId, setProjectId] = useState('');
 
   return (
-    <section aria-labelledby="project-scoped-heading">
-      <h2 id="project-scoped-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="project-scoped-heading" className={styles.panel}>
+      <h2 id="project-scoped-heading" className={styles.panelHeading}>
         {title}
       </h2>
-      <p style={{ margin: '0 0 8px', color: '#4b5563' }}>{note}</p>
-      <label>
+      <p className={styles.panelNote}>{note}</p>
+      <label className={styles.field}>
         Project ID
         <input
+          className={styles.input}
           value={projectId}
           onChange={(event) => setProjectId(event.target.value.trim())}
           placeholder="018f0000-…"
@@ -31,7 +34,7 @@ export function ProjectScopedPanel({ title, note, render }: ProjectScopedPanelPr
       {projectId ? (
         render(projectId)
       ) : (
-        <p>Nhập project ID để quản lý cấu hình theo project.</p>
+        <p className={styles.hint}>Nhập project ID để quản lý cấu hình theo project.</p>
       )}
     </section>
   );

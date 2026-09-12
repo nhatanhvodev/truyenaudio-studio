@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiJson } from '../../shared/api';
+import { Button, Input } from '../../shared/ui';
+
+import styles from './ExportWorkflow.module.css';
 
 type GateDecision = {
   allowed: boolean;
@@ -128,7 +131,6 @@ function fileGroup(name: string): string {
 }
 
 export function ExportWorkflow({ chapterId }: ExportWorkflowProps) {
-  const fieldId = useId();
   const [status, setStatus] = useState<ChapterExportStatus | null>(null);
   const [loadError, setLoadError] = useState('');
   const [error, setError] = useState('');
@@ -245,27 +247,37 @@ export function ExportWorkflow({ chapterId }: ExportWorkflowProps) {
   const blocked = status ? !status.gate.allowed : false;
 
   return (
-    <section aria-label="Xuất bản và metadata" data-testid="export-workflow" style={styles.shell}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>Xuất bản</h2>
+    <section
+      aria-label="Xuất bản và metadata"
+      data-testid="export-workflow"
+      className={styles.workflow}
+    >
+      <div
+        className={[styles.gate, blocked ? styles.gateBlocked : styles.gateReady]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        <h2 className={styles.title}>Xuất bản</h2>
         {status ? (
-          <span style={blocked ? styles.blockedPill : styles.readyPill}>
+          <strong className={blocked ? styles.statusBlocked : styles.statusOk}>
             {blocked ? 'Bị chặn xuất bản' : 'Sẵn sàng xuất bản'}
-          </span>
+          </strong>
         ) : (
-          <span style={styles.mutedPill}>Đang kiểm tra quyền</span>
+          <strong className={styles.statusMuted}>Đang kiểm tra quyền</strong>
         )}
       </div>
 
       {status ? (
-        <p style={styles.meta}>
+        <p className={styles.hash}>
           Hash đánh giá quyền:{' '}
-          <code data-testid="rights-hash">{status.gate.rightsEvaluationHash.slice(0, 12)}…</code>
+          <code data-testid="rights-hash" className={styles.code}>
+            {status.gate.rightsEvaluationHash.slice(0, 12)}…
+          </code>
         </p>
       ) : null}
 
       {blocked ? (
-        <ul aria-label="Lý do bị chặn" style={styles.reasons}>
+        <ul aria-label="Lý do bị chặn" className={styles.gateReasons}>
           {status?.gate.reasons.map((reason) => (
             <li key={reason}>{reason}</li>
           ))}
@@ -273,34 +285,28 @@ export function ExportWorkflow({ chapterId }: ExportWorkflowProps) {
       ) : null}
 
       {loadError ? (
-        <p role="alert" style={styles.error}>
+        <p role="alert" className={styles.error}>
           Không tải được trạng thái export: {loadError}
         </p>
       ) : null}
 
-      <fieldset style={styles.fieldset}>
-        <legend style={styles.legend}>Metadata tập</legend>
-        <div style={styles.field}>
-          <label htmlFor={`${fieldId}-title`}>Tiêu đề tập</label>
-          <input
-            id={`${fieldId}-title`}
+      <fieldset className={styles.fieldset}>
+        <legend className={styles.legend}>Metadata tập</legend>
+        <div className={styles.fields}>
+          <Input
+            label="Tiêu đề tập"
             value={episodeTitle}
             onChange={(event) => setEpisodeTitle(event.target.value)}
-            style={styles.input}
           />
-        </div>
-        <div style={styles.field}>
-          <label htmlFor={`${fieldId}-number`}>Số tập</label>
-          <input
-            id={`${fieldId}-number`}
+          <Input
+            label="Số tập"
             type="number"
             min={1}
             value={episodeNumber}
             onChange={(event) => setEpisodeNumber(event.target.value)}
-            style={styles.input}
           />
         </div>
-        <label style={styles.checkbox}>
+        <label className={styles.checkbox}>
           <input
             type="checkbox"
             checked={isPremium}
@@ -309,12 +315,12 @@ export function ExportWorkflow({ chapterId }: ExportWorkflowProps) {
           Tập premium
         </label>
         {isPremium ? (
-          <p style={styles.meta}>
+          <p className={styles.meta}>
             Tập premium cần thêm quyền MONETIZE; nếu thiếu, backend sẽ chặn bằng 403.
           </p>
         ) : null}
         {fieldErrors.length > 0 ? (
-          <ul role="alert" style={styles.fieldErrors}>
+          <ul role="alert" className={styles.list}>
             {fieldErrors.map((code) => (
               <li key={code}>
                 {code}: {VALIDATION_LABELS[code] ?? code}
@@ -324,42 +330,36 @@ export function ExportWorkflow({ chapterId }: ExportWorkflowProps) {
         ) : null}
       </fieldset>
 
-      <div style={styles.actions}>
-        <button
-          type="button"
-          style={styles.secondaryButton}
-          disabled={busy}
-          onClick={() => void build(PRIVATE_KIND)}
-        >
+      <div className={styles.actions}>
+        <Button variant="secondary" disabled={busy} onClick={() => void build(PRIVATE_KIND)}>
           Tạo archive riêng tư
-        </button>
-        <button
-          type="button"
-          style={blocked ? styles.disabledButton : styles.primaryButton}
+        </Button>
+        <Button
+          variant="primary"
           disabled={blocked || busy}
           onClick={() => void build(PUBLICATION_KIND)}
         >
           Tạo bundle publication
-        </button>
+        </Button>
       </div>
 
       {error ? (
-        <p role="alert" style={styles.error}>
+        <p role="alert" className={styles.error}>
           Không tạo được bản xuất: {error}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" style={styles.success}>
+        <p role="status" className={styles.success}>
           {notice}
         </p>
       ) : null}
 
-      <p style={styles.notice} data-testid="manual-upload-notice">
+      <p className={styles.notice} data-testid="manual-upload-notice">
         {MANUAL_UPLOAD_NOTICE}
       </p>
 
       {bundles.length > 0 ? (
-        <div style={styles.bundles}>
+        <div className={styles.bundles}>
           {bundles.map((bundle) => (
             <BundleCard
               key={bundle.id}
@@ -370,7 +370,7 @@ export function ExportWorkflow({ chapterId }: ExportWorkflowProps) {
           ))}
         </div>
       ) : (
-        <p style={styles.meta}>Chưa có bản xuất nào cho tập này.</p>
+        <p className={styles.meta}>Chưa có bản xuất nào cho tập này.</p>
       )}
     </section>
   );
@@ -388,29 +388,40 @@ function BundleCard({
   const groups = groupBundleFiles(bundle.files);
 
   return (
-    <article aria-label={KIND_LABELS[bundle.kind] ?? bundle.kind} style={styles.card}>
-      <div style={styles.header}>
+    <article aria-label={KIND_LABELS[bundle.kind] ?? bundle.kind} className={styles.card}>
+      <div className={styles.cardHeader}>
         <strong>{KIND_LABELS[bundle.kind] ?? bundle.kind}</strong>
-        <span style={bundle.verified === false ? styles.blockedPill : styles.readyPill}>
+        <strong
+          className={
+            bundle.verified === false
+              ? styles.statusBlocked
+              : bundle.verified
+                ? styles.statusOk
+                : styles.statusMuted
+          }
+        >
           {bundle.verified === null
             ? 'Chưa xác minh lại'
             : bundle.verified
               ? 'Checksum khớp'
               : 'Checksum lệch'}
-        </span>
+        </strong>
       </div>
 
-      <p style={styles.meta}>
-        manifestSha256: <code data-testid={`manifest-${bundle.id}`}>{bundle.manifestSha256}</code>
+      <p className={styles.meta}>
+        manifestSha256:{' '}
+        <code data-testid={`manifest-${bundle.id}`} className={styles.code}>
+          {bundle.manifestSha256}
+        </code>
       </p>
       {bundle.createdAt ? (
-        <p style={styles.meta}>Tạo lúc: {bundle.createdAt}</p>
+        <p className={styles.meta}>Tạo lúc: {bundle.createdAt}</p>
       ) : null}
 
       {bundle.mismatches.length > 0 ? (
-        <div role="alert" style={styles.error}>
+        <div role="alert" className={styles.error}>
           <strong>File lệch hoặc thiếu checksum:</strong>
-          <ul style={styles.list}>
+          <ul className={styles.list}>
             {bundle.mismatches.map((name) => (
               <li key={name}>{name}</li>
             ))}
@@ -419,32 +430,31 @@ function BundleCard({
       ) : null}
 
       {bundle.stale ? (
-        <div role="alert" style={styles.stale}>
-          <strong>Bản xuất đã cũ (STALE) — hãy tạo lại trước khi dùng.</strong>
-          <ul style={styles.list}>
+        <div role="alert" className={styles.staleBlock}>
+          <strong className={styles.stale}>
+            Bản xuất đã cũ (STALE) — hãy tạo lại trước khi dùng.
+          </strong>
+          <ul className={styles.list}>
             {bundle.staleReasons.map((reason) => (
               <li key={reason}>
                 {reason}: {STALE_LABELS[reason] ?? 'Không rõ nguyên nhân'}
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            style={styles.secondaryButton}
-            disabled={busy}
-            onClick={onRebuild}
-          >
+          <Button variant="secondary" disabled={busy} onClick={onRebuild}>
             Tạo lại bundle
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {FILE_GROUPS.filter((group) => groups[group.key]?.length).map((group) => (
-        <div key={group.key} style={styles.fileGroup}>
-          <h4 style={styles.groupTitle}>{group.label}</h4>
-          <ul style={styles.list}>
+        <div key={group.key} className={styles.fileGroup}>
+          <h4 className={styles.fileKind}>{group.label}</h4>
+          <ul className={styles.fileList}>
             {groups[group.key].map((name) => (
-              <li key={name}>{name}</li>
+              <li key={name} className={styles.fileRow}>
+                {name}
+              </li>
             ))}
           </ul>
         </div>
@@ -452,127 +462,3 @@ function BundleCard({
     </article>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    color: '#17202a',
-    fontFamily: 'Inter, Segoe UI, Arial, sans-serif',
-    border: '1px solid #d9e1e8',
-    borderRadius: 8,
-    padding: 16,
-    background: '#ffffff',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  title: { margin: 0, fontSize: 18, letterSpacing: 0 },
-  meta: { margin: '8px 0 0', color: '#52606d', fontSize: 13 },
-  readyPill: {
-    borderRadius: 999,
-    padding: '5px 10px',
-    background: '#e8f5ec',
-    color: '#1c6638',
-    fontWeight: 700,
-    fontSize: 13,
-  },
-  blockedPill: {
-    borderRadius: 999,
-    padding: '5px 10px',
-    background: '#fff4d6',
-    color: '#7a4b00',
-    fontWeight: 700,
-    fontSize: 13,
-  },
-  mutedPill: {
-    borderRadius: 999,
-    padding: '5px 10px',
-    background: '#eef2f6',
-    color: '#52606d',
-    fontWeight: 700,
-    fontSize: 13,
-  },
-  reasons: { margin: '12px 0 0', paddingLeft: 18, color: '#7a2e0e' },
-  fieldset: {
-    margin: '16px 0 0',
-    border: '1px solid #e3e9ef',
-    borderRadius: 8,
-    padding: 12,
-  },
-  legend: { padding: '0 6px', fontWeight: 700, fontSize: 14 },
-  field: { display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 },
-  input: {
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    padding: '8px 10px',
-    fontSize: 14,
-    maxWidth: 320,
-  },
-  checkbox: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 },
-  fieldErrors: { margin: '10px 0 0', paddingLeft: 18, color: '#a03030' },
-  actions: { display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14 },
-  primaryButton: {
-    border: '1px solid #0b5cad',
-    borderRadius: 6,
-    padding: '8px 12px',
-    background: '#0b5cad',
-    color: '#ffffff',
-    fontWeight: 700,
-  },
-  disabledButton: {
-    border: '1px solid #c7d1da',
-    borderRadius: 6,
-    padding: '8px 12px',
-    background: '#eef2f6',
-    color: '#8794a1',
-    fontWeight: 700,
-  },
-  secondaryButton: {
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    padding: '8px 12px',
-    background: '#ffffff',
-    color: '#17324d',
-    fontWeight: 700,
-  },
-  error: {
-    margin: '12px 0 0',
-    padding: 10,
-    borderRadius: 6,
-    background: '#fdecec',
-    color: '#8a1f1f',
-    fontSize: 14,
-  },
-  success: {
-    margin: '12px 0 0',
-    padding: 10,
-    borderRadius: 6,
-    background: '#e8f5ec',
-    color: '#1c6638',
-    fontSize: 14,
-  },
-  stale: {
-    margin: '12px 0 0',
-    padding: 10,
-    borderRadius: 6,
-    background: '#fff4d6',
-    color: '#7a4b00',
-    fontSize: 14,
-  },
-  notice: {
-    margin: '14px 0 0',
-    padding: '10px 12px',
-    borderRadius: 6,
-    background: '#eef4fb',
-    color: '#17324d',
-    fontSize: 13,
-  },
-  bundles: { display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 },
-  card: { border: '1px solid #e3e9ef', borderRadius: 8, padding: 12 },
-  fileGroup: { marginTop: 10 },
-  groupTitle: { margin: '0 0 4px', fontSize: 13, textTransform: 'uppercase', color: '#52606d' },
-  list: { margin: '6px 0 0', paddingLeft: 18, fontSize: 13 },
-};

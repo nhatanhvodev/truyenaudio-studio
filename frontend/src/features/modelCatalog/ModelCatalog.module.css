@@ -1,0 +1,78 @@
+/*
+ * Model catalog (ModelCatalog.tsx). A filtered, paginated read of the model
+ * snapshot. Staleness is stated in words in a role="status" line — the catalog
+ * is informational, so nothing here is styled as a warning badge.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.heading { margin: 0; font-size: var(--fs-md); }
+
+.filters {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.field {
+  display: grid;
+  gap: var(--sp-1);
+  justify-items: start;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.inlineField { display: flex; align-items: center; gap: var(--sp-2); }
+
+.control {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  color: var(--text);
+  max-width: 100%;
+  min-width: 0;
+}
+.control:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.narrow { width: 6rem; }
+
+.stale { margin: 0; color: var(--warning); font-size: var(--fs-sm); font-weight: 600; }
+.error { margin: 0; color: var(--danger); font-size: var(--fs-sm); font-weight: 600; }
+.meta { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); }
+
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+.tableWrap { overflow-x: auto; min-width: 0; }
+
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.caption {
+  text-align: left;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  padding-bottom: var(--sp-2);
+}
+.th {
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase; /* interface label only */
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-control);
+  padding: var(--sp-2) var(--sp-3);
+}
+.td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.link { color: var(--primary); }
+.link:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }

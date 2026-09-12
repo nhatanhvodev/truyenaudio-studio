@@ -1,0 +1,76 @@
+/*
+ * Diagnostics panel (Diagnostics.tsx). Health tiles, the diagnostic export box
+ * and the component status colour — which never travels alone: the tile always
+ * prints the literal status word next to it.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 57.5rem;
+  margin: 0 auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); }
+.meta { color: var(--text-muted); font-weight: 600; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(11.25rem, 1fr)); gap: var(--sp-3); min-width: 0; }
+.component {
+  display: grid;
+  gap: var(--sp-2);
+  min-height: 4.875rem;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.ok { color: var(--success); font-weight: 600; }
+.status { color: var(--warning); font-weight: 600; }
+.message { color: var(--text-muted); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+
+.exportBox {
+  display: grid;
+  gap: var(--sp-3);
+  justify-items: start;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  min-width: 0;
+}
+.checkboxLabel { display: flex; align-items: center; gap: var(--sp-2); font-weight: 600; }
+.textarea {
+  width: 100%;
+  min-height: 6.875rem;
+  box-sizing: border-box;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+.textarea:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.download { color: var(--primary); font-weight: 600; }
+.download:hover { color: var(--primary-hover); }
+.download:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.error { color: var(--danger); font-weight: 600; overflow-wrap: anywhere; }

@@ -1,0 +1,65 @@
+/*
+ * Project settings shell (ProjectSettingsRoutes.tsx). The two-column group
+ * layout from the task brief: a fixed 240px group nav beside a fluid body that
+ * may shrink to nothing (minmax(0, 1fr)) because the body holds tables and
+ * code blocks that would otherwise force the page wide.
+ */
+
+.groups { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 0; height: 100%; }
+.groupNav { border-right: 1px solid var(--border-subtle); padding: var(--sp-3) 0; overflow-y: auto; min-width: 0; }
+
+.heading {
+  font-size: var(--fs-md);
+  margin: 0 0 var(--sp-1);
+}
+
+.projectId {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-subtle);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* reset.css strips the list marker, so the nav list carries its own layout. */
+.groupList {
+  list-style: none;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.groupLink { display: block; padding: var(--sp-2) var(--sp-4); color: var(--text-muted); text-decoration: none; font-size: var(--fs-md); min-height: var(--density-row); }
+.groupLink:hover { color: var(--text); background: var(--surface); }
+.groupLink[aria-current='page'] { color: var(--text); box-shadow: inset 2px 0 0 0 var(--primary); }
+.groupLink:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: calc(-1 * var(--focus-offset)); }
+.groupBody { padding: var(--sp-5); overflow-y: auto; min-width: 0; }
+
+.crumb {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.panel {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.panelNote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+@media (max-width: 1023px) {
+  .groups { grid-template-columns: minmax(0, 1fr); }
+  .groupNav { display: none; }
+}

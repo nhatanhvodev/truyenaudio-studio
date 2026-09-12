@@ -1,3 +1,7 @@
+import { Button } from '../../shared/ui';
+
+import styles from './ProviderSettings.module.css';
+
 type ProviderSettingsProps = {
   provider: string;
   model: string;
@@ -20,9 +24,9 @@ export default function ProviderSettings({
   onGrantFakeConsent,
 }: ProviderSettingsProps) {
   return (
-    <section aria-label="Provider settings" style={styles.shell}>
-      <h2 style={styles.title}>Provider settings</h2>
-      <dl style={styles.facts}>
+    <section aria-label="Provider settings" className={styles.shell}>
+      <h2 className={styles.title}>Provider settings</h2>
+      <dl className={styles.facts}>
         <div>
           <dt>Provider</dt>
           <dd>{provider}</dd>
@@ -49,40 +53,10 @@ export default function ProviderSettings({
         </div>
       </dl>
       {onGrantFakeConsent ? (
-        <button type="button" onClick={onGrantFakeConsent} style={styles.button}>
+        <Button variant="primary" onClick={onGrantFakeConsent}>
           Cấp fake consent và rate card
-        </button>
+        </Button>
       ) : null}
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    display: 'grid',
-    gap: 12,
-    padding: 16,
-    border: '1px solid #d9e1e8',
-    borderRadius: 10,
-    background: '#ffffff',
-  },
-  title: {
-    margin: 0,
-    fontSize: 20,
-  },
-  facts: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: 10,
-    margin: 0,
-  },
-  button: {
-    justifySelf: 'start',
-    padding: '8px 12px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#fff',
-    fontWeight: 800,
-  },
-};

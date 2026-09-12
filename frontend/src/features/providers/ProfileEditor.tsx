@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
+
+import styles from './ProfileEditor.module.css';
 
 export interface ProviderProfileView {
   id: string;
@@ -132,75 +135,81 @@ export function ProfileEditor() {
   }
 
   return (
-    <section aria-labelledby="provider-profile-heading">
-      <h2 id="provider-profile-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="provider-profile-heading" className={styles.shell}>
+      <h2 id="provider-profile-heading" className={styles.heading}>
         AI Providers
       </h2>
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" style={{ color: '#166534' }}>
+        <p role="status" className={styles.success}>
           {notice}
         </p>
       ) : null}
 
-      <table>
-        <caption>Profile hiện có (credential chỉ hiển thị trạng thái)</caption>
-        <thead>
-          <tr>
-            <th scope="col">Profile</th>
-            <th scope="col">Adapter</th>
-            <th scope="col">Model</th>
-            <th scope="col">Credential</th>
-            <th scope="col">Trạng thái</th>
-            <th scope="col">Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          {profiles.map((profile) => (
-            <tr key={profile.id}>
-              <td>{profile.displayName}</td>
-              <td>{profile.adapterName}</td>
-              <td>{profile.model ?? '—'}</td>
-              <td>{profile.secretConfigured ? 'Đã cấu hình' : 'Chưa có'}</td>
-              <td>{profile.status}</td>
-              <td>
-                <label>
-                  <span className="visually-hidden">Credential cho {profile.displayName}</span>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    aria-label={`Credential cho ${profile.displayName}`}
-                    value={secrets[profile.id] ?? ''}
-                    onChange={(event) =>
-                      setSecrets((previous) => ({ ...previous, [profile.id]: event.target.value }))
-                    }
-                  />
-                </label>
-                <button type="button" disabled={busy} onClick={() => void saveSecret(profile.id)}>
-                  Lưu key
-                </button>
-                <button type="button" disabled={busy} onClick={() => void deleteSecret(profile.id)}>
-                  Xoá key
-                </button>
-                <button type="button" disabled={busy} onClick={() => void validate(profile.id)}>
-                  Kiểm tra
-                </button>
-              </td>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <caption className={styles.caption}>Profile hiện có (credential chỉ hiển thị trạng thái)</caption>
+          <thead>
+            <tr>
+              <th scope="col" className={styles.th}>Profile</th>
+              <th scope="col" className={styles.th}>Adapter</th>
+              <th scope="col" className={styles.th}>Model</th>
+              <th scope="col" className={styles.th}>Credential</th>
+              <th scope="col" className={styles.th}>Trạng thái</th>
+              <th scope="col" className={styles.th}>Thao tác</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      {profiles.length === 0 ? <p>Chưa có profile nào.</p> : null}
+          </thead>
+          <tbody>
+            {profiles.map((profile) => (
+              <tr key={profile.id}>
+                <td className={styles.td}>{profile.displayName}</td>
+                <td className={styles.td}>{profile.adapterName}</td>
+                <td className={styles.td}>{profile.model ?? '—'}</td>
+                <td className={styles.td}>{profile.secretConfigured ? 'Đã cấu hình' : 'Chưa có'}</td>
+                <td className={styles.td}>{profile.status}</td>
+                <td className={styles.td}>
+                  <div className={styles.cellActions}>
+                    <label>
+                      <span className="visually-hidden">Credential cho {profile.displayName}</span>
+                      <input
+                        className={styles.control}
+                        type="password"
+                        autoComplete="off"
+                        aria-label={`Credential cho ${profile.displayName}`}
+                        value={secrets[profile.id] ?? ''}
+                        onChange={(event) =>
+                          setSecrets((previous) => ({ ...previous, [profile.id]: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <Button variant="secondary" disabled={busy} onClick={() => void saveSecret(profile.id)}>
+                      Lưu key
+                    </Button>
+                    <Button variant="secondary" disabled={busy} onClick={() => void deleteSecret(profile.id)}>
+                      Xoá key
+                    </Button>
+                    <Button variant="secondary" disabled={busy} onClick={() => void validate(profile.id)}>
+                      Kiểm tra
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {profiles.length === 0 ? <p className={styles.meta}>Chưa có profile nào.</p> : null}
 
-      <h3 style={{ fontSize: 14, marginBottom: 4 }}>Thêm profile</h3>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <label>
+      <h3 className={styles.subheading}>Thêm profile</h3>
+      <div className={styles.row}>
+        <label className={styles.field}>
           Loại
           <select
+            className={styles.control}
             value={draft.providerKind}
             onChange={(event) => setDraft({ ...draft, providerKind: event.target.value })}
           >
@@ -211,35 +220,47 @@ export function ProfileEditor() {
             ))}
           </select>
         </label>
-        <label>
+        <label className={styles.field}>
           Adapter
           <input
+            className={styles.control}
             value={draft.adapterName}
             onChange={(event) => setDraft({ ...draft, adapterName: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Tên hiển thị
           <input
+            className={styles.control}
             value={draft.displayName}
             onChange={(event) => setDraft({ ...draft, displayName: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Model
-          <input value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })} />
+          <input
+            className={styles.control}
+            value={draft.model}
+            onChange={(event) => setDraft({ ...draft, model: event.target.value })}
+          />
         </label>
-        <label>
+        <label className={styles.field}>
           Region
-          <input value={draft.region} onChange={(event) => setDraft({ ...draft, region: event.target.value })} />
+          <input
+            className={styles.control}
+            value={draft.region}
+            onChange={(event) => setDraft({ ...draft, region: event.target.value })}
+          />
         </label>
-        <button
-          type="button"
-          disabled={busy || !draft.displayName.trim() || !draft.adapterName.trim()}
-          onClick={() => void createProfile()}
-        >
-          Tạo profile
-        </button>
+        <div className={styles.actions}>
+          <Button
+            variant="primary"
+            disabled={busy || !draft.displayName.trim() || !draft.adapterName.trim()}
+            onClick={() => void createProfile()}
+          >
+            Tạo profile
+          </Button>
+        </div>
       </div>
     </section>
   );

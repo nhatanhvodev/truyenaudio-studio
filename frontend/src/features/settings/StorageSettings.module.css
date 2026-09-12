@@ -1,0 +1,99 @@
+/*
+ * Storage settings (StorageSettings.tsx). Four destructive-adjacent blocks:
+ * backups, retention, cleanup and copy restore. Every block is preview-first —
+ * the copy is separated by a border and a heading in words, never by colour.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 45rem;
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-md); }
+
+.meta {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.block {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  min-width: 0;
+}
+
+.blockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+/* State travels as a word first ("checksum OK" / "checksum lỗi"); the colour is
+   the second cue. */
+.ok { color: var(--success); font-weight: 600; margin-left: var(--sp-2); font-size: var(--fs-sm); }
+.bad { color: var(--danger); font-weight: 600; margin-left: var(--sp-2); font-size: var(--fs-sm); }
+
+.okText { margin: 0; color: var(--success); font-weight: 600; font-size: var(--fs-sm); }
+.badText { margin: 0; color: var(--danger); font-weight: 600; font-size: var(--fs-sm); }
+
+.field {
+  display: grid;
+  gap: var(--sp-1);
+  justify-items: start;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.input {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  max-width: 100%;
+  min-width: 0;
+}
+.input:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.plan { display: grid; gap: var(--sp-2); min-width: 0; }
+
+/* reset.css removed the bullet, so each entry carries the code font instead. */
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}

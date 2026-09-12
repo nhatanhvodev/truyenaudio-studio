@@ -1,0 +1,117 @@
+/*
+ * Glossary manager (GlossaryManager.tsx). The scope preview is the important
+ * surface here: it is a role="status" block that states in words what a save
+ * would touch ("chưa lưu") before anything is written.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+}
+
+.heading { margin: 0; font-size: var(--fs-md); }
+.subheading { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-md); }
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.error { margin: 0; color: var(--danger); font-size: var(--fs-sm); font-weight: 600; }
+.success { margin: 0; color: var(--success); font-size: var(--fs-sm); font-weight: 600; }
+.meta { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); }
+
+.field {
+  display: grid;
+  gap: var(--sp-1);
+  justify-items: start;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.inlineField { display: flex; align-items: center; gap: var(--sp-2); }
+.wideField { width: 100%; }
+
+.control {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  color: var(--text);
+  max-width: 100%;
+  min-width: 0;
+}
+.control:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.row {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.textarea {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+.textarea:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* Preview is deliberately framed: it is not the saved state, and the heading
+   inside says so. */
+.preview {
+  margin-top: var(--sp-2);
+  border: 1px solid var(--border-control);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius); /* zero */
+  padding: var(--sp-3);
+  background: var(--surface-raised);
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.previewSummary { margin: 0; font-size: var(--fs-sm); }
+
+.warnings { font-size: var(--fs-sm); color: var(--text-muted); }
+/* reset.css removed the bullet, so warnings are laid out as stacked lines. */
+.warningList { list-style: none; margin: var(--sp-1) 0 0; padding: 0; display: grid; gap: var(--sp-1); }
+
+.tableWrap { overflow-x: auto; min-width: 0; }
+
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.caption {
+  text-align: left;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  padding-bottom: var(--sp-2);
+}
+.th {
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase; /* interface label only */
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-control);
+  padding: var(--sp-2) var(--sp-3);
+}
+.td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}

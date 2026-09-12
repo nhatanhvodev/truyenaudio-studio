@@ -12,6 +12,10 @@ import {
 } from './uiPreferences';
 import { notifyPreferencesChanged, UI_PREFERENCES_STORAGE_KEY } from './themeRuntime';
 
+import { Button } from '../../shared/ui';
+
+import styles from './AppearanceSettings.module.css';
+
 /**
  * U10: Appearance settings backed by the harmless UI preference document.
  *
@@ -64,20 +68,20 @@ export function AppearanceSettings() {
   }
 
   return (
-    <section aria-label="Appearance" style={styles.shell}>
-      <h2 style={styles.title}>Appearance</h2>
-      <p style={styles.note}>
+    <section aria-label="Appearance" className={styles.shell}>
+      <h2 className={styles.title}>Appearance</h2>
+      <p className={styles.note}>
         Chỉ lưu giá trị hiển thị vô hại trong trình duyệt. Nội dung truyện, style guide, glossary và mọi
         credential luôn nằm ở server/keyring — không bao giờ được lưu qua màn này.
       </p>
 
-      <label style={styles.label}>
+      <label className={styles.field}>
         Theme
         <select
           aria-label="Theme"
           value={preferences.theme}
           onChange={(event) => setPreferences({ ...preferences, theme: event.target.value as UiPreferences['theme'] })}
-          style={styles.control}
+          className={styles.control}
         >
           {THEMES.map((theme) => (
             <option key={theme} value={theme}>
@@ -87,7 +91,7 @@ export function AppearanceSettings() {
         </select>
       </label>
 
-      <label style={styles.label}>
+      <label className={styles.field}>
         Mật độ hiển thị
         <select
           aria-label="Mật độ hiển thị"
@@ -95,7 +99,7 @@ export function AppearanceSettings() {
           onChange={(event) =>
             setPreferences({ ...preferences, density: event.target.value as UiPreferences['density'] })
           }
-          style={styles.control}
+          className={styles.control}
         >
           {DENSITIES.map((density) => (
             <option key={density} value={density}>
@@ -105,7 +109,7 @@ export function AppearanceSettings() {
         </select>
       </label>
 
-      <label style={styles.label}>
+      <label className={styles.field}>
         Cỡ chữ
         <select
           aria-label="Cỡ chữ"
@@ -113,7 +117,7 @@ export function AppearanceSettings() {
           onChange={(event) =>
             setPreferences({ ...preferences, fontScale: event.target.value as UiPreferences['fontScale'] })
           }
-          style={styles.control}
+          className={styles.control}
         >
           {FONT_SCALES.map((scale) => (
             <option key={scale} value={scale}>
@@ -123,7 +127,7 @@ export function AppearanceSettings() {
         </select>
       </label>
 
-      <label style={styles.inline}>
+      <label className={styles.inline}>
         <input
           type="checkbox"
           aria-label="Giảm chuyển động"
@@ -133,48 +137,30 @@ export function AppearanceSettings() {
         Giảm chuyển động
       </label>
 
-      <div style={styles.actions}>
-        <button type="button" onClick={save} style={styles.primary}>
+      <div className={styles.actions}>
+        <Button variant="primary" onClick={save}>
           Lưu tùy chọn hiển thị
-        </button>
-        <button type="button" onClick={reset} style={styles.secondary}>
+        </Button>
+        <Button variant="secondary" onClick={reset}>
           Về mặc định
-        </button>
+        </Button>
       </div>
 
-      {message ? <p role="status" style={styles.success}>{message}</p> : null}
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {message ? <p role="status" className={styles.success}>{message}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
       {rejectedKeys.length > 0 ? (
-        <p role="status" style={styles.warning}>
+        <p role="status" className={styles.warning}>
           Đã bỏ các khóa không hợp lệ khi khôi phục: {rejectedKeys.join(', ')}.
         </p>
       ) : null}
-      {migrated ? <p role="status" style={styles.warning}>Tùy chọn cũ đã được chuyển sang phiên bản hiện tại.</p> : null}
+      {migrated ? <p role="status" className={styles.warning}>Tùy chọn cũ đã được chuyển sang phiên bản hiện tại.</p> : null}
 
-      <details style={styles.details}>
-        <summary style={styles.summary}>Giá trị sẽ lưu trong trình duyệt (đã lọc)</summary>
-        <pre aria-label="Giá trị đang lưu" style={styles.pre}>
+      <details className={styles.details}>
+        <summary className={styles.summary}>Giá trị sẽ lưu trong trình duyệt (đã lọc)</summary>
+        <pre aria-label="Giá trị đang lưu" className={styles.pre}>
           {storedPreview || '(trống)'}
         </pre>
       </details>
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: { display: 'grid', gap: 10, maxWidth: 560 },
-  title: { margin: 0, fontSize: 15 },
-  note: { margin: 0, color: '#4b5563', fontSize: 13, lineHeight: 1.5 },
-  label: { display: 'grid', gap: 6, fontWeight: 700, fontSize: 13 },
-  control: { padding: '8px 10px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff' },
-  inline: { display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 13 },
-  actions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  primary: { padding: '8px 14px', border: 0, borderRadius: 6, background: '#155eef', color: '#ffffff', fontWeight: 700 },
-  secondary: { padding: '8px 14px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff', fontWeight: 700 },
-  success: { margin: 0, color: '#166534', fontWeight: 700 },
-  error: { margin: 0, color: '#9a3412', fontWeight: 700 },
-  warning: { margin: 0, color: '#92400e', fontWeight: 700, fontSize: 13 },
-  details: { fontSize: 13 },
-  summary: { cursor: 'pointer', fontWeight: 700 },
-  pre: { margin: '8px 0 0', padding: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, overflowX: 'auto' },
-};

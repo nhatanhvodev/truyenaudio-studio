@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
 import { CleanupPreview, type CleanupPlan } from '../storage/CleanupPreview';
+
+import styles from './StorageSettings.module.css';
 
 type DiskDecision = {
   allowed: boolean;
@@ -128,45 +131,45 @@ export function StorageSettings() {
   const targetMatches = restoreTarget.trim().length > 0 && restoreTarget.trim() === restoreConfirm.trim();
 
   return (
-    <section aria-label="Storage" style={styles.shell}>
-      <h2 style={styles.title}>Storage</h2>
+    <section aria-label="Storage" className={styles.shell}>
+      <h2 className={styles.title}>Storage</h2>
 
       {disk ? (
-        <p style={styles.meta} aria-label="Dung lượng">
+        <p className={styles.meta} aria-label="Dung lượng">
           Dung lượng: dùng {formatBytes(disk.usedBytes)} / còn {formatBytes(disk.freeBytes)} · mức {disk.level}
           {disk.allowed ? '' : ' · không đủ chỗ cho tác vụ tiếp theo'}
         </p>
       ) : null}
 
-      <section aria-label="Bản sao lưu" style={styles.block}>
-        <header style={styles.blockHeader}>
+      <section aria-label="Bản sao lưu" className={styles.block}>
+        <header className={styles.blockHeader}>
           <strong>Bản sao lưu ({backups.length})</strong>
-          <button type="button" onClick={() => void load()} style={styles.secondary}>
+          <Button variant="secondary" onClick={() => void load()}>
             Làm mới
-          </button>
+          </Button>
         </header>
-        {backups.length === 0 ? <p style={styles.meta}>Chưa có bản sao lưu nào.</p> : null}
+        {backups.length === 0 ? <p className={styles.meta}>Chưa có bản sao lưu nào.</p> : null}
         {backups.map((backup) => (
-          <article key={backup.id} style={styles.row}>
+          <article key={backup.id} className={styles.row}>
             <div>
               <code>{backup.id}</code>
-              <span style={backup.verified ? styles.ok : styles.bad}>
+              <span className={backup.verified ? styles.ok : styles.bad}>
                 {backup.verified ? 'checksum OK' : 'checksum lỗi'}
               </span>
-              {backup.verificationError ? <p style={styles.meta}>{backup.verificationError}</p> : null}
+              {backup.verificationError ? <p className={styles.meta}>{backup.verificationError}</p> : null}
             </div>
-            <span style={styles.meta}>{formatBytes(backup.byteSize)}</span>
+            <span className={styles.meta}>{formatBytes(backup.byteSize)}</span>
           </article>
         ))}
       </section>
 
-      <section aria-label="Retention" style={styles.block}>
+      <section aria-label="Retention" className={styles.block}>
         <strong>Retention</strong>
-        <p style={styles.meta}>
+        <p className={styles.meta}>
           Đổi số lượng chỉ tạo kế hoạch — không tự xoá. Bản sao mới vẫn prune theo số này khi tạo.
         </p>
-        <div style={styles.actions}>
-          <label style={styles.label}>
+        <div className={styles.actions}>
+          <label className={styles.field}>
             Giữ lại
             <input
               aria-label="Số bản sao giữ lại"
@@ -174,21 +177,21 @@ export function StorageSettings() {
               min={1}
               value={retentionCount}
               onChange={(event) => setRetentionCount(Number(event.target.value))}
-              style={styles.input}
+              className={styles.input}
             />
           </label>
-          <button type="button" onClick={() => void previewRetention(retentionCount)} style={styles.primary}>
+          <Button variant="primary" onClick={() => void previewRetention(retentionCount)}>
             Xem trước retention
-          </button>
+          </Button>
         </div>
         {retention ? (
-          <div aria-label="Kế hoạch retention" style={styles.plan}>
-            <p style={styles.meta}>
+          <div aria-label="Kế hoạch retention" className={styles.plan}>
+            <p className={styles.meta}>
               Giữ {retention.kept.length}/{retention.currentCount} · sẽ xoá {retention.deletable.length}
               {retention.applied ? '' : ' · chưa áp dụng'}
             </p>
             {retention.deletable.length > 0 ? (
-              <ul style={styles.list}>
+              <ul className={styles.list}>
                 {retention.deletable.map((backupId) => (
                   <li key={backupId}>
                     <code>{backupId}</code>
@@ -196,68 +199,67 @@ export function StorageSettings() {
                 ))}
               </ul>
             ) : (
-              <p style={styles.meta}>Không có bản sao nào vượt ngưỡng.</p>
+              <p className={styles.meta}>Không có bản sao nào vượt ngưỡng.</p>
             )}
           </div>
         ) : null}
       </section>
 
-      <section aria-label="Dọn dẹp" style={styles.block}>
+      <section aria-label="Dọn dẹp" className={styles.block}>
         <strong>Dọn dẹp tệp không còn dùng</strong>
-        <p style={styles.meta}>Luôn xem trước danh sách chính xác trước khi xoá.</p>
-        <button type="button" onClick={() => void previewCleanup()} style={styles.secondary}>
+        <p className={styles.meta}>Luôn xem trước danh sách chính xác trước khi xoá.</p>
+        <Button variant="secondary" onClick={() => void previewCleanup()}>
           Xem trước dọn dẹp
-        </button>
+        </Button>
         {cleanup ? <CleanupPreview plan={cleanup} onExecute={(planId, hash) => void executeCleanup(planId, hash)} /> : null}
       </section>
 
-      <section aria-label="Phục hồi vào bản sao" style={styles.block}>
+      <section aria-label="Phục hồi vào bản sao" className={styles.block}>
         <strong>Phục hồi vào bản sao</strong>
-        <p style={styles.meta}>
+        <p className={styles.meta}>
           Nhập thư mục mới rồi gõ lại y hệt để xác nhận. Dữ liệu gốc không bị ghi đè.
         </p>
-        <label style={styles.label}>
+        <label className={styles.field}>
           Thư mục đích
           <input
             aria-label="Thư mục đích"
             value={restoreTarget}
             onChange={(event) => setRestoreTarget(event.target.value)}
-            style={styles.input}
+            className={styles.input}
           />
         </label>
-        <label style={styles.label}>
+        <label className={styles.field}>
           Gõ lại thư mục đích
           <input
             aria-label="Xác nhận thư mục đích"
             value={restoreConfirm}
             onChange={(event) => setRestoreConfirm(event.target.value)}
-            style={styles.input}
+            className={styles.input}
           />
         </label>
-        <div style={styles.actions}>
+        <div className={styles.actions}>
           {backups
             .filter((backup) => backup.verified)
             .map((backup) => (
-              <button
+              <Button
                 key={backup.id}
-                type="button"
+                variant="primary"
                 disabled={!targetMatches}
                 onClick={() => void restoreCopy(backup.id)}
-                style={{ ...styles.primary, opacity: targetMatches ? 1 : 0.6 }}
               >
                 Phục hồi {backup.id} vào bản sao
-              </button>
+              </Button>
             ))}
         </div>
         {!targetMatches ? (
-          <p style={styles.meta} role="status">
+          <p className={styles.meta} role="status">
             Cần gõ lại đúng thư mục đích để bật nút phục hồi.
           </p>
         ) : null}
       </section>
 
-      {message ? <p role="status" style={styles.ok}>{message}</p> : null}
-      {error ? <p role="alert" style={styles.bad}>{error}</p> : null}
+      {message ? <p role="status" className={styles.okText}>{message}</p> : null}
+      {error ? <p role="alert" className={styles.badText}>{error}</p> : null}
     </section>
   );
 }
@@ -271,21 +273,3 @@ function formatBytes(value: number): string {
   }
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: { display: 'grid', gap: 14, maxWidth: 720 },
-  title: { margin: 0, fontSize: 15 },
-  meta: { margin: 0, fontSize: 13, color: '#475467' },
-  block: { display: 'grid', gap: 8, padding: 12, border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc' },
-  blockHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0' },
-  ok: { color: '#166534', fontWeight: 700, marginLeft: 8, fontSize: 12 },
-  bad: { color: '#9a3412', fontWeight: 700, marginLeft: 8, fontSize: 12 },
-  label: { display: 'grid', gap: 4, fontSize: 13, fontWeight: 700 },
-  input: { padding: '8px 10px', border: '1px solid #c8d1dc', borderRadius: 6, font: 'inherit' },
-  actions: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' },
-  primary: { padding: '8px 12px', border: 0, borderRadius: 6, background: '#155eef', color: '#ffffff', fontWeight: 700 },
-  secondary: { padding: '8px 12px', border: '1px solid #c8d1dc', borderRadius: 6, background: '#ffffff', fontWeight: 700 },
-  plan: { display: 'grid', gap: 6 },
-  list: { margin: 0, paddingLeft: 18, fontSize: 13 },
-};

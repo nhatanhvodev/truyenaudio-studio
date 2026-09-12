@@ -9,6 +9,8 @@ import { StorageSettings } from './StorageSettings';
 import { AppearanceSettings } from './AppearanceSettings';
 import VoiceBrowser from '../voices/VoiceBrowser';
 
+import styles from './ProjectSettingsRoutes.module.css';
+
 export const PROJECT_SETTINGS_GROUPS = [
   { slug: 'translation', label: 'Translation' },
   { slug: 'tts', label: 'TTS' },
@@ -23,34 +25,24 @@ export function ProjectSettingsShell() {
     return <Navigate to="/" replace />;
   }
   return (
-    <section style={{ display: 'flex', gap: 24, padding: 24, alignItems: 'flex-start' }}>
-      <nav aria-label="Nhóm cài đặt dự án" style={{ minWidth: 220 }}>
-        <h1 style={{ fontSize: 16, margin: '0 0 4px' }}>Cài đặt dự án</h1>
-        <p style={{ margin: '0 0 12px', color: '#4b5563', fontSize: 12 }}>{projectId}</p>
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 4 }}>
+    <section className={styles.groups}>
+      <nav aria-label="Nhóm cài đặt dự án" className={styles.groupNav}>
+        <h1 className={styles.heading}>Cài đặt dự án</h1>
+        <p className={styles.projectId}>{projectId}</p>
+        <ul className={styles.groupList}>
           {PROJECT_SETTINGS_GROUPS.map((group) => (
             <li key={group.slug}>
-              <NavLink
-                to={`/projects/${projectId}/settings/${group.slug}`}
-                style={({ isActive }) => ({
-                  display: 'block',
-                  padding: '6px 10px',
-                  borderRadius: 6,
-                  textDecoration: 'none',
-                  fontWeight: isActive ? 600 : 400,
-                  color: isActive ? '#1d4ed8' : '#4b5563',
-                })}
-              >
+              <NavLink to={`/projects/${projectId}/settings/${group.slug}`} className={styles.groupLink}>
                 {group.label}
               </NavLink>
             </li>
           ))}
         </ul>
-        <NavLink to={`/projects/${projectId}/import`} style={{ fontSize: 12 }}>
+        <NavLink to={`/projects/${projectId}/import`} className={styles.crumb}>
           ← Về import của dự án
         </NavLink>
       </nav>
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className={styles.groupBody}>
         <Outlet />
       </div>
     </section>
@@ -74,9 +66,9 @@ function ProjectTranslationPanel() {
 
 function ProjectTtsPanel() {
   return (
-    <section aria-label="TTS dự án" style={{ display: 'grid', gap: 12 }}>
-      <h2 style={{ margin: 0, fontSize: 15 }}>TTS</h2>
-      <p style={{ margin: 0, color: '#4b5563', fontSize: 13 }}>
+    <section aria-label="TTS dự án" className={styles.panel}>
+      <h2 className={styles.panelTitle}>TTS</h2>
+      <p className={styles.panelNote}>
         Catalog giọng đọc cục bộ. Giọng chỉ khả dụng khi model + license đã được cài trên máy; nếu chưa, danh
         sách hiển thị trạng thái chưa khả dụng và không gọi mạng.
       </p>

@@ -1,0 +1,89 @@
+/*
+ * Export workflow (ExportWorkflow.tsx) — the gate, the rights hash and the
+ * bundle file groups. Colours come only from the token layer.
+ *
+ * The first block is the task's prescribed "export result module"; everything
+ * below it styles surfaces that block does not name (status pill, error and
+ * success banners, the metadata fieldset, the bundle card shell).
+ */
+
+.workflow { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4); min-width: 0; }
+.gate { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border-control); border-left: 3px solid var(--text-muted); background: var(--surface); }
+.gateReady { border-left-color: var(--success); }
+.gateBlocked { border-left-color: var(--danger); }
+.hash { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-subtle); }
+.fileGroup { border-top: 1px solid var(--border-control); padding: var(--sp-3) 0; }
+.fileKind { font-size: var(--fs-sm); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.fileRow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--border-subtle); min-width: 0; }
+.stale { color: var(--warning); font-size: var(--fs-sm); display: flex; align-items: center; gap: var(--sp-2); }
+.notice { color: var(--text-subtle); font-size: var(--fs-sm); }
+
+/* --- surfaces the block above does not name --- */
+
+.title { margin: 0; font-size: var(--fs-lg); min-width: 0; }
+.meta { color: var(--text-muted); font-size: var(--fs-sm); min-width: 0; overflow-wrap: anywhere; }
+.code { font-family: var(--font-mono); font-size: var(--fs-sm); }
+
+/* The gate states carry text as well as colour: "Sẵn sàng xuất bản" /
+   "Bị chặn xuất bản" are words, so the left border is a second cue, not the
+   only one (WCAG 1.4.1). */
+.statusOk { color: var(--success); font-weight: 600; font-size: var(--fs-sm); }
+.statusBlocked { color: var(--danger); font-weight: 600; font-size: var(--fs-sm); }
+.statusMuted { color: var(--text-muted); font-weight: 600; font-size: var(--fs-sm); }
+
+.gateReasons { display: grid; gap: var(--sp-1); padding-left: var(--sp-4); color: var(--warning); font-size: var(--fs-sm); }
+
+.error {
+  padding: var(--sp-3);
+  border: 1px solid var(--danger);
+  background: var(--surface);
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.success {
+  padding: var(--sp-3);
+  border: 1px solid var(--success);
+  background: var(--surface);
+  color: var(--success);
+  font-size: var(--fs-sm);
+}
+.staleBlock {
+  display: grid;
+  gap: var(--sp-2);
+  justify-items: start;
+  padding: var(--sp-3);
+  border: 1px solid var(--warning);
+  background: var(--surface);
+}
+
+/* A marker-less list (reset.css removed list-style) gets its separation back
+   from the row itself: .fileRow carries the padding and the bottom border. */
+.fileList { display: grid; min-width: 0; }
+.list { display: grid; gap: var(--sp-1); font-size: var(--fs-sm); }
+
+.card {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.cardHeader { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+
+.fieldset {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+.legend { padding: 0 var(--sp-2); font-size: var(--fs-sm); font-weight: 600; }
+.fields { display: grid; gap: var(--sp-2); max-width: 24rem; }
+.checkbox { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-md); }
+.actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.bundles { display: grid; gap: var(--sp-3); min-width: 0; }

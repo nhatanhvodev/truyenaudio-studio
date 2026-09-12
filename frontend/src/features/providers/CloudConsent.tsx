@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react';
 
+import { Button } from '../../shared/ui';
+
+import styles from './CloudConsent.module.css';
+
 type CloudConsentProps = {
   projectId: string;
   providerProfileId: string;
@@ -62,18 +66,18 @@ export function CloudConsent({
   }
 
   return (
-    <section aria-label="Dong y xu ly cloud" style={styles.shell}>
-      <div style={styles.header}>
+    <section aria-label="Dong y xu ly cloud" className={styles.shell}>
+      <div className={styles.header}>
         <div>
-          <h2 style={styles.title}>{providerName}</h2>
-          <p style={styles.meta}>Policy hash {shortHash}</p>
-          {model ? <p style={styles.meta}>Model {model}</p> : null}
+          <h2 className={styles.title}>{providerName}</h2>
+          <p className={styles.meta}>Policy hash {shortHash}</p>
+          {model ? <p className={styles.meta}>Model {model}</p> : null}
         </div>
-        <span style={styles.region}>{dataRegion}</span>
+        <span className={styles.region}>{dataRegion}</span>
       </div>
 
-      <p style={styles.notice}>Du lieu nguon va ban dich nhap se roi may local de xu ly tren nha cung cap nay.</p>
-      <dl style={styles.facts}>
+      <p className={styles.notice}>Du lieu nguon va ban dich nhap se roi may local de xu ly tren nha cung cap nay.</p>
+      <dl className={styles.facts}>
         <div>
           <dt>Retention</dt>
           <dd>{retention}</dd>
@@ -84,91 +88,22 @@ export function CloudConsent({
         </div>
       </dl>
 
-      <label style={styles.check}>
+      <label className={styles.check}>
         <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} />
         <span>Toi dong y rieng cho xu ly cloud cua provider nay</span>
       </label>
 
-      <div style={styles.actions}>
-        <button type="button" onClick={grantConsent} disabled={!accepted || state === 'saving'} style={styles.button}>
+      <div className={styles.actions}>
+        <Button
+          variant="primary"
+          onClick={grantConsent}
+          disabled={!accepted || state === 'saving'}
+        >
           {state === 'saving' ? 'Dang luu' : 'Chap nhan'}
-        </button>
-        {state === 'granted' ? <span style={styles.success}>Da luu</span> : null}
-        {error ? <span style={styles.error}>{error}</span> : null}
+        </Button>
+        {state === 'granted' ? <span className={styles.success}>Da luu</span> : null}
+        {error ? <span className={styles.error}>{error}</span> : null}
       </div>
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    border: '1px solid #d9e1e8',
-    borderRadius: 8,
-    padding: 16,
-    background: '#ffffff',
-    color: '#17202a',
-    fontFamily: 'Inter, Segoe UI, Arial, sans-serif',
-  },
-  header: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    gap: 12,
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  title: {
-    margin: 0,
-    fontSize: 18,
-    letterSpacing: 0,
-  },
-  meta: {
-    margin: '4px 0 0',
-    color: '#52606d',
-    fontSize: 13,
-  },
-  region: {
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    padding: '4px 8px',
-    color: '#17324d',
-    fontSize: 13,
-    fontWeight: 700,
-  },
-  notice: {
-    margin: '0 0 14px',
-    lineHeight: 1.45,
-  },
-  facts: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-    gap: 10,
-    margin: '0 0 14px',
-  },
-  check: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
-  },
-  actions: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-  },
-  button: {
-    border: '1px solid #17324d',
-    borderRadius: 6,
-    padding: '8px 12px',
-    background: '#17324d',
-    color: '#ffffff',
-    fontWeight: 700,
-  },
-  success: {
-    color: '#1c6638',
-    fontWeight: 700,
-  },
-  error: {
-    color: '#8a1f11',
-    fontWeight: 700,
-  },
-};

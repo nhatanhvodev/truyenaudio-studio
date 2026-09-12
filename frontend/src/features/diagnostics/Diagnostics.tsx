@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiBlob, apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
+
+import styles from './Diagnostics.module.css';
 
 type HealthSnapshot = {
   timestamp: string;
@@ -58,29 +61,29 @@ export function Diagnostics() {
   const components = useMemo(() => Object.entries(health?.components ?? {}), [health]);
 
   return (
-    <section aria-label="Diagnostics" style={styles.shell}>
-      <header style={styles.header}>
+    <section aria-label="Diagnostics" className={styles.shell}>
+      <header className={styles.header}>
         <div>
-          <h1 style={styles.title}>Diagnostics</h1>
-          <p style={styles.meta}>{health ? `${health.status} at ${health.timestamp}` : 'Loading'}</p>
+          <h1 className={styles.title}>Diagnostics</h1>
+          <p className={styles.meta}>{health ? `${health.status} at ${health.timestamp}` : 'Loading'}</p>
         </div>
-        <button type="button" onClick={() => void refresh()} style={styles.secondaryButton}>
+        <Button variant="secondary" onClick={() => void refresh()}>
           Refresh
-        </button>
+        </Button>
       </header>
 
-      <section aria-label="Health components" style={styles.grid}>
+      <section aria-label="Health components" className={styles.grid}>
         {components.map(([name, component]) => (
-          <article key={name} style={styles.component}>
+          <article key={name} className={styles.component}>
             <strong>{name}</strong>
-            <span style={component.status === 'ok' ? styles.ok : styles.status}>{component.status}</span>
-            {component.message ? <small style={styles.message}>{component.message}</small> : null}
+            <span className={component.status === 'ok' ? styles.ok : styles.status}>{component.status}</span>
+            {component.message ? <small className={styles.message}>{component.message}</small> : null}
           </article>
         ))}
       </section>
 
-      <section aria-label="Diagnostic export" style={styles.exportBox}>
-        <label style={styles.checkboxLabel}>
+      <section aria-label="Diagnostic export" className={styles.exportBox}>
+        <label className={styles.checkboxLabel}>
           <input
             type="checkbox"
             checked={includeSample}
@@ -93,124 +96,20 @@ export function Diagnostics() {
             aria-label="Selected sample text"
             value={sampleText}
             onChange={(event) => setSampleText(event.target.value)}
-            style={styles.textarea}
+            className={styles.textarea}
           />
         ) : null}
-        <button type="button" onClick={() => void exportDiagnostics()} disabled={busy} style={styles.primaryButton}>
+        <Button variant="primary" onClick={() => void exportDiagnostics()} disabled={busy}>
           Export ZIP
-        </button>
+        </Button>
         {downloadUrl ? (
-          <a href={downloadUrl} download="truyenaudio-diagnostics.zip" style={styles.download}>
+          <a href={downloadUrl} download="truyenaudio-diagnostics.zip" className={styles.download}>
             Download diagnostics ZIP
           </a>
         ) : null}
       </section>
 
-      {error ? <p role="alert" style={styles.error}>{error}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </section>
   );
 }
-
-const styles: Record<string, React.CSSProperties> = {
-  shell: {
-    display: 'grid',
-    gap: 16,
-    maxWidth: 920,
-    margin: '0 auto',
-    padding: 20,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#ffffff',
-  },
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-  },
-  title: {
-    margin: 0,
-    fontSize: 26,
-    letterSpacing: 0,
-  },
-  meta: {
-    margin: '4px 0 0',
-    color: '#52606d',
-    fontWeight: 700,
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    gap: 10,
-  },
-  component: {
-    display: 'grid',
-    gap: 6,
-    minHeight: 78,
-    padding: 12,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#f8fafc',
-  },
-  ok: {
-    color: '#166534',
-    fontWeight: 900,
-  },
-  status: {
-    color: '#9a3412',
-    fontWeight: 900,
-  },
-  message: {
-    color: '#52606d',
-    overflowWrap: 'anywhere',
-  },
-  exportBox: {
-    display: 'grid',
-    gap: 12,
-    padding: 12,
-    border: '1px solid #d7dde8',
-    borderRadius: 8,
-    background: '#fbfcfe',
-  },
-  checkboxLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontWeight: 800,
-  },
-  textarea: {
-    minHeight: 110,
-    boxSizing: 'border-box',
-    padding: 10,
-    border: '1px solid #c9d3df',
-    borderRadius: 6,
-    font: 'inherit',
-    lineHeight: 1.5,
-  },
-  primaryButton: {
-    justifySelf: 'start',
-    padding: '10px 14px',
-    border: 0,
-    borderRadius: 6,
-    background: '#155eef',
-    color: '#ffffff',
-    fontWeight: 900,
-  },
-  secondaryButton: {
-    padding: '9px 12px',
-    border: '1px solid #a9b7c6',
-    borderRadius: 6,
-    background: '#ffffff',
-    color: '#17324d',
-    fontWeight: 900,
-  },
-  download: {
-    color: '#0b5cad',
-    fontWeight: 900,
-  },
-  error: {
-    margin: 0,
-    color: '#9a3412',
-    fontWeight: 900,
-  },
-};

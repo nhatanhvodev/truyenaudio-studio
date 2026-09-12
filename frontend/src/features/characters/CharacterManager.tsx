@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
+
+import styles from './CharacterManager.module.css';
 
 export interface CharacterView {
   character_id: string;
@@ -194,96 +197,108 @@ export function CharacterManager({ projectId }: CharacterManagerProps) {
   }
 
   return (
-    <section aria-labelledby="character-manager-heading">
-      <h2 id="character-manager-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="character-manager-heading" className={styles.shell}>
+      <h2 id="character-manager-heading" className={styles.heading}>
         Nhân vật &amp; xưng hô
       </h2>
-      <p style={{ margin: '0 0 8px', color: '#4b5563' }}>
+      <p className={styles.note}>
         Nhân vật không bị gộp chỉ vì trùng tên; approve bắt buộc có evidence (source revision + segment). Giới
         tính thiếu giữ “chưa rõ”, không tự đoán.
       </p>
 
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       ) : null}
       {status ? (
-        <p role="status" style={{ color: '#166534' }}>
+        <p role="status" className={styles.success}>
           {status}
         </p>
       ) : null}
 
-      {loading ? <p>Đang tải…</p> : null}
-      {!loading && characters.length === 0 ? <p>Chưa có nhân vật nào.</p> : null}
+      {loading ? <p className={styles.meta}>Đang tải…</p> : null}
+      {!loading && characters.length === 0 ? <p className={styles.meta}>Chưa có nhân vật nào.</p> : null}
       {characters.length > 0 ? (
-        <table>
-          <caption>Nhân vật theo revision</caption>
-          <thead>
-            <tr>
-              <th scope="col">Tên</th>
-              <th scope="col">Alias</th>
-              <th scope="col">Giới tính</th>
-              <th scope="col">Trạng thái</th>
-              <th scope="col">Evidence &amp; approve</th>
-            </tr>
-          </thead>
-          <tbody>
-            {characters.map((character) => (
-              <tr key={character.character_id}>
-                <td>{character.canonical_name}</td>
-                <td>{character.aliases.length > 0 ? character.aliases.join(', ') : '—'}</td>
-                <td>{character.gender ?? 'chưa rõ'}</td>
-                <td>{character.status}</td>
-                <td>
-                  <input
-                    aria-label={`Source revision cho ${character.canonical_name}`}
-                    value={evidence[character.character_id]?.revisionId ?? ''}
-                    onChange={(event) =>
-                      setEvidence((previous) => ({
-                        ...previous,
-                        [character.character_id]: {
-                          revisionId: event.target.value,
-                          segmentIds: previous[character.character_id]?.segmentIds ?? '',
-                        },
-                      }))
-                    }
-                  />
-                  <input
-                    aria-label={`Segment ids cho ${character.canonical_name}`}
-                    value={evidence[character.character_id]?.segmentIds ?? ''}
-                    onChange={(event) =>
-                      setEvidence((previous) => ({
-                        ...previous,
-                        [character.character_id]: {
-                          revisionId: previous[character.character_id]?.revisionId ?? '',
-                          segmentIds: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                  <button type="button" disabled={busy} onClick={() => void approve(character.character_id)}>
-                    Approve
-                  </button>
-                </td>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption className={styles.caption}>Nhân vật theo revision</caption>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.th}>Tên</th>
+                <th scope="col" className={styles.th}>Alias</th>
+                <th scope="col" className={styles.th}>Giới tính</th>
+                <th scope="col" className={styles.th}>Trạng thái</th>
+                <th scope="col" className={styles.th}>Evidence &amp; approve</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {characters.map((character) => (
+                <tr key={character.character_id}>
+                  <td className={styles.td}>{character.canonical_name}</td>
+                  <td className={styles.td}>{character.aliases.length > 0 ? character.aliases.join(', ') : '—'}</td>
+                  <td className={styles.td}>{character.gender ?? 'chưa rõ'}</td>
+                  <td className={styles.td}>{character.status}</td>
+                  <td className={styles.td}>
+                    <div className={styles.cellActions}>
+                      <input
+                        className={styles.control}
+                        aria-label={`Source revision cho ${character.canonical_name}`}
+                        value={evidence[character.character_id]?.revisionId ?? ''}
+                        onChange={(event) =>
+                          setEvidence((previous) => ({
+                            ...previous,
+                            [character.character_id]: {
+                              revisionId: event.target.value,
+                              segmentIds: previous[character.character_id]?.segmentIds ?? '',
+                            },
+                          }))
+                        }
+                      />
+                      <input
+                        className={styles.control}
+                        aria-label={`Segment ids cho ${character.canonical_name}`}
+                        value={evidence[character.character_id]?.segmentIds ?? ''}
+                        onChange={(event) =>
+                          setEvidence((previous) => ({
+                            ...previous,
+                            [character.character_id]: {
+                              revisionId: previous[character.character_id]?.revisionId ?? '',
+                              segmentIds: event.target.value,
+                            },
+                          }))
+                        }
+                      />
+                      <Button
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => void approve(character.character_id)}
+                      >
+                        Approve
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
 
-      <h3 style={{ fontSize: 14, margin: '16px 0 4px' }}>Thêm nhân vật (candidate)</h3>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <label>
+      <h3 className={styles.subheading}>Thêm nhân vật (candidate)</h3>
+      <div className={styles.row}>
+        <label className={styles.field}>
           Tên chuẩn
           <input
+            className={styles.control}
             value={draft.canonicalName}
             onChange={(event) => setDraft({ ...draft, canonicalName: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Loại
           <select
+            className={styles.control}
             value={draft.entityType}
             onChange={(event) => setDraft({ ...draft, entityType: event.target.value })}
           >
@@ -292,47 +307,64 @@ export function CharacterManager({ projectId }: CharacterManagerProps) {
             <option value="OTHER">OTHER</option>
           </select>
         </label>
-        <label>
+        <label className={styles.field}>
           Alias (phẩy)
-          <input value={draft.aliases} onChange={(event) => setDraft({ ...draft, aliases: event.target.value })} />
+          <input
+            className={styles.control}
+            value={draft.aliases}
+            onChange={(event) => setDraft({ ...draft, aliases: event.target.value })}
+          />
         </label>
-        <label>
+        <label className={styles.field}>
           Role
-          <input value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value })} />
+          <input
+            className={styles.control}
+            value={draft.role}
+            onChange={(event) => setDraft({ ...draft, role: event.target.value })}
+          />
         </label>
-        <label>
+        <label className={styles.field}>
           Giới tính (để trống = chưa rõ)
-          <select value={draft.gender} onChange={(event) => setDraft({ ...draft, gender: event.target.value })}>
+          <select
+            className={styles.control}
+            value={draft.gender}
+            onChange={(event) => setDraft({ ...draft, gender: event.target.value })}
+          >
             <option value="">chưa rõ</option>
             <option value="MALE">MALE</option>
             <option value="FEMALE">FEMALE</option>
             <option value="UNKNOWN">UNKNOWN</option>
           </select>
         </label>
-        <button type="button" disabled={busy} onClick={() => void createCharacter()}>
-          Tạo candidate
-        </button>
+        <div className={styles.actions}>
+          <Button variant="primary" disabled={busy} onClick={() => void createCharacter()}>
+            Tạo candidate
+          </Button>
+        </div>
       </div>
 
-      <h3 style={{ fontSize: 14, margin: '16px 0 4px' }}>Quan hệ xưng hô có hướng</h3>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <label>
+      <h3 className={styles.subheading}>Quan hệ xưng hô có hướng</h3>
+      <div className={styles.row}>
+        <label className={styles.field}>
           Từ character id
           <input
+            className={styles.control}
             value={relationshipDraft.fromId}
             onChange={(event) => setRelationshipDraft({ ...relationshipDraft, fromId: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Đến character id
           <input
+            className={styles.control}
             value={relationshipDraft.toId}
             onChange={(event) => setRelationshipDraft({ ...relationshipDraft, toId: event.target.value })}
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Từ chương
           <input
+            className={styles.control}
             inputMode="numeric"
             value={relationshipDraft.fromOrdinal}
             onChange={(event) =>
@@ -340,9 +372,10 @@ export function CharacterManager({ projectId }: CharacterManagerProps) {
             }
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Đến chương (trống = mở)
           <input
+            className={styles.control}
             inputMode="numeric"
             value={relationshipDraft.toOrdinal}
             onChange={(event) =>
@@ -350,29 +383,33 @@ export function CharacterManager({ projectId }: CharacterManagerProps) {
             }
           />
         </label>
-        <label>
+        <label className={styles.field}>
           Addressing (mỗi dòng key=value)
           <textarea
+            className={styles.textarea}
             value={relationshipDraft.addressing}
             onChange={(event) => setRelationshipDraft({ ...relationshipDraft, addressing: event.target.value })}
             rows={2}
           />
         </label>
-        <button type="button" disabled={busy} onClick={() => void addRelationship()}>
-          Thêm quan hệ
-        </button>
+        <div className={styles.actions}>
+          <Button variant="primary" disabled={busy} onClick={() => void addRelationship()}>
+            Thêm quan hệ
+          </Button>
+        </div>
       </div>
 
-      <label>
+      <label className={styles.field}>
         Xem quan hệ tại chương
         <input
+          className={styles.control}
           inputMode="numeric"
           value={ordinalFilter}
           onChange={(event) => void loadRelationships(event.target.value.replace(/[^0-9]/g, ''))}
         />
       </label>
       {relationships.length > 0 ? (
-        <ul aria-label="Quan hệ tại chương đã chọn">
+        <ul aria-label="Quan hệ tại chương đã chọn" className={styles.list}>
           {relationships.map((relationship) => (
             <li key={relationship.id}>
               {relationship.from_character_id} → {relationship.to_character_id} (chương{' '}

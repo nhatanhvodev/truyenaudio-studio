@@ -1,0 +1,75 @@
+/*
+ * Provider profile editor (ProfileEditor.tsx). The credential cell shows STATE
+ * only ("Đã cấu hình" / "Chưa có") and the input is a write-only password field:
+ * it renders empty, it is cleared the moment the PUT returns, and no value from
+ * it is ever read back into the DOM.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.heading { margin: 0; font-size: var(--fs-md); }
+.subheading { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--fs-md); }
+
+.error { margin: 0; color: var(--danger); font-size: var(--fs-sm); font-weight: 600; }
+.success { margin: 0; color: var(--success); font-size: var(--fs-sm); font-weight: 600; }
+.meta { margin: 0; color: var(--text-muted); font-size: var(--fs-sm); }
+
+.row {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.field {
+  display: grid;
+  gap: var(--sp-1);
+  justify-items: start;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.control {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  color: var(--text);
+  max-width: 100%;
+  min-width: 0;
+}
+.control:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.cellActions { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+
+.tableWrap { overflow-x: auto; min-width: 0; }
+
+.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.caption {
+  text-align: left;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  padding-bottom: var(--sp-2);
+}
+.th {
+  text-align: left;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase; /* interface label only */
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-control);
+  padding: var(--sp-2) var(--sp-3);
+}
+.td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}

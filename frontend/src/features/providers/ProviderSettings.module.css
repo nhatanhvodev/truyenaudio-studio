@@ -1,0 +1,28 @@
+/*
+ * Provider settings summary (ProviderSettings.tsx). Read-only facts plus the
+ * fake-consent affordance used by the offline demo branch.
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  justify-items: start;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-lg); }
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+  gap: var(--sp-3);
+  width: 100%;
+  margin: 0;
+  min-width: 0;
+}
+.facts dt { color: var(--text-muted); font-size: var(--fs-sm); }
+.facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }

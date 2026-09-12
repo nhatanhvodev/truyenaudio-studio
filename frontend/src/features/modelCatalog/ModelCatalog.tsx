@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
+
+import styles from './ModelCatalog.module.css';
 
 export interface ModelSnapshotView {
   providerId: string;
@@ -110,29 +113,33 @@ export function ModelCatalog({ profileId, providerId }: ModelCatalogProps) {
   }, [load]);
 
   return (
-    <section aria-labelledby="model-catalog-heading">
-      <h2 id="model-catalog-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="model-catalog-heading" className={styles.shell}>
+      <h2 id="model-catalog-heading" className={styles.heading}>
         Models
       </h2>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <label>
+      <div className={styles.filters}>
+        <label className={styles.field}>
           Giá
-          <select value={pricing} onChange={(event) => setPricing(event.target.value)}>
+          <select
+            className={styles.control}
+            value={pricing}
+            onChange={(event) => setPricing(event.target.value)}
+          >
             <option value="all">Tất cả</option>
             <option value="free">Miễn phí</option>
             <option value="paid">Trả phí</option>
           </select>
         </label>
-        <label>
+        <label className={styles.field}>
           Context tối thiểu
           <input
+            className={`${styles.control} ${styles.narrow}`}
             inputMode="numeric"
             value={contextMin}
             onChange={(event) => setContextMin(event.target.value.replace(/[^0-9]/g, ''))}
-            style={{ width: 90 }}
           />
         </label>
-        <label>
+        <label className={`${styles.field} ${styles.inlineField}`}>
           <input
             type="checkbox"
             checked={benchmarked}
@@ -143,52 +150,61 @@ export function ModelCatalog({ profileId, providerId }: ModelCatalogProps) {
       </div>
 
       {stale ? (
-        <p role="status" style={{ color: '#92400e' }}>
+        <p role="status" className={styles.stale}>
           Dữ liệu catalog có thể đã cũ; kiểm tra nguồn và ngày trước khi chọn model.
         </p>
       ) : null}
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       ) : null}
 
-      <table>
-        <caption>Model khả dụng theo filter hiện tại</caption>
-        <thead>
-          <tr>
-            <th scope="col">Model</th>
-            <th scope="col">API</th>
-            <th scope="col">Context</th>
-            <th scope="col">Giá</th>
-            <th scope="col">Trạng thái</th>
-            <th scope="col">Nguồn</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => (
-            <tr key={`${item.providerId}:${item.modelId}`}>
-              <td>{item.modelId}</td>
-              <td>{item.apiKind}</td>
-              <td>{item.contextTokens ?? 'không rõ'}</td>
-              <td>{pricingLabel(item.pricing?.class ?? 'unknown')}</td>
-              <td>{availabilityLabel(item.availability)}</td>
-              <td>
-                <a href={item.sourceUrl} rel="noreferrer noopener" target="_blank">
-                  {item.providerId}
-                </a>
-                {item.benchmarkRef ? <span> · benchmark có tham chiếu</span> : null}
-              </td>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
+          <caption className={styles.caption}>Model khả dụng theo filter hiện tại</caption>
+          <thead>
+            <tr>
+              <th scope="col" className={styles.th}>Model</th>
+              <th scope="col" className={styles.th}>API</th>
+              <th scope="col" className={styles.th}>Context</th>
+              <th scope="col" className={styles.th}>Giá</th>
+              <th scope="col" className={styles.th}>Trạng thái</th>
+              <th scope="col" className={styles.th}>Nguồn</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={`${item.providerId}:${item.modelId}`}>
+                <td className={styles.td}>{item.modelId}</td>
+                <td className={styles.td}>{item.apiKind}</td>
+                <td className={styles.td}>{item.contextTokens ?? 'không rõ'}</td>
+                <td className={styles.td}>{pricingLabel(item.pricing?.class ?? 'unknown')}</td>
+                <td className={styles.td}>{availabilityLabel(item.availability)}</td>
+                <td className={styles.td}>
+                  <a
+                    className={styles.link}
+                    href={item.sourceUrl}
+                    rel="noreferrer noopener"
+                    target="_blank"
+                  >
+                    {item.providerId}
+                  </a>
+                  {item.benchmarkRef ? <span> · benchmark có tham chiếu</span> : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
-      {items.length === 0 && !loading ? <p>Không có model khớp filter.</p> : null}
+      {items.length === 0 && !loading ? <p className={styles.meta}>Không có model khớp filter.</p> : null}
 
-      <button type="button" disabled={loading || !cursor} onClick={() => void load(cursor)}>
-        {loading ? 'Đang tải…' : cursor ? 'Tải thêm' : 'Hết danh sách'}
-      </button>
+      <div className={styles.actions}>
+        <Button variant="secondary" disabled={loading || !cursor} onClick={() => void load(cursor)}>
+          {loading ? 'Đang tải…' : cursor ? 'Tải thêm' : 'Hết danh sách'}
+        </Button>
+      </div>
     </section>
   );
 }

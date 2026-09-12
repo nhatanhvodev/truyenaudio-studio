@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { apiJson } from '../../shared/api';
+import { Button } from '../../shared/ui';
+
+import styles from './StyleManager.module.css';
 
 export interface StylePresetView {
   key: string;
@@ -27,7 +30,7 @@ export interface StyleManagerProps {
 }
 
 export function StyleManager({ projectId }: StyleManagerProps) {
-  const [styles, setStyles] = useState<StyleView[]>([]);
+  const [styleRows, setStyleRows] = useState<StyleView[]>([]);
   const [presets, setPresets] = useState<StylePresetView[]>([]);
   const [presetKey, setPresetKey] = useState('');
   const [draft, setDraft] = useState({ name: '', genre: 'general', tone: 'natural', userInstruction: '' });
@@ -44,7 +47,7 @@ export function StyleManager({ projectId }: StyleManagerProps) {
         apiJson<{ styles: StyleView[] }>(`/api/projects/${projectId}/styles`),
         apiJson<{ presets: StylePresetView[] }>(`/api/projects/${projectId}/styles/presets`),
       ]);
-      setStyles(stylePayload.styles ?? []);
+      setStyleRows(stylePayload.styles ?? []);
       setPresets(presetPayload.presets ?? []);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Không tải được style');
@@ -106,28 +109,32 @@ export function StyleManager({ projectId }: StyleManagerProps) {
   }
 
   return (
-    <section aria-labelledby="style-manager-heading">
-      <h2 id="style-manager-heading" style={{ margin: '0 0 8px', fontSize: 15 }}>
+    <section aria-labelledby="style-manager-heading" className={styles.shell}>
+      <h2 id="style-manager-heading" className={styles.heading}>
         Translation style
       </h2>
-      <p style={{ margin: '0 0 8px', color: '#4b5563' }}>
+      <p className={styles.note}>
         Preset là cấu hình có phiên bản, không phải nhãn chất lượng. Sửa preset cho project sẽ tạo revision mới.
       </p>
 
       {error ? (
-        <p role="alert" style={{ color: '#b91c1c' }}>
+        <p role="alert" className={styles.error}>
           {error}
         </p>
       ) : null}
       {status ? (
-        <p role="status" style={{ color: '#166534' }}>
+        <p role="status" className={styles.success}>
           {status}
         </p>
       ) : null}
 
-      <label>
+      <label className={styles.field}>
         Preset có sẵn
-        <select value={presetKey} onChange={(event) => applyPreset(event.target.value)}>
+        <select
+          className={styles.control}
+          value={presetKey}
+          onChange={(event) => applyPreset(event.target.value)}
+        >
           <option value="">— chọn preset —</option>
           {presets.map((preset) => (
             <option key={preset.key} value={preset.key}>
@@ -137,14 +144,22 @@ export function StyleManager({ projectId }: StyleManagerProps) {
         </select>
       </label>
 
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-        <label>
+      <div className={styles.row}>
+        <label className={styles.field}>
           Tên style
-          <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+          <input
+            className={styles.control}
+            value={draft.name}
+            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+          />
         </label>
-        <label>
+        <label className={styles.field}>
           Thể loại
-          <select value={draft.genre} onChange={(event) => setDraft({ ...draft, genre: event.target.value })}>
+          <select
+            className={styles.control}
+            value={draft.genre}
+            onChange={(event) => setDraft({ ...draft, genre: event.target.value })}
+          >
             <option value="general">general</option>
             <option value="webnovel">webnovel</option>
             <option value="lightnovel">lightnovel</option>
@@ -155,55 +170,63 @@ export function StyleManager({ projectId }: StyleManagerProps) {
             <option value="xianxia">xianxia</option>
           </select>
         </label>
-        <label>
+        <label className={styles.field}>
           Tone
-          <select value={draft.tone} onChange={(event) => setDraft({ ...draft, tone: event.target.value })}>
+          <select
+            className={styles.control}
+            value={draft.tone}
+            onChange={(event) => setDraft({ ...draft, tone: event.target.value })}
+          >
             <option value="faithful">faithful</option>
             <option value="natural">natural</option>
             <option value="literary">literary</option>
           </select>
         </label>
       </div>
-      <label style={{ display: 'block', marginTop: 8 }}>
+      <label className={`${styles.field} ${styles.wideField}`}>
         Custom instruction (gửi kèm prompt; không override glossary khóa)
         <textarea
+          className={styles.textarea}
           value={draft.userInstruction}
           onChange={(event) => setDraft({ ...draft, userInstruction: event.target.value })}
           rows={3}
-          style={{ width: '100%' }}
         />
       </label>
-      <button type="button" disabled={saving} onClick={() => void save()}>
-        {saving ? 'Đang lưu…' : 'Lưu style'}
-      </button>
+      <div className={styles.actions}>
+        <Button variant="primary" disabled={saving} onClick={() => void save()}>
+          {saving ? 'Đang lưu…' : 'Lưu style'}
+        </Button>
+      </div>
 
-      <h3 style={{ fontSize: 14, margin: '16px 0 4px' }}>Style đang dùng</h3>
-      {loading ? <p>Đang tải…</p> : null}
-      {!loading && styles.length === 0 ? <p>Chưa có style nào cho project này.</p> : null}
-      {styles.length > 0 ? (
-        <table>
-          <caption>Style active theo revision</caption>
-          <thead>
-            <tr>
-              <th scope="col">Tên</th>
-              <th scope="col">Thể loại</th>
-              <th scope="col">Tone</th>
-              <th scope="col">Revision</th>
-              <th scope="col">Hash</th>
-            </tr>
-          </thead>
-          <tbody>
-            {styles.map((style) => (
-              <tr key={style.id}>
-                <td>{style.name}</td>
-                <td>{style.genre}</td>
-                <td>{style.tone}</td>
-                <td>{style.revision_no}</td>
-                <td>{style.sha256.slice(0, 8)}…</td>
+      <h3 className={styles.subheading}>Style đang dùng</h3>
+      {loading ? <p className={styles.meta}>Đang tải…</p> : null}
+      {!loading && styleRows.length === 0 ? <p className={styles.meta}>Chưa có style nào cho project này.</p> : null}
+      {styleRows.length > 0 ? (
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <caption className={styles.caption}>Style active theo revision</caption>
+            <thead>
+              <tr>
+                <th scope="col" className={styles.th}>Tên</th>
+                <th scope="col" className={styles.th}>Thể loại</th>
+                <th scope="col" className={styles.th}>Tone</th>
+                <th scope="col" className={styles.th}>Revision</th>
+                <th scope="col" className={styles.th}>Hash</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {styleRows.map((style) => (
+                <tr key={style.id}>
+                  <td className={styles.td}>{style.name}</td>
+                  <td className={styles.td}>{style.genre}</td>
+                  <td className={styles.td}>{style.tone}</td>
+                  <td className={styles.td}>{style.revision_no}</td>
+                  <td className={styles.td}>{style.sha256.slice(0, 8)}…</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </section>
   );

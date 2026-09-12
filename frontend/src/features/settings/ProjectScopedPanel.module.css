@@ -1,0 +1,49 @@
+/*
+ * Project-scoped settings gate (ProjectScopedPanel.tsx). The panel exists only
+ * to collect a project id: nothing here is persisted, so the field is a plain
+ * labelled input and the hint below it states the requirement in words.
+ */
+
+.panel {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.panelHeading {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.panelNote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.field {
+  display: grid;
+  gap: var(--sp-1);
+  justify-items: start;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.input {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  min-width: 0;
+  max-width: 100%;
+}
+.input:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}

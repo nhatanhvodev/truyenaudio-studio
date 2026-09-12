@@ -1,0 +1,23 @@
+/*
+ * Global settings group scaffolding (SettingsRoutes.tsx): the pending-group
+ * placeholder and the TTS group's prose panel. Both are single-column prose
+ * surfaces, so they share one stacked layout.
+ */
+
+.panel {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.panelHeading {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.panelNote {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}

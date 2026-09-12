@@ -1,0 +1,72 @@
+/*
+ * Appearance settings (AppearanceSettings.tsx). A bounded preference form: the
+ * note states in words that only presentation values are kept in the browser,
+ * and the details block at the bottom shows the sanitized document that would
+ * be stored (never the raw one).
+ */
+
+.shell {
+  display: grid;
+  gap: var(--sp-3);
+  max-width: 40rem;
+  min-width: 0;
+}
+
+.title { margin: 0; font-size: var(--fs-md); }
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.field {
+  display: grid;
+  gap: var(--sp-1);
+  justify-items: start;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.control {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  background: var(--surface);
+  color: var(--text);
+  max-width: 100%;
+  min-width: 0;
+}
+.control:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+.success { margin: 0; color: var(--success); font-weight: 600; font-size: var(--fs-sm); }
+.error { margin: 0; color: var(--danger); font-weight: 600; font-size: var(--fs-sm); }
+.warning { margin: 0; color: var(--warning); font-weight: 600; font-size: var(--fs-sm); }
+
+.details { font-size: var(--fs-sm); }
+.summary { cursor: pointer; font-weight: 600; color: var(--text-muted); }
+.summary:focus-visible { outline: var(--focus-ring) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.pre {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius); /* zero */
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  overflow-x: auto;
+}
