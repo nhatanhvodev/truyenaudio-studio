@@ -13,3 +13,20 @@ models/
 playwright-report/
 test-results/
 .worktrees/
+
+# The .superpowers/ scratch tree: agent briefs, task reports, ledgers and review
+# diffs. It is excluded one LEVEL at a time rather than with a plain
+# `.superpowers/`, because a pattern that matches a DIRECTORY stops git's walk
+# outright - so a `!` rule for a file inside it is never consulted, wherever it is
+# written. Excluding the contents at each level and re-including the directories
+# keeps the walk alive down to the two review gates below, which are shared
+# tooling rather than scratch (committed in 86a3fcf). Everything else under here
+# stays out of `git status`. Already-tracked files are unaffected either way:
+# ignore rules only ever govern untracked paths.
+.superpowers/*
+!.superpowers/sdd
+.superpowers/sdd/*
+!.superpowers/sdd/redesign
+.superpowers/sdd/redesign/*
+!.superpowers/sdd/redesign/verify-g5.py
+!.superpowers/sdd/redesign/check-added-copy.py
